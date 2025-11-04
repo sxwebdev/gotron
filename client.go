@@ -1,187 +1,213 @@
-// Package gotron provides a high-level client for interacting with the Tron blockchain.
-//
-// Example usage:
-//
-//	package main
-//
-//	import (
-//	    "fmt"
-//	    "log"
-//	    "github.com/sxwebdev/gotron"
-//	    "github.com/shopspring/decimal"
-//	)
-//
-//	func main() {
-//	    // Create client for mainnet
-//	    client, err := gotron.NewClient(gotron.Mainnet)
-//	    if err != nil {
-//	        log.Fatal(err)
-//	    }
-//	    defer client.Close()
-//
-//	    // Get balance
-//	    balance, err := client.GetBalance("TYourAddress")
-//	    if err != nil {
-//	        log.Fatal(err)
-//	    }
-//	    fmt.Printf("Balance: %s TRX\n", balance)
-//
-//	    // Transfer TRX
-//	    txID, err := client.Transfer("TFromAddress", "TToAddress",
-//	        decimal.NewFromInt(1000000), "privatekey")
-//	    if err != nil {
-//	        log.Fatal(err)
-//	    }
-//	    fmt.Printf("Transaction ID: %s\n", txID)
-//	}
+// Package client provides a gRPC client for interacting with Tron nodes.
 package gotron
 
 import (
-	"context"
+	"crypto/tls"
+	"errors"
+	"fmt"
+	"time"
 
 	"github.com/shopspring/decimal"
-	"github.com/sxwebdev/gotron/pkg/address"
-	"github.com/sxwebdev/gotron/pkg/client"
-	"github.com/sxwebdev/gotron/pkg/resources"
-	"github.com/sxwebdev/gotron/pkg/transaction"
-	"github.com/sxwebdev/gotron/pkg/trc20"
+	pbtronapi "github.com/sxwebdev/gotron/pb/api"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
-// Network types
+var (
+	// ErrInvalidConfig is returned when the client configuration is invalid
+	ErrInvalidConfig = errors.New("invalid client configuration")
+	// ErrNotConnected is returned when the client is not connected
+	ErrNotConnected = errors.New("client not connected")
+	// ErrInvalidAddress is returned when an address is invalid
+	ErrInvalidAddress = errors.New("invalid address")
+	// ErrInvalidAmount is returned when an amount is invalid
+	ErrInvalidAmount = errors.New("invalid amount")
+)
+
+// Config holds the configuration for the Tron client
+type Config struct {
+	// GRPCAddress is the address of the Tron node gRPC endpoint
+	GRPCAddress string
+	// UseTLS enables TLS for the gRPC connection
+	UseTLS bool
+	// Timeout is the default timeout for RPC calls
+	Timeout time.Duration
+	// APIKey is an optional API key for TronGrid
+	APIKey string
+}
+
+// Network represents the Tron network type
+type Network string
+
 const (
-	Mainnet = client.Mainnet
-	Testnet = client.Testnet
-	Nile    = client.Nile
+	// Mainnet represents the Tron mainnet
+	Mainnet Network = "mainnet"
+	// Testnet represents the Tron testnet (Shasta)
+	Testnet Network = "testnet"
+	// Nile represents the Tron Nile testnet
+	Nile Network = "nile"
 )
 
-// Resource types
-const (
-	Bandwidth = resources.Bandwidth
-	Energy    = resources.Energy
-)
-
-// Client is the high-level Tron blockchain client
+// Client represents a Tron blockchain client
 type Client struct {
-	*client.Client
+	conn   *grpc.ClientConn
+	config *Config
+
+	tronClient pbtronapi.WalletClient
 }
 
-// NewClient creates a new Tron client for the specified network
-func NewClient(ctx context.Context, network client.Network) (*Client, error) {
-	c, err := client.NewClient(ctx, network)
-	if err != nil {
+// New creates a new Tron client with the given configuration
+func newClient(cfg *Config) (*Client, error) {
+	if err := validateConfig(cfg); err != nil {
 		return nil, err
 	}
 
-	return &Client{Client: c}, nil
+	// Set default timeout if not specified
+	if cfg.Timeout == 0 {
+		cfg.Timeout = 30 * time.Second
+	}
+
+	client := &Client{
+		config: cfg,
+	}
+
+	if err := client.connect(); err != nil {
+		return nil, fmt.Errorf("failed to connect: %w", err)
+	}
+
+	client.tronClient = pbtronapi.NewWalletClient(client.conn)
+
+	return client, nil
 }
 
-// NewClientWithConfig creates a new Tron client with custom configuration
-func NewClientWithConfig(ctx context.Context, cfg *client.Config) (*Client, error) {
-	c, err := client.New(ctx, cfg)
+// validateConfig validates the client configuration
+func validateConfig(cfg *Config) error {
+	if cfg == nil {
+		return ErrInvalidConfig
+	}
+
+	if cfg.GRPCAddress == "" {
+		return fmt.Errorf("%w: gRPC address is required", ErrInvalidConfig)
+	}
+
+	return nil
+}
+
+// connect establishes a connection to the Tron node
+func (c *Client) connect() error {
+	opts := []grpc.DialOption{
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(1024 * 1024 * 100)),
+	}
+
+	if c.config.UseTLS {
+		opts = append(opts, grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{
+			InsecureSkipVerify: false,
+			MinVersion:         tls.VersionTLS12,
+		})))
+	} else {
+		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	}
+
+	conn, err := grpc.NewClient(c.config.GRPCAddress, opts...)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("failed to dial gRPC: %w", err)
 	}
 
-	return &Client{Client: c}, nil
+	c.conn = conn
+
+	return nil
 }
 
-// Transfer sends TRX from one address to another
-func (c *Client) Transfer(from, to string, amount decimal.Decimal, privateKey string) (string, error) {
-	params := transaction.TransferParams{
-		From:       from,
-		To:         to,
-		Amount:     amount,
-		PrivateKey: privateKey,
+// Close closes the client connection
+func (c *Client) Close() error {
+	if c.conn != nil {
+		return c.conn.Close()
 	}
 
-	if err := params.Validate(); err != nil {
-		return "", err
+	return nil
+}
+
+// IsConnected returns true if the client is connected
+func (c *Client) IsConnected() bool {
+	return c.conn != nil
+}
+
+// GetBalance retrieves the TRX balance for an address
+// Returns the balance in SUN (1 TRX = 1,000,000 SUN)
+func (c *Client) GetBalance(address string) (decimal.Decimal, error) {
+	if !c.IsConnected() {
+		return decimal.Zero, ErrNotConnected
 	}
 
-	// TODO: Implement actual transaction creation and broadcasting
-	return "", nil
-}
-
-// TransferTRC20 transfers TRC20 tokens
-func (c *Client) TransferTRC20(contractAddress, from, to string, amount decimal.Decimal, privateKey string, feeLimit int64) (string, error) {
-	params := trc20.TransferParams{
-		ContractAddress: contractAddress,
-		From:            from,
-		To:              to,
-		Amount:          amount,
-		PrivateKey:      privateKey,
-		FeeLimit:        feeLimit,
+	if address == "" {
+		return decimal.Zero, ErrInvalidAddress
 	}
 
-	if err := params.Validate(); err != nil {
-		return "", err
+	// TODO: Implement actual gRPC call to get account
+	// This requires proto definitions from tronprotocol/protocol
+	return decimal.Zero, fmt.Errorf("not implemented: requires proto definitions")
+}
+
+// GetTRC20Balance retrieves the TRC20 token balance for an address
+func (c *Client) GetTRC20Balance(contractAddress, ownerAddress string) (decimal.Decimal, error) {
+	if !c.IsConnected() {
+		return decimal.Zero, ErrNotConnected
 	}
 
-	// TODO: Implement actual TRC20 transfer
-	return "", nil
-}
-
-// DelegateResource delegates bandwidth or energy to another address
-func (c *Client) DelegateResource(from, to string, balance decimal.Decimal, resourceType resources.ResourceType, privateKey string, lock bool, lockPeriod int64) (string, error) {
-	params := resources.DelegateResourceParams{
-		From:         from,
-		To:           to,
-		Balance:      balance,
-		ResourceType: resourceType,
-		PrivateKey:   privateKey,
-		Lock:         lock,
-		LockPeriod:   lockPeriod,
+	if contractAddress == "" {
+		return decimal.Zero, errors.New("contract address is required")
 	}
 
-	if err := params.Validate(); err != nil {
-		return "", err
+	if ownerAddress == "" {
+		return decimal.Zero, errors.New("owner address is required")
 	}
 
-	// TODO: Implement actual resource delegation
-	return "", nil
+	// TODO: Implement actual contract call
+	// This requires proto definitions and ABI encoding
+	return decimal.Zero, fmt.Errorf("not implemented: requires proto definitions and ABI")
 }
 
-// UndelegateResource undelegates bandwidth or energy from an address
-func (c *Client) UndelegateResource(from, to string, balance decimal.Decimal, resourceType resources.ResourceType, privateKey string) (string, error) {
-	params := resources.UndelegateResourceParams{
-		From:         from,
-		To:           to,
-		Balance:      balance,
-		ResourceType: resourceType,
-		PrivateKey:   privateKey,
+// IsActivated checks if an address is activated on the network
+func (c *Client) IsActivated(address string) (bool, error) {
+	if !c.IsConnected() {
+		return false, ErrNotConnected
 	}
 
-	if err := params.Validate(); err != nil {
-		return "", err
+	if address == "" {
+		return false, ErrInvalidAddress
 	}
 
-	// TODO: Implement actual resource undelegation
-	return "", nil
+	// TODO: Implement actual gRPC call
+	// This requires proto definitions from tronprotocol/protocol
+	return false, fmt.Errorf("not implemented: requires proto definitions")
 }
 
-// Address operations
+// GetAccountResources retrieves the resource information for an address
+func (c *Client) GetAccountResources(address string) (map[string]interface{}, error) {
+	if !c.IsConnected() {
+		return nil, ErrNotConnected
+	}
 
-// GenerateMnemonic generates a new BIP39 mnemonic
-func GenerateMnemonic(strength int) (string, error) {
-	return address.GenerateMnemonic(strength)
+	if address == "" {
+		return nil, ErrInvalidAddress
+	}
+
+	// TODO: Implement actual gRPC call
+	// This requires proto definitions from tronprotocol/protocol
+	return nil, fmt.Errorf("not implemented: requires proto definitions")
 }
 
-// GenerateAddress creates a new random Tron address
-func GenerateAddress() (*address.Address, error) {
-	return address.Generate()
-}
-
-// AddressFromMnemonic creates a Tron address from a mnemonic and passphrase
-func AddressFromMnemonic(mnemonic, passphrase string, index uint32) (*address.Address, error) {
-	return address.FromMnemonic(mnemonic, passphrase, index)
-}
-
-// AddressFromPrivateKey creates a Tron address from a private key
-func AddressFromPrivateKey(privateKey string) (*address.Address, error) {
-	return address.FromPrivateKey(privateKey)
-}
-
-// ValidateAddress validates a Tron address
-func ValidateAddress(addr string) error {
-	return address.Validate(addr)
+// GetNetwork returns the current network based on gRPC address
+func (c *Client) GetNetwork() Network {
+	switch c.config.GRPCAddress {
+	case "grpc.trongrid.io:50051":
+		return Mainnet
+	case "grpc.shasta.trongrid.io:50051":
+		return Testnet
+	case "grpc.nile.trongrid.io:50051":
+		return Nile
+	default:
+		return Mainnet
+	}
 }
