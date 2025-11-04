@@ -30,3 +30,14 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Build artifacts
+bin/
+dist/
+*.test
+*.prof
+
+# Temporary files
+tmp/
+temp/
+
