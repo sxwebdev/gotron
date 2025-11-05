@@ -38,7 +38,6 @@ package gotron
 
 import (
 	"github.com/sxwebdev/gotron/pkg/client"
-	"github.com/sxwebdev/gotron/pkg/resources"
 )
 
 // Network types
@@ -50,8 +49,8 @@ const (
 
 // Resource types
 const (
-	Bandwidth = resources.Bandwidth
-	Energy    = resources.Energy
+	Bandwidth = client.ResourceTypeBandwidth
+	Energy    = client.ResourceTypeEnergy
 )
 
 // Constants

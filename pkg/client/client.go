@@ -83,7 +83,7 @@ func (c *Client) GetBalance(address string) (decimal.Decimal, error) {
 	}
 
 	if address == "" {
-		return decimal.Zero, ErrInvalidAddress
+		return decimal.Zero, ErrEmptyAddress
 	}
 
 	// TODO: Implement actual gRPC call to get account
@@ -117,7 +117,7 @@ func (c *Client) IsActivated(address string) (bool, error) {
 	}
 
 	if address == "" {
-		return false, ErrInvalidAddress
+		return false, ErrEmptyAddress
 	}
 
 	// TODO: Implement actual gRPC call
@@ -132,7 +132,7 @@ func (c *Client) GetAccountResources(address string) (map[string]interface{}, er
 	}
 
 	if address == "" {
-		return nil, ErrInvalidAddress
+		return nil, ErrEmptyAddress
 	}
 
 	// TODO: Implement actual gRPC call
