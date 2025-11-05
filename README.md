@@ -436,16 +436,6 @@ walletAPI := tron.API()
 nodeInfo, err := walletAPI.GetNodeInfo(ctx, &api.EmptyMessage{})
 ```
 
-## Dependencies
-
-- `google.golang.org/grpc` - gRPC client
-- `google.golang.org/protobuf` - Protocol buffers
-- `github.com/shopspring/decimal` - Precision arithmetic
-- `github.com/ethereum/go-ethereum/crypto` - Cryptographic operations
-- `github.com/btcsuite/btcd` - HD key derivation
-- `github.com/mr-tron/base58` - Base58 encoding
-- `github.com/sxwebdev/go-bip39` - BIP39 implementation
-
 ## Testing
 
 ```bash
