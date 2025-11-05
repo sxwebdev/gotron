@@ -41,7 +41,6 @@ func main() {
     // Create client with default mainnet configuration
     cfg := gotron.Config{
         Network: gotron.Mainnet,
-        APIKey:  "your-trongrid-api-key", // Required for TronGrid
     }
 
     tron, err := gotron.New(cfg)
@@ -263,35 +262,81 @@ fmt.Printf("Energy: %s, Bandwidth: %s\n",
 // Mainnet (default)
 cfg := gotron.Config{
     Network: gotron.Mainnet,
-    APIKey:  "your-api-key",
 }
 
 // Shasta Testnet
 cfg := gotron.Config{
     Network: gotron.Shasta,
-    APIKey:  "your-api-key",
 }
 
 // Nile Testnet
 cfg := gotron.Config{
     Network: gotron.Nile,
-    APIKey:  "your-api-key",
 }
 ```
 
 ### Custom Configuration
 
 ```go
-import "github.com/sxwebdev/gotron/pkg/client"
+import (
+    "github.com/sxwebdev/gotron/pkg/client"
+    "google.golang.org/grpc"
+)
 
 cfg := client.Config{
     GRPCAddress: "your-custom-node:50051",
     UseTLS:      true,
-    APIKey:      "optional-api-key",
     Network:     client.NetworkMainnet,
+    DialOptions: []grpc.DialOption{
+        // Add custom dial options here
+    },
 }
 
 tron, err := gotron.New(cfg)
+```
+
+### TronGrid with API Key (Interceptor Pattern)
+
+For production use with TronGrid, implement an interceptor to add the API key header:
+
+```go
+import (
+    "context"
+
+    "github.com/sxwebdev/gotron/pkg/client"
+    "google.golang.org/grpc"
+    "google.golang.org/grpc/metadata"
+)
+
+// Create interceptor that adds TRON-PRO-API-KEY header
+func tronGridAPIKeyInterceptor(apiKey string) grpc.UnaryClientInterceptor {
+    return func(ctx context.Context, method string, req, reply interface{},
+        cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+
+        ctx = metadata.AppendToOutgoingContext(ctx, "TRON-PRO-API-KEY", apiKey)
+        return invoker(ctx, method, req, reply, cc, opts...)
+    }
+}
+
+func main() {
+    apiKey := "your-trongrid-api-key"
+
+    cfg := client.Config{
+        Network: client.NetworkMainnet,
+        DialOptions: []grpc.DialOption{
+            grpc.WithUnaryInterceptor(tronGridAPIKeyInterceptor(apiKey)),
+        },
+    }
+
+    tron, err := gotron.New(cfg)
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer tron.Close()
+
+    // All requests will include the API key header
+    balance, err := tron.GetAccountBalance(ctx, "TAddress")
+}
 ```
 
 ## Package Structure

@@ -1,75 +1,3 @@
-// Package gotron provides a high-level client for interacting with the Tron blockchain.
-//
-// # Quick Start
-//
-// Create a client and get account balance:
-//
-//	import (
-//	    "context"
-//	    "fmt"
-//	    "log"
-//
-//	    "github.com/sxwebdev/gotron"
-//	    "github.com/shopspring/decimal"
-//	)
-//
-//	func main() {
-//	    // Initialize client
-//	    cfg := gotron.Config{
-//	        Network: gotron.Mainnet,
-//	        APIKey:  "your-trongrid-api-key",
-//	    }
-//
-//	    tron, err := gotron.New(cfg)
-//	    if err != nil {
-//	        log.Fatal(err)
-//	    }
-//	    defer tron.Close()
-//
-//	    ctx := context.Background()
-//
-//	    // Get balance
-//	    balance, err := tron.GetAccountBalance(ctx, "TYourAddress")
-//	    if err != nil {
-//	        log.Fatal(err)
-//	    }
-//	    fmt.Printf("Balance: %s TRX\n", balance.String())
-//	}
-//
-// # Transfer TRX
-//
-//	import "github.com/sxwebdev/gotron/pkg/address"
-//
-//	// Create transfer transaction
-//	tx, err := tron.CreateTransferTransaction(
-//	    ctx,
-//	    "TFromAddress",
-//	    "TToAddress",
-//	    decimal.NewFromFloat(1.5), // Amount in TRX
-//	)
-//
-//	// Sign transaction
-//	privateKey, _ := address.PrivateKeyFromHex("your-private-key")
-//	tron.SignTransaction(tx.Transaction, privateKey)
-//
-//	// Broadcast
-//	result, err := tron.BroadcastTransaction(ctx, tx.Transaction)
-//
-// # TRC20 Tokens
-//
-//	// Transfer USDT
-//	const usdtContract = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"
-//
-//	tx, err := tron.TRC20Send(
-//	    ctx,
-//	    "TFromAddress",
-//	    "TToAddress",
-//	    usdtContract,
-//	    decimal.NewFromInt(1000000), // 1 USDT (6 decimals)
-//	    100_000_000,                  // Fee limit in SUN
-//	)
-//
-// See package documentation for more examples and details.
 package gotron
 
 import (
@@ -118,7 +46,6 @@ type Config = client.Config
 //
 //	cfg := gotron.Config{
 //	    Network: gotron.Mainnet,
-//	    APIKey:  "your-api-key",
 //	}
 //	tron, err := gotron.New(cfg)
 //	if err != nil {

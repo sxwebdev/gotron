@@ -29,9 +29,10 @@ func New(cfg Config) (*Client, error) {
 		config: cfg,
 	}
 
-	opts := []grpc.DialOption{
-		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(1024 * 1024 * 100)),
-	}
+	opts := append(
+		cfg.DialOptions,
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(1024*1024*100)),
+	)
 
 	if cfg.UseTLS {
 		opts = append(opts, grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{

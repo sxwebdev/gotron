@@ -31,7 +31,6 @@
 //	func main() {
 //	    cfg := gotron.Config{
 //	        Network: gotron.Mainnet,
-//	        APIKey:  "your-trongrid-api-key",
 //	    }
 //
 //	    tron, err := gotron.New(cfg)
@@ -47,6 +46,40 @@
 //	    }
 //
 //	    fmt.Printf("Balance: %s TRX\n", balance.String())
+//	}
+//
+// # Using TronGrid with API Key
+//
+// TronGrid requires an API key via the TRON-PRO-API-KEY header.
+// Use a gRPC interceptor to add it:
+//
+//	import (
+//	    "context"
+//
+//	    "github.com/sxwebdev/gotron/pkg/client"
+//	    "google.golang.org/grpc"
+//	    "google.golang.org/grpc/metadata"
+//	)
+//
+//	func apiKeyInterceptor(apiKey string) grpc.UnaryClientInterceptor {
+//	    return func(ctx context.Context, method string, req, reply interface{},
+//	        cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+//
+//	        ctx = metadata.AppendToOutgoingContext(ctx, "TRON-PRO-API-KEY", apiKey)
+//	        return invoker(ctx, method, req, reply, cc, opts...)
+//	    }
+//	}
+//
+//	func main() {
+//	    cfg := client.Config{
+//	        Network: client.NetworkMainnet,
+//	        DialOptions: []grpc.DialOption{
+//	            grpc.WithUnaryInterceptor(apiKeyInterceptor("your-api-key")),
+//	        },
+//	    }
+//
+//	    tron, err := gotron.New(cfg)
+//	    // Use client...
 //	}
 //
 // # Address Generation
@@ -158,13 +191,13 @@
 // The package supports multiple networks:
 //
 //	// Mainnet
-//	cfg := gotron.Config{Network: gotron.Mainnet, APIKey: "key"}
+//	cfg := gotron.Config{Network: gotron.Mainnet}
 //
 //	// Shasta Testnet
-//	cfg := gotron.Config{Network: gotron.Shasta, APIKey: "key"}
+//	cfg := gotron.Config{Network: gotron.Shasta}
 //
 //	// Nile Testnet
-//	cfg := gotron.Config{Network: gotron.Nile, APIKey: "key"}
+//	cfg := gotron.Config{Network: gotron.Nile}
 //
 //	// Custom node
 //	cfg := client.Config{
