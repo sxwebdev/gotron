@@ -7,8 +7,8 @@ import (
 	"fmt"
 
 	"github.com/shopspring/decimal"
-	pbtron "github.com/sxwebdev/gotron/pb/core"
 	"github.com/sxwebdev/gotron/pkg/utils"
+	pbtron "github.com/sxwebdev/gotron/schema/pb/core"
 )
 
 var ErrAccountNotFound = errors.New("account not found")

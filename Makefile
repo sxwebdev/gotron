@@ -1,5 +1,6 @@
 genproto:
-	buf generate
+	cd schema
+	buf generate --template schema/buf.gen.yaml
 
 genabi:
 	abigen --abi pkg/contracts/trc20/trc20.abi --pkg trc20 --type TRC20 --out pkg/contracts/trc20/trc20.go

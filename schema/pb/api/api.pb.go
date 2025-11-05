@@ -7,7 +7,7 @@
 package api
 
 import (
-	core "github.com/sxwebdev/gotron/pb/core"
+	core "github.com/sxwebdev/gotron/schema/pb/core"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
@@ -5586,8 +5586,8 @@ const file_api_api_proto_rawDesc = "" +
 	"\rGetBlockByNum\x12\x17.protocol.NumberMessage\x1a\x0f.protocol.Block\"\x002\x83\x01\n" +
 	"\aMonitor\x12x\n" +
 	"\fGetStatsInfo\x12\x16.protocol.EmptyMessage\x1a\x15.protocol.MetricsInfo\"9\x82\xd3\xe4\x93\x023:\x01*Z\x17\x12\x15/monitor/getstatsinfo\"\x15/monitor/getstatsinfo2\t\n" +
-	"\aNetworkB{\n" +
-	"\fcom.protocolB\bApiProtoP\x01Z!github.com/sxwebdev/gotron/pb/api\xa2\x02\x03PXX\xaa\x02\bProtocol\xca\x02\bProtocol\xe2\x02\x14Protocol\\GPBMetadata\xea\x02\bProtocolb\x06proto3"
+	"\aNetworkB\x82\x01\n" +
+	"\fcom.protocolB\bApiProtoP\x01Z(github.com/sxwebdev/gotron/schema/pb/api\xa2\x02\x03PXX\xaa\x02\bProtocol\xca\x02\bProtocol\xe2\x02\x14Protocol\\GPBMetadata\xea\x02\bProtocolb\x06proto3"
 
 var (
 	file_api_api_proto_rawDescOnce sync.Once

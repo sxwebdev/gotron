@@ -206,8 +206,8 @@ const file_core_proposal_contract_proto_rawDesc = "" +
 	"\x16ProposalDeleteContract\x12#\n" +
 	"\rowner_address\x18\x01 \x01(\fR\fownerAddress\x12\x1f\n" +
 	"\vproposal_id\x18\x02 \x01(\x03R\n" +
-	"proposalIdB\x89\x01\n" +
-	"\fcom.protocolB\x15ProposalContractProtoP\x01Z\"github.com/sxwebdev/gotron/pb/core\xa2\x02\x03PXX\xaa\x02\bProtocol\xca\x02\bProtocol\xe2\x02\x14Protocol\\GPBMetadata\xea\x02\bProtocolb\x06proto3"
+	"proposalIdB\x90\x01\n" +
+	"\fcom.protocolB\x15ProposalContractProtoP\x01Z)github.com/sxwebdev/gotron/schema/pb/core\xa2\x02\x03PXX\xaa\x02\bProtocol\xca\x02\bProtocol\xe2\x02\x14Protocol\\GPBMetadata\xea\x02\bProtocolb\x06proto3"
 
 var (
 	file_core_proposal_contract_proto_rawDescOnce sync.Once

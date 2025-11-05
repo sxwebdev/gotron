@@ -80,8 +80,8 @@ const file_core_common_proto_rawDesc = "" +
 	"\n" +
 	"\x06ENERGY\x10\x01\x12\x0e\n" +
 	"\n" +
-	"TRON_POWER\x10\x02B\x7f\n" +
-	"\fcom.protocolB\vCommonProtoP\x01Z\"github.com/sxwebdev/gotron/pb/core\xa2\x02\x03PXX\xaa\x02\bProtocol\xca\x02\bProtocol\xe2\x02\x14Protocol\\GPBMetadata\xea\x02\bProtocolb\x06proto3"
+	"TRON_POWER\x10\x02B\x86\x01\n" +
+	"\fcom.protocolB\vCommonProtoP\x01Z)github.com/sxwebdev/gotron/schema/pb/core\xa2\x02\x03PXX\xaa\x02\bProtocol\xca\x02\bProtocol\xe2\x02\x14Protocol\\GPBMetadata\xea\x02\bProtocolb\x06proto3"
 
 var (
 	file_core_common_proto_rawDescOnce sync.Once

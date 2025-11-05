@@ -3,7 +3,7 @@ package client
 import (
 	"context"
 
-	"github.com/sxwebdev/gotron/pb/api"
+	"github.com/sxwebdev/gotron/schema/pb/api"
 )
 
 // GetLastBlock return TIP block

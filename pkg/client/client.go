@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	"github.com/shopspring/decimal"
-	"github.com/sxwebdev/gotron/pb/api"
+	"github.com/sxwebdev/gotron/schema/pb/api"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"

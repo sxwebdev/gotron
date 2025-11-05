@@ -163,8 +163,8 @@ const file_core_market_contract_proto_rawDesc = "" +
 	"\x12buy_token_quantity\x18\x05 \x01(\x03R\x10buyTokenQuantity\"[\n" +
 	"\x19MarketCancelOrderContract\x12#\n" +
 	"\rowner_address\x18\x01 \x01(\fR\fownerAddress\x12\x19\n" +
-	"\border_id\x18\x02 \x01(\fR\aorderIdB\x87\x01\n" +
-	"\fcom.protocolB\x13MarketContractProtoP\x01Z\"github.com/sxwebdev/gotron/pb/core\xa2\x02\x03PXX\xaa\x02\bProtocol\xca\x02\bProtocol\xe2\x02\x14Protocol\\GPBMetadata\xea\x02\bProtocolb\x06proto3"
+	"\border_id\x18\x02 \x01(\fR\aorderIdB\x8e\x01\n" +
+	"\fcom.protocolB\x13MarketContractProtoP\x01Z)github.com/sxwebdev/gotron/schema/pb/core\xa2\x02\x03PXX\xaa\x02\bProtocol\xca\x02\bProtocol\xe2\x02\x14Protocol\\GPBMetadata\xea\x02\bProtocolb\x06proto3"
 
 var (
 	file_core_market_contract_proto_rawDescOnce sync.Once

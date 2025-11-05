@@ -8,7 +8,7 @@ package api
 
 import (
 	context "context"
-	core "github.com/sxwebdev/gotron/pb/core"
+	core "github.com/sxwebdev/gotron/schema/pb/core"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"

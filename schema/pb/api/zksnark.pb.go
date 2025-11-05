@@ -7,7 +7,7 @@
 package api
 
 import (
-	core "github.com/sxwebdev/gotron/pb/core"
+	core "github.com/sxwebdev/gotron/schema/pb/core"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -197,8 +197,8 @@ const file_api_zksnark_proto_rawDesc = "" +
 	"\n" +
 	"\x06FAILED\x10\x012Y\n" +
 	"\vTronZksnark\x12J\n" +
-	"\x11CheckZksnarkProof\x12\x18.protocol.ZksnarkRequest\x1a\x19.protocol.ZksnarkResponse\"\x00B\x7f\n" +
-	"\fcom.protocolB\fZksnarkProtoP\x01Z!github.com/sxwebdev/gotron/pb/api\xa2\x02\x03PXX\xaa\x02\bProtocol\xca\x02\bProtocol\xe2\x02\x14Protocol\\GPBMetadata\xea\x02\bProtocolb\x06proto3"
+	"\x11CheckZksnarkProof\x12\x18.protocol.ZksnarkRequest\x1a\x19.protocol.ZksnarkResponse\"\x00B\x86\x01\n" +
+	"\fcom.protocolB\fZksnarkProtoP\x01Z(github.com/sxwebdev/gotron/schema/pb/api\xa2\x02\x03PXX\xaa\x02\bProtocol\xca\x02\bProtocol\xe2\x02\x14Protocol\\GPBMetadata\xea\x02\bProtocolb\x06proto3"
 
 var (
 	file_api_zksnark_proto_rawDescOnce sync.Once

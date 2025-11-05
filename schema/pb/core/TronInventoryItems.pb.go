@@ -80,8 +80,8 @@ const file_core_TronInventoryItems_proto_rawDesc = "" +
 	"\x1dcore/TronInventoryItems.proto\x12\bprotocol\":\n" +
 	"\x0eInventoryItems\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\x05R\x04type\x12\x14\n" +
-	"\x05items\x18\x02 \x03(\fR\x05itemsB\x8b\x01\n" +
-	"\fcom.protocolB\x17TronInventoryItemsProtoP\x01Z\"github.com/sxwebdev/gotron/pb/core\xa2\x02\x03PXX\xaa\x02\bProtocol\xca\x02\bProtocol\xe2\x02\x14Protocol\\GPBMetadata\xea\x02\bProtocolb\x06proto3"
+	"\x05items\x18\x02 \x03(\fR\x05itemsB\x92\x01\n" +
+	"\fcom.protocolB\x17TronInventoryItemsProtoP\x01Z)github.com/sxwebdev/gotron/schema/pb/core\xa2\x02\x03PXX\xaa\x02\bProtocol\xca\x02\bProtocol\xe2\x02\x14Protocol\\GPBMetadata\xea\x02\bProtocolb\x06proto3"
 
 var (
 	file_core_TronInventoryItems_proto_rawDescOnce sync.Once

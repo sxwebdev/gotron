@@ -256,8 +256,8 @@ const file_core_witness_contract_proto_rawDesc = "" +
 	"\x04Vote\x12!\n" +
 	"\fvote_address\x18\x01 \x01(\fR\vvoteAddress\x12\x1d\n" +
 	"\n" +
-	"vote_count\x18\x02 \x01(\x03R\tvoteCountB\x88\x01\n" +
-	"\fcom.protocolB\x14WitnessContractProtoP\x01Z\"github.com/sxwebdev/gotron/pb/core\xa2\x02\x03PXX\xaa\x02\bProtocol\xca\x02\bProtocol\xe2\x02\x14Protocol\\GPBMetadata\xea\x02\bProtocolb\x06proto3"
+	"vote_count\x18\x02 \x01(\x03R\tvoteCountB\x8f\x01\n" +
+	"\fcom.protocolB\x14WitnessContractProtoP\x01Z)github.com/sxwebdev/gotron/schema/pb/core\xa2\x02\x03PXX\xaa\x02\bProtocol\xca\x02\bProtocol\xe2\x02\x14Protocol\\GPBMetadata\xea\x02\bProtocolb\x06proto3"
 
 var (
 	file_core_witness_contract_proto_rawDescOnce sync.Once

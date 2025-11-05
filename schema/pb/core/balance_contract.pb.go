@@ -1136,8 +1136,8 @@ const file_core_balance_contract_proto_rawDesc = "" +
 	"\abalance\x18\x03 \x01(\x03R\abalance\x12)\n" +
 	"\x10receiver_address\x18\x04 \x01(\fR\x0freceiverAddress\"B\n" +
 	"\x1bCancelAllUnfreezeV2Contract\x12#\n" +
-	"\rowner_address\x18\x01 \x01(\fR\fownerAddressB\x88\x01\n" +
-	"\fcom.protocolB\x14BalanceContractProtoP\x01Z\"github.com/sxwebdev/gotron/pb/core\xa2\x02\x03PXX\xaa\x02\bProtocol\xca\x02\bProtocol\xe2\x02\x14Protocol\\GPBMetadata\xea\x02\bProtocolb\x06proto3"
+	"\rowner_address\x18\x01 \x01(\fR\fownerAddressB\x8f\x01\n" +
+	"\fcom.protocolB\x14BalanceContractProtoP\x01Z)github.com/sxwebdev/gotron/schema/pb/core\xa2\x02\x03PXX\xaa\x02\bProtocol\xca\x02\bProtocol\xe2\x02\x14Protocol\\GPBMetadata\xea\x02\bProtocolb\x06proto3"
 
 var (
 	file_core_balance_contract_proto_rawDescOnce sync.Once

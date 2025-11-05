@@ -98,8 +98,8 @@ const file_core_vote_asset_contract_proto_rawDesc = "" +
 	"\rowner_address\x18\x01 \x01(\fR\fownerAddress\x12!\n" +
 	"\fvote_address\x18\x02 \x03(\fR\vvoteAddress\x12\x18\n" +
 	"\asupport\x18\x03 \x01(\bR\asupport\x12\x14\n" +
-	"\x05count\x18\x05 \x01(\x05R\x05countB\x8a\x01\n" +
-	"\fcom.protocolB\x16VoteAssetContractProtoP\x01Z\"github.com/sxwebdev/gotron/pb/core\xa2\x02\x03PXX\xaa\x02\bProtocol\xca\x02\bProtocol\xe2\x02\x14Protocol\\GPBMetadata\xea\x02\bProtocolb\x06proto3"
+	"\x05count\x18\x05 \x01(\x05R\x05countB\x91\x01\n" +
+	"\fcom.protocolB\x16VoteAssetContractProtoP\x01Z)github.com/sxwebdev/gotron/schema/pb/core\xa2\x02\x03PXX\xaa\x02\bProtocol\xca\x02\bProtocol\xe2\x02\x14Protocol\\GPBMetadata\xea\x02\bProtocolb\x06proto3"
 
 var (
 	file_core_vote_asset_contract_proto_rawDescOnce sync.Once

@@ -570,8 +570,8 @@ const file_core_asset_issue_contract_proto_rawDesc = "" +
 	"to_address\x18\x02 \x01(\fR\ttoAddress\x12\x1d\n" +
 	"\n" +
 	"asset_name\x18\x03 \x01(\fR\tassetName\x12\x16\n" +
-	"\x06amount\x18\x04 \x01(\x03R\x06amountB\x8b\x01\n" +
-	"\fcom.protocolB\x17AssetIssueContractProtoP\x01Z\"github.com/sxwebdev/gotron/pb/core\xa2\x02\x03PXX\xaa\x02\bProtocol\xca\x02\bProtocol\xe2\x02\x14Protocol\\GPBMetadata\xea\x02\bProtocolb\x06proto3"
+	"\x06amount\x18\x04 \x01(\x03R\x06amountB\x92\x01\n" +
+	"\fcom.protocolB\x17AssetIssueContractProtoP\x01Z)github.com/sxwebdev/gotron/schema/pb/core\xa2\x02\x03PXX\xaa\x02\bProtocol\xca\x02\bProtocol\xe2\x02\x14Protocol\\GPBMetadata\xea\x02\bProtocolb\x06proto3"
 
 var (
 	file_core_asset_issue_contract_proto_rawDescOnce sync.Once

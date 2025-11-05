@@ -8016,8 +8016,8 @@ const file_core_Tron_proto_rawDesc = "" +
 	"\rBELOW_THAN_ME\x10$\x12\x0f\n" +
 	"\vNOT_WITNESS\x10%\x12\x13\n" +
 	"\x0fNO_SUCH_MESSAGE\x10&\x12\f\n" +
-	"\aUNKNOWN\x10\xff\x01B}\n" +
-	"\fcom.protocolB\tTronProtoP\x01Z\"github.com/sxwebdev/gotron/pb/core\xa2\x02\x03PXX\xaa\x02\bProtocol\xca\x02\bProtocol\xe2\x02\x14Protocol\\GPBMetadata\xea\x02\bProtocolb\x06proto3"
+	"\aUNKNOWN\x10\xff\x01B\x84\x01\n" +
+	"\fcom.protocolB\tTronProtoP\x01Z)github.com/sxwebdev/gotron/schema/pb/core\xa2\x02\x03PXX\xaa\x02\bProtocol\xca\x02\bProtocol\xe2\x02\x14Protocol\\GPBMetadata\xea\x02\bProtocolb\x06proto3"
 
 var (
 	file_core_Tron_proto_rawDescOnce sync.Once

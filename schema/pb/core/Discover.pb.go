@@ -412,8 +412,8 @@ const file_core_Discover_proto_rawDesc = "" +
 	"\ttimestamp\x18\x03 \x01(\x03R\ttimestamp\"?\n" +
 	"\rBackupMessage\x12\x12\n" +
 	"\x04flag\x18\x01 \x01(\bR\x04flag\x12\x1a\n" +
-	"\bpriority\x18\x02 \x01(\x05R\bpriorityB\x81\x01\n" +
-	"\fcom.protocolB\rDiscoverProtoP\x01Z\"github.com/sxwebdev/gotron/pb/core\xa2\x02\x03PXX\xaa\x02\bProtocol\xca\x02\bProtocol\xe2\x02\x14Protocol\\GPBMetadata\xea\x02\bProtocolb\x06proto3"
+	"\bpriority\x18\x02 \x01(\x05R\bpriorityB\x88\x01\n" +
+	"\fcom.protocolB\rDiscoverProtoP\x01Z)github.com/sxwebdev/gotron/schema/pb/core\xa2\x02\x03PXX\xaa\x02\bProtocol\xca\x02\bProtocol\xe2\x02\x14Protocol\\GPBMetadata\xea\x02\bProtocolb\x06proto3"
 
 var (
 	file_core_Discover_proto_rawDescOnce sync.Once
