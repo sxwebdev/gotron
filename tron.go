@@ -54,6 +54,11 @@ const (
 	Energy    = resources.Energy
 )
 
+// Constants
+const (
+	TRXDecimals = client.TRXDecimals
+)
+
 // Tron is the high-level Tron blockchain client
 type Tron struct {
 	*client.Client
