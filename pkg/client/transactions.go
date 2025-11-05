@@ -56,7 +56,7 @@ func SignTransaction(rawData []byte, privateKey string) ([]byte, error) {
 }
 
 // Transfer sends TRX from one address to another
-func (t *Client) Transfer(from, to string, amount decimal.Decimal, privateKey string) (string, error) {
+func (c *Client) Transfer(from, to string, amount decimal.Decimal, privateKey string) (string, error) {
 	params := TransactionParams{
 		From:       from,
 		To:         to,

@@ -46,7 +46,7 @@ func (p *TransferTRC20Params) Validate() error {
 }
 
 // TransferTRC20 transfers TRC20 tokens
-func (t *Client) TransferTRC20(contractAddress, from, to string, amount decimal.Decimal, privateKey string, feeLimit int64) (string, error) {
+func (c *Client) TransferTRC20(contractAddress, from, to string, amount decimal.Decimal, privateKey string, feeLimit int64) (string, error) {
 	params := TransferTRC20Params{
 		ContractAddress: contractAddress,
 		From:            from,

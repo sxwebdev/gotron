@@ -77,7 +77,7 @@ func (p *DelegateResourceParams) Validate() error {
 }
 
 // DelegateResource delegates bandwidth or energy to another address
-func (t *Client) DelegateResource(from, to string, balance decimal.Decimal, resourceType ResourceType, privateKey string, lock bool, lockPeriod int64) (string, error) {
+func (c *Client) DelegateResource(from, to string, balance decimal.Decimal, resourceType ResourceType, privateKey string, lock bool, lockPeriod int64) (string, error) {
 	params := DelegateResourceParams{
 		From:         from,
 		To:           to,
@@ -131,7 +131,7 @@ func (p *ReclaimResourceParams) Validate() error {
 }
 
 // ReclaimResource undelegates bandwidth or energy from an address
-func (t *Client) ReclaimResource(from, to string, balance decimal.Decimal, resourceType ResourceType, privateKey string) (string, error) {
+func (c *Client) ReclaimResource(from, to string, balance decimal.Decimal, resourceType ResourceType, privateKey string) (string, error) {
 	params := ReclaimResourceParams{
 		From:         from,
 		To:           to,

@@ -8,12 +8,15 @@ import (
 
 	"github.com/shopspring/decimal"
 	"github.com/sxwebdev/gotron/pkg/utils"
+	"github.com/sxwebdev/gotron/schema/pb/api"
+	"github.com/sxwebdev/gotron/schema/pb/core"
 	pbtron "github.com/sxwebdev/gotron/schema/pb/core"
+	"google.golang.org/protobuf/proto"
 )
 
 var ErrAccountNotFound = errors.New("account not found")
 
-func (t *Client) GetAccount(ctx context.Context, addr string) (*pbtron.Account, error) {
+func (c *Client) GetAccount(ctx context.Context, addr string) (*pbtron.Account, error) {
 	if addr == "" {
 		return nil, ErrEmptyAddress
 	}
@@ -26,7 +29,7 @@ func (t *Client) GetAccount(ctx context.Context, addr string) (*pbtron.Account, 
 		return nil, err
 	}
 
-	acc, err := t.walletClient.GetAccount(ctx, account)
+	acc, err := c.walletClient.GetAccount(ctx, account)
 	if err != nil {
 		return nil, err
 	}
@@ -39,8 +42,8 @@ func (t *Client) GetAccount(ctx context.Context, addr string) (*pbtron.Account, 
 }
 
 // GetAccountBalance retrieves the TRX balance of the specified address
-func (t *Client) GetAccountBalance(ctx context.Context, address string) (decimal.Decimal, error) {
-	res, err := t.GetAccount(ctx, address)
+func (c *Client) GetAccountBalance(ctx context.Context, address string) (decimal.Decimal, error) {
+	res, err := c.GetAccount(ctx, address)
 	if err != nil {
 		return decimal.Zero, err
 	}
@@ -51,4 +54,46 @@ func (t *Client) GetAccountBalance(ctx context.Context, address string) (decimal
 	}
 
 	return balance, nil
+}
+
+// IsAccountActivated checks if the account with the given address is activated
+func (c *Client) IsAccountActivated(ctx context.Context, address string) (bool, error) {
+	_, err := c.GetAccount(ctx, address)
+	if err != nil {
+		if errors.Is(err, ErrAccountNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	return true, nil
+}
+
+// CreateAccount creates a new account on the blockchain.
+func (c *Client) CreateAccount(ctx context.Context, from, addr string) (*api.TransactionExtention, error) {
+	var err error
+
+	contract := &core.AccountCreateContract{}
+	if contract.OwnerAddress, err = utils.DecodeCheck(from); err != nil {
+		return nil, err
+	}
+
+	if contract.AccountAddress, err = utils.DecodeCheck(addr); err != nil {
+		return nil, err
+	}
+
+	tx, err := c.walletClient.CreateAccount2(ctx, contract)
+	if err != nil {
+		return nil, err
+	}
+
+	if proto.Size(tx) == 0 {
+		return nil, ErrInvalidTransaction
+	}
+
+	if tx.GetResult().GetCode() != 0 {
+		return nil, fmt.Errorf("%s", tx.GetResult().GetMessage())
+	}
+
+	return tx, nil
 }
