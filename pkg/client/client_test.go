@@ -29,11 +29,10 @@ func TestGetNowBlock(t *testing.T) {
 	c, err := initClient()
 	require.NoError(t, err)
 
-	block, err := c.GetLastBlock(context.Background())
+	number, err := c.GetLastBlockHeight(context.Background())
 	require.NoError(t, err)
-	require.NotNil(t, block)
 
-	fmt.Println(block.BlockHeader.RawData.Number)
+	fmt.Println(number)
 }
 
 func TestGetAccount(t *testing.T) {

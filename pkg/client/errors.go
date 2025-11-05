@@ -7,6 +7,7 @@ var (
 	ErrInvalidConfig = errors.New("invalid client configuration")
 	ErrNotConnected  = errors.New("client not connected")
 	ErrInvalidParams = errors.New("invalid parameters")
+	ErrNilResponse   = errors.New("nil response from server")
 
 	// Address errors
 	ErrInvalidAddress = errors.New("invalid address")
