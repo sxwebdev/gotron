@@ -1,26 +1,27 @@
-package gotron
+package client_test
 
 import (
 	"context"
 	"fmt"
 	"testing"
-	"time"
 
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
+	"github.com/sxwebdev/gotron/pkg/client"
 )
 
-func initClient() (*Tron, error) {
+func initClient() (*client.Client, error) {
 	// Initialize the Tron client for testing
-	cfg := &Config{
+	cfg := client.Config{
 		GRPCAddress: "tron-grpc.publicnode.com:443",
 		UseTLS:      true,
-		Timeout:     10 * time.Second,
 	}
-	client, err := New(cfg)
+
+	client, err := client.New(cfg)
 	if err != nil {
 		return nil, err
 	}
+
 	return client, nil
 }
 
@@ -28,7 +29,7 @@ func TestGetNowBlock(t *testing.T) {
 	c, err := initClient()
 	require.NoError(t, err)
 
-	block, err := c.GetNowBlock(context.Background())
+	block, err := c.GetLastBlock(context.Background())
 	require.NoError(t, err)
 	require.NotNil(t, block)
 

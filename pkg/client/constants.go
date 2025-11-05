@@ -1,3 +1,3 @@
-package gotron
+package client
 
 const TRXDecimals = 6
