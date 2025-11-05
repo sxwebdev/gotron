@@ -74,8 +74,8 @@ func (c *Client) GetBlockByHash(ctx context.Context, hash []byte) (*core.Block, 
 	return result, nil
 }
 
-// GetBlockInfoByHeight returns block info by its number.
-func (c *Client) GetBlockInfoByHeight(ctx context.Context, number uint64) (*api.TransactionInfoList, error) {
+// GetTransactionInfoByBlockNum returns transaction info list by block number.
+func (c *Client) GetTransactionInfoByBlockNum(ctx context.Context, number uint64) (*api.TransactionInfoList, error) {
 	req := &api.NumberMessage{
 		Num: int64(number),
 	}
@@ -93,7 +93,7 @@ func (c *Client) GetBlockInfoByHeight(ctx context.Context, number uint64) (*api.
 }
 
 // GetBlockByLimitNext returns blocks in the range [start, start+limit).
-func (c *Client) GetBlockByLimitNext(ctx context.Context, start uint64, end uint64) (*api.BlockListExtention, error) {
+func (c *Client) GetBlockByLimitNext2(ctx context.Context, start uint64, end uint64) (*api.BlockListExtention, error) {
 	req := &api.BlockLimit{
 		StartNum: int64(start),
 		EndNum:   int64(end),
@@ -112,7 +112,7 @@ func (c *Client) GetBlockByLimitNext(ctx context.Context, start uint64, end uint
 }
 
 // GetBlockByLatestNum returns the latest 'num' blocks.
-func (c *Client) GetBlockByLatestNum(ctx context.Context, height uint64) (*api.BlockListExtention, error) {
+func (c *Client) GetBlockByLatestNum2(ctx context.Context, height uint64) (*api.BlockListExtention, error) {
 	req := &api.NumberMessage{
 		Num: int64(height),
 	}

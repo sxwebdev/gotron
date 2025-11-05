@@ -1,65 +1,60 @@
 package client
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/shopspring/decimal"
+	"github.com/sxwebdev/gotron/pkg/utils"
+	"github.com/sxwebdev/gotron/schema/pb/api"
+	"github.com/sxwebdev/gotron/schema/pb/core"
+	"google.golang.org/protobuf/proto"
 )
 
-// TransferTRC20Params represents parameters for a TRC20 token transfer
-type TransferTRC20Params struct {
-	ContractAddress string
-	From            string
-	To              string
-	Amount          decimal.Decimal
-	PrivateKey      string
-	FeeLimit        int64 // Maximum TRX to spend on energy (in SUN)
-}
-
-// Validate validates the transfer parameters
-func (p *TransferTRC20Params) Validate() error {
-	if p.ContractAddress == "" {
-		return fmt.Errorf("%w: contract address is required", ErrInvalidAddress)
+// CreateTransferTransaction creates a TRX transfer transaction
+//
+// Important! The amount is specified in TRX.
+func (c *Client) CreateTransferTransaction(ctx context.Context, from, to string, amount decimal.Decimal) (*api.TransactionExtention, error) {
+	if from == "" {
+		return nil, fmt.Errorf("%w: from address is required", ErrInvalidAddress)
 	}
 
-	if p.From == "" {
-		return fmt.Errorf("%w: from address is required", ErrInvalidAddress)
+	if to == "" {
+		return nil, fmt.Errorf("%w: to address is required", ErrInvalidAddress)
 	}
 
-	if p.To == "" {
-		return fmt.Errorf("%w: to address is required", ErrInvalidAddress)
+	if amount.LessThanOrEqual(decimal.Zero) {
+		return nil, fmt.Errorf("%w: amount must be greater than zero", ErrInvalidAmount)
 	}
 
-	if p.Amount.LessThanOrEqual(decimal.Zero) {
-		return fmt.Errorf("%w: amount must be greater than zero", ErrInvalidAmount)
+	// Convert TRX to SUN
+	amount = amount.Mul(decimal.NewFromInt(1e6))
+
+	var err error
+	contract := &core.TransferContract{}
+	if contract.OwnerAddress, err = utils.DecodeCheck(from); err != nil {
+		return nil, err
 	}
 
-	if p.PrivateKey == "" {
-		return fmt.Errorf("%w: private key is required", ErrInvalidParams)
+	if contract.ToAddress, err = utils.DecodeCheck(to); err != nil {
+		return nil, err
 	}
 
-	if p.FeeLimit <= 0 {
-		return fmt.Errorf("%w: fee limit must be greater than zero", ErrInvalidParams)
+	contract.Amount = amount.IntPart()
+
+	// Create the transaction
+	tx, err := c.walletClient.CreateTransaction2(ctx, contract)
+	if err != nil {
+		return nil, err
 	}
 
-	return nil
-}
-
-// TransferTRC20 transfers TRC20 tokens
-func (c *Client) TransferTRC20(contractAddress, from, to string, amount decimal.Decimal, privateKey string, feeLimit int64) (string, error) {
-	params := TransferTRC20Params{
-		ContractAddress: contractAddress,
-		From:            from,
-		To:              to,
-		Amount:          amount,
-		PrivateKey:      privateKey,
-		FeeLimit:        feeLimit,
+	if proto.Size(tx) == 0 {
+		return nil, ErrInvalidTransaction
 	}
 
-	if err := params.Validate(); err != nil {
-		return "", err
+	if tx.GetResult().GetCode() != 0 {
+		return nil, fmt.Errorf("%s", tx.GetResult().GetMessage())
 	}
 
-	// TODO: Implement actual TRC20 transfer
-	return "", nil
+	return tx, nil
 }

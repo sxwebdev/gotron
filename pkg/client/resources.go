@@ -6,36 +6,6 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// ResourceType represents the type of resource to delegate
-type ResourceType int32
-
-const (
-	// ResourceTypeBandwidth represents bandwidth resource
-	ResourceTypeBandwidth ResourceType = 0
-	// ResourceTypeEnergy represents energy resource
-	ResourceTypeEnergy ResourceType = 1
-)
-
-// Validate validates the resource type
-func (r ResourceType) Validate() error {
-	if r != ResourceTypeBandwidth && r != ResourceTypeEnergy {
-		return fmt.Errorf("%w: must be Bandwidth or Energy", ErrInvalidResourceType)
-	}
-	return nil
-}
-
-// String returns the string representation of the resource type
-func (r ResourceType) String() string {
-	switch r {
-	case ResourceTypeBandwidth:
-		return "BANDWIDTH"
-	case ResourceTypeEnergy:
-		return "ENERGY"
-	default:
-		return "UNKNOWN"
-	}
-}
-
 // DelegateResourceParams represents parameters for resource delegation
 type DelegateResourceParams struct {
 	From         string

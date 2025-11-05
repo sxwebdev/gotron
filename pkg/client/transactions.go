@@ -1,73 +1,125 @@
 package client
 
 import (
+	"bytes"
+	"context"
+	"crypto/ecdsa"
+	"crypto/sha256"
 	"fmt"
 
-	"github.com/shopspring/decimal"
-	"github.com/sxwebdev/gotron/pkg/crypto"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/sxwebdev/gotron/pkg/utils"
+	"github.com/sxwebdev/gotron/schema/pb/api"
+	"github.com/sxwebdev/gotron/schema/pb/core"
+	"google.golang.org/protobuf/proto"
 )
 
-// TransactionParams represents parameters for a TRX transfer
-type TransactionParams struct {
-	From       string
-	To         string
-	Amount     decimal.Decimal
-	PrivateKey string
+// GetTransactionByHash returns transaction details by hash
+func (c *Client) GetTransactionByHash(ctx context.Context, hash string) (*core.Transaction, error) {
+	transactionID := new(api.BytesMessage)
+	var err error
+
+	transactionID.Value, err = utils.FromHex(hash)
+	if err != nil {
+		return nil, fmt.Errorf("get transaction by hash error: %v", err)
+	}
+
+	tx, err := c.walletClient.GetTransactionById(ctx, transactionID)
+	if err != nil {
+		return nil, err
+	}
+	if size := proto.Size(tx); size > 0 {
+		return tx, nil
+	}
+	return nil, ErrTransactionNotFound
 }
 
-// Validate validates the transfer parameters
-func (p *TransactionParams) Validate() error {
-	if p.From == "" {
-		return fmt.Errorf("%w: from address is required", ErrInvalidAddress)
+// GetTransactionInfoByHash returns transaction receipt by hash
+func (c *Client) GetTransactionInfoByHash(ctx context.Context, hash string) (*core.TransactionInfo, error) {
+	transactionID := new(api.BytesMessage)
+	var err error
+
+	transactionID.Value, err = utils.FromHex(hash)
+	if err != nil {
+		return nil, fmt.Errorf("get transaction by hash error: %v", err)
 	}
 
-	if p.To == "" {
-		return fmt.Errorf("%w: to address is required", ErrInvalidAddress)
+	txi, err := c.walletClient.GetTransactionInfoById(ctx, transactionID)
+	if err != nil {
+		return nil, err
+	}
+	if bytes.Equal(txi.Id, transactionID.Value) {
+		return txi, nil
+	}
+	return nil, ErrTransactionInfoNotFound
+}
+
+func (c *Client) GetTransactionExtensionByHash(ctx context.Context, hash string) (*api.TransactionExtention, *core.TransactionInfo, error) {
+	// Get transaction info
+	txi, err := c.GetTransactionInfoByHash(ctx, hash)
+	if err != nil {
+		return nil, nil, err
 	}
 
-	if p.Amount.LessThanOrEqual(decimal.Zero) {
-		return fmt.Errorf("%w: amount must be greater than zero", ErrInvalidAmount)
+	// get block by height
+	block, err := c.GetBlockByHeight(ctx, uint64(txi.GetBlockNumber()))
+	if err != nil {
+		return nil, nil, err
 	}
 
-	if p.PrivateKey == "" {
-		return fmt.Errorf("%w: private key is required", ErrInvalidPrivateKey)
+	// find transaction in block
+	var tx *api.TransactionExtention
+	for _, item := range block.GetTransactions() {
+		if bytes.Equal(item.GetTxid(), txi.GetId()) {
+			tx = item
+			break
+		}
 	}
 
-	return nil
+	if tx == nil {
+		return nil, nil, fmt.Errorf("can not find tx %s in block %d", hash, txi.GetBlockNumber())
+	}
+
+	return tx, txi, nil
+}
+
+// BroadcastTransaction broadcasts a signed transaction to the network
+func (c *Client) BroadcastTransaction(ctx context.Context, tx *core.Transaction) (*api.Return, error) {
+	result, err := c.walletClient.BroadcastTransaction(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	if !result.GetResult() {
+		return result, fmt.Errorf("result error: %s", result.GetMessage())
+	}
+	if result.GetCode() != api.Return_SUCCESS {
+		return result, fmt.Errorf("result error(%s): %s", result.GetCode(), result.GetMessage())
+	}
+	return result, nil
 }
 
 // SignTransaction signs a raw transaction with the given private key
-// Note: This is a placeholder. Full implementation requires proto definitions.
-func SignTransaction(rawData []byte, privateKey string) ([]byte, error) {
-	if len(rawData) == 0 {
-		return nil, ErrInvalidTransaction
+func (c *Client) SignTransaction(tx *core.Transaction, privateKey *ecdsa.PrivateKey) error {
+	if tx == nil {
+		return fmt.Errorf("empty tron tx")
 	}
 
-	if privateKey == "" {
-		return nil, ErrInvalidPrivateKey
-	}
-
-	signature, err := crypto.SignData(rawData, privateKey)
+	rawData, err := proto.Marshal(tx.GetRawData())
 	if err != nil {
-		return nil, fmt.Errorf("failed to sign transaction: %w", err)
+		return err
 	}
 
-	return signature, nil
-}
-
-// Transfer sends TRX from one address to another
-func (c *Client) Transfer(from, to string, amount decimal.Decimal, privateKey string) (string, error) {
-	params := TransactionParams{
-		From:       from,
-		To:         to,
-		Amount:     amount,
-		PrivateKey: privateKey,
+	h256h := sha256.New()
+	if _, err := h256h.Write(rawData); err != nil {
+		return err
 	}
 
-	if err := params.Validate(); err != nil {
-		return "", err
+	signature, err := crypto.Sign(h256h.Sum(nil), privateKey)
+	if err != nil {
+		return err
 	}
 
-	// TODO: Implement actual transaction creation and broadcasting
-	return "", nil
+	tx.Signature = append(tx.Signature, signature)
+
+	return nil
 }

@@ -55,7 +55,8 @@ const (
 
 // Constants
 const (
-	TRXDecimals = client.TRXDecimals
+	TRXDecimals                 = client.TRXDecimals
+	Trc20TransferEventSignature = client.Trc20TransferEventSignature
 )
 
 // Tron is the high-level Tron blockchain client

@@ -3,10 +3,8 @@ package client
 
 import (
 	"crypto/tls"
-	"errors"
 	"fmt"
 
-	"github.com/shopspring/decimal"
 	"github.com/sxwebdev/gotron/schema/pb/api"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -70,72 +68,7 @@ func (c *Client) GetNetwork() Network {
 	return c.config.Network
 }
 
-// IsConnected returns true if the client is connected
-func (c *Client) IsConnected() bool {
-	return c.conn != nil
-}
-
-// GetBalance retrieves the TRX balance for an address
-// Returns the balance in SUN (1 TRX = 1,000,000 SUN)
-func (c *Client) GetBalance(address string) (decimal.Decimal, error) {
-	if !c.IsConnected() {
-		return decimal.Zero, ErrNotConnected
-	}
-
-	if address == "" {
-		return decimal.Zero, ErrEmptyAddress
-	}
-
-	// TODO: Implement actual gRPC call to get account
-	// This requires proto definitions from tronprotocol/protocol
-	return decimal.Zero, fmt.Errorf("not implemented: requires proto definitions")
-}
-
-// GetTRC20Balance retrieves the TRC20 token balance for an address
-func (c *Client) GetTRC20Balance(contractAddress, ownerAddress string) (decimal.Decimal, error) {
-	if !c.IsConnected() {
-		return decimal.Zero, ErrNotConnected
-	}
-
-	if contractAddress == "" {
-		return decimal.Zero, errors.New("contract address is required")
-	}
-
-	if ownerAddress == "" {
-		return decimal.Zero, errors.New("owner address is required")
-	}
-
-	// TODO: Implement actual contract call
-	// This requires proto definitions and ABI encoding
-	return decimal.Zero, fmt.Errorf("not implemented: requires proto definitions and ABI")
-}
-
-// IsActivated checks if an address is activated on the network
-func (c *Client) IsActivated(address string) (bool, error) {
-	if !c.IsConnected() {
-		return false, ErrNotConnected
-	}
-
-	if address == "" {
-		return false, ErrEmptyAddress
-	}
-
-	// TODO: Implement actual gRPC call
-	// This requires proto definitions from tronprotocol/protocol
-	return false, fmt.Errorf("not implemented: requires proto definitions")
-}
-
-// GetAccountResources retrieves the resource information for an address
-func (c *Client) GetAccountResources(address string) (map[string]interface{}, error) {
-	if !c.IsConnected() {
-		return nil, ErrNotConnected
-	}
-
-	if address == "" {
-		return nil, ErrEmptyAddress
-	}
-
-	// TODO: Implement actual gRPC call
-	// This requires proto definitions from tronprotocol/protocol
-	return nil, fmt.Errorf("not implemented: requires proto definitions")
+// API returns the underlying WalletClient API
+func (c *Client) API() api.WalletClient {
+	return c.walletClient
 }
