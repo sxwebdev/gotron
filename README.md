@@ -4,17 +4,17 @@ A comprehensive Go SDK for the Tron blockchain. This library provides a complete
 
 ## Features
 
-- ✅ **Complete gRPC Client** - Full implementation of Tron Wallet API
-- ✅ **Address Management** - BIP39/BIP44 mnemonic support, address generation and validation
-- ✅ **Transaction Handling** - Create, sign, and broadcast transactions
-- ✅ **TRC20 Token Support** - Transfer, approve, balance queries, token info
-- ✅ **Resource Management** - Delegate/undelegate bandwidth and energy
-- ✅ **Account Operations** - Balance queries, account info, activation
-- ✅ **Block & Transaction Queries** - Get blocks, transactions, and receipts
-- ✅ **Multi-Network Support** - Mainnet, Shasta testnet, Nile testnet
-- ✅ **Precision Arithmetic** - Uses `decimal.Decimal` for accurate calculations
-- ✅ **Type Safety** - Full type definitions with validation
-- ✅ **Native Implementation** - Built on official Tron protocol buffers
+- **Complete gRPC Client** - Full implementation of Tron Wallet API
+- **Address Management** - BIP39/BIP44 mnemonic support, address generation and validation
+- **Transaction Handling** - Create, sign, and broadcast transactions
+- **TRC20 Token Support** - Transfer, approve, balance queries, token info
+- **Resource Management** - Delegate/undelegate bandwidth and energy
+- **Account Operations** - Balance queries, account info, activation
+- **Block & Transaction Queries** - Get blocks, transactions, and receipts
+- **Multi-Network Support** - Mainnet, Shasta testnet, Nile testnet
+- **Precision Arithmetic** - Uses `decimal.Decimal` for accurate calculations
+- **Type Safety** - Full type definitions with validation
+- **Native Implementation** - Built on official Tron protocol buffers
 
 ## Installation
 
