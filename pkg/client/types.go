@@ -1,6 +1,11 @@
 package client
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/shopspring/decimal"
+	"github.com/sxwebdev/gotron/schema/pb/core"
+)
 
 // Network represents the Tron network type
 type Network string
@@ -57,4 +62,24 @@ func (r ResourceType) String() string {
 	default:
 		return "UNKNOWN"
 	}
+}
+
+// ToProto converts the resource type to its protobuf representation
+func (r ResourceType) ToProto() core.ResourceCode {
+	switch r {
+	case ResourceTypeBandwidth:
+		return core.ResourceCode_BANDWIDTH
+	case ResourceTypeEnergy:
+		return core.ResourceCode_ENERGY
+	default:
+		return -1
+	}
+}
+
+// Resources represents the resources of an account
+type Resources struct {
+	Energy         decimal.Decimal `json:"energy"`
+	Bandwidth      decimal.Decimal `json:"bandwidth"`
+	TotalEnergy    decimal.Decimal `json:"total_energy"`
+	TotalBandwidth decimal.Decimal `json:"total_bandwidth"`
 }

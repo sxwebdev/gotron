@@ -55,7 +55,7 @@ const (
 
 // Constants
 const (
-	TRXDecimals                 = client.TRXDecimals
+	TrxDecimals                 = client.TrxDecimals
 	Trc20TransferEventSignature = client.Trc20TransferEventSignature
 )
 

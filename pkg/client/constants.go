@@ -1,3 +1,6 @@
 package client
 
-const TRXDecimals = 6
+const (
+	TrxDecimals        = 6
+	TrxAssetIdentifier = "trx"
+)
