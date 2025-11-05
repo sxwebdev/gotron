@@ -27,7 +27,7 @@ func (t *Tron) GetAccount(ctx context.Context, addr string) (*pbtron.Account, er
 		return nil, err
 	}
 
-	acc, err := t.tronClient.GetAccount(ctx, account)
+	acc, err := t.walletClient.GetAccount(ctx, account)
 	if err != nil {
 		return nil, err
 	}

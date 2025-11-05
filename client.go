@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/shopspring/decimal"
-	pbtronapi "github.com/sxwebdev/gotron/pb/api"
+	"github.com/sxwebdev/gotron/pb/api"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -54,7 +54,7 @@ type Client struct {
 	conn   *grpc.ClientConn
 	config *Config
 
-	tronClient pbtronapi.WalletClient
+	walletClient api.WalletClient
 }
 
 // New creates a new Tron client with the given configuration
@@ -76,7 +76,7 @@ func newClient(cfg *Config) (*Client, error) {
 		return nil, fmt.Errorf("failed to connect: %w", err)
 	}
 
-	client.tronClient = pbtronapi.NewWalletClient(client.conn)
+	client.walletClient = api.NewWalletClient(client.conn)
 
 	return client, nil
 }
