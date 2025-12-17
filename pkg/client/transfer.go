@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/shopspring/decimal"
-	"github.com/sxwebdev/gotron/pkg/utils"
+	"github.com/sxwebdev/gotron/pkg/tronutils"
 	"github.com/sxwebdev/gotron/schema/pb/api"
 	"github.com/sxwebdev/gotron/schema/pb/core"
 	"google.golang.org/protobuf/proto"
@@ -32,11 +32,11 @@ func (c *Client) CreateTransferTransaction(ctx context.Context, from, to string,
 
 	var err error
 	contract := &core.TransferContract{}
-	if contract.OwnerAddress, err = utils.DecodeCheck(from); err != nil {
+	if contract.OwnerAddress, err = tronutils.DecodeCheck(from); err != nil {
 		return nil, err
 	}
 
-	if contract.ToAddress, err = utils.DecodeCheck(to); err != nil {
+	if contract.ToAddress, err = tronutils.DecodeCheck(to); err != nil {
 		return nil, err
 	}
 

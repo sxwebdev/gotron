@@ -1,4 +1,4 @@
-package utils
+package tronutils
 
 import (
 	"crypto/sha256"
@@ -9,7 +9,6 @@ import (
 
 const (
 	addressLength = 20
-	prefixMainnet = 0x41
 )
 
 func Encode(input []byte) string {
@@ -51,7 +50,7 @@ func DecodeCheck(input string) ([]byte, error) {
 	}
 
 	// check prefix
-	if decodeCheck[0] != prefixMainnet {
+	if decodeCheck[0] != TronBytePrefix {
 		return nil, fmt.Errorf("invalid prefix")
 	}
 

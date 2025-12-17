@@ -30,33 +30,33 @@ go get github.com/sxwebdev/gotron
 package main
 
 import (
-    "context"
-    "fmt"
-    "log"
+  "context"
+  "fmt"
+  "log"
 
-    "github.com/sxwebdev/gotron"
+  "github.com/sxwebdev/gotron"
 )
 
 func main() {
-    // Create client with default mainnet configuration
-    cfg := gotron.Config{
-        GRPCAddress: "your-custom-node-grpc-address:50051",
-    }
+  // Create client with default mainnet configuration
+  cfg := gotron.Config{
+    GRPCAddress: "your-custom-node-grpc-address:50051",
+  }
 
-    tron, err := gotron.New(cfg)
-    if err != nil {
-        log.Fatal(err)
-    }
-    defer tron.Close()
+  tron, err := gotron.New(cfg)
+  if err != nil {
+    log.Fatal(err)
+  }
+  defer tron.Close()
 
-    ctx := context.Background()
+  ctx := context.Background()
 
-    // Get account balance (in TRX)
-    balance, err := tron.GetAccountBalance(ctx, "TYourAddress")
-    if err != nil {
-        log.Fatal(err)
-    }
-    fmt.Printf("Balance: %s TRX\n", balance.String())
+  // Get account balance (in TRX)
+  balance, err := tron.GetAccountBalance(ctx, "TYourAddress")
+  if err != nil {
+    log.Fatal(err)
+  }
+  fmt.Printf("Balance: %s TRX\n", balance.String())
 }
 ```
 
@@ -68,13 +68,13 @@ import "github.com/sxwebdev/gotron/pkg/address"
 // Generate a new 12-word mnemonic
 mnemonic, err := address.GenerateMnemonic(128)
 if err != nil {
-    log.Fatal(err)
+  log.Fatal(err)
 }
 
 // Derive address from mnemonic (BIP44 path: m/44'/195'/0'/0/0)
 addr, err := address.FromMnemonic(mnemonic, "", 0)
 if err != nil {
-    log.Fatal(err)
+  log.Fatal(err)
 }
 
 fmt.Printf("Address: %s\n", addr.Address)
@@ -84,13 +84,13 @@ fmt.Printf("Mnemonic: %s\n", addr.Mnemonic)
 // Generate random address
 randomAddr, err := address.Generate()
 if err != nil {
-    log.Fatal(err)
+  log.Fatal(err)
 }
 
 // Import from private key
 importedAddr, err := address.FromPrivateKey("your-hex-private-key")
 if err != nil {
-    log.Fatal(err)
+  log.Fatal(err)
 }
 ```
 
@@ -98,40 +98,40 @@ if err != nil {
 
 ```go
 import (
-    "context"
-    "github.com/shopspring/decimal"
-    "github.com/sxwebdev/gotron/pkg/address"
+  "context"
+  "github.com/shopspring/decimal"
+  "github.com/sxwebdev/gotron/pkg/address"
 )
 
 ctx := context.Background()
 
 // Create transfer transaction (amount in TRX)
 tx, err := tron.CreateTransferTransaction(
-    ctx,
-    "TFromAddress",
-    "TToAddress",
-    decimal.NewFromFloat(1.5), // 1.5 TRX
+  ctx,
+  "TFromAddress",
+  "TToAddress",
+  decimal.NewFromFloat(1.5), // 1.5 TRX
 )
 if err != nil {
-    log.Fatal(err)
+  log.Fatal(err)
 }
 
 // Import private key
 privateKey, err := address.PrivateKeyFromHex("your-hex-private-key")
 if err != nil {
-    log.Fatal(err)
+  log.Fatal(err)
 }
 
 // Sign transaction
 err = tron.SignTransaction(tx.Transaction, privateKey)
 if err != nil {
-    log.Fatal(err)
+  log.Fatal(err)
 }
 
 // Broadcast transaction
 result, err := tron.BroadcastTransaction(ctx, tx.Transaction)
 if err != nil {
-    log.Fatal(err)
+  log.Fatal(err)
 }
 
 fmt.Printf("Transaction broadcasted: %s\n", result.Message)
@@ -141,7 +141,7 @@ fmt.Printf("Transaction broadcasted: %s\n", result.Message)
 
 ```go
 const (
-    usdtContract = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t" // USDT on Tron
+  usdtContract = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t" // USDT on Tron
 )
 
 ctx := context.Background()
@@ -162,12 +162,12 @@ fmt.Printf("Balance: %s\n", balance.String())
 
 // Transfer tokens (amount in smallest unit, 1 USDT = 1000000)
 tx, err := tron.TRC20Send(
-    ctx,
-    "TFromAddress",
-    "TToAddress",
-    usdtContract,
-    decimal.NewFromInt(1000000), // 1 USDT
-    100_000_000, // Fee limit in SUN (100 TRX)
+  ctx,
+  "TFromAddress",
+  "TToAddress",
+  usdtContract,
+  decimal.NewFromInt(1000000), // 1 USDT
+  100_000_000, // Fee limit in SUN (100 TRX)
 )
 if err != nil {
     log.Fatal(err)
@@ -188,13 +188,13 @@ ctx := context.Background()
 
 // Delegate 1000 TRX worth of energy to another address
 tx, err := tron.DelegateResource(
-    ctx,
-    "TOwnerAddress",
-    "TReceiverAddress",
-    gotron.Energy,              // Resource type
-    1000_000_000,               // Balance in SUN (1000 TRX)
-    false,                      // Lock
-    0,                          // Lock period
+  ctx,
+  "TOwnerAddress",
+  "TReceiverAddress",
+  gotron.Energy,              // Resource type
+  1000_000_000,               // Balance in SUN (1000 TRX)
+  false,                      // Lock
+  0,                          // Lock period
 )
 if err != nil {
     log.Fatal(err)
@@ -204,11 +204,11 @@ if err != nil {
 
 // Reclaim delegated resources
 reclaimTx, err := tron.ReclaimResource(
-    ctx,
-    "TOwnerAddress",
-    "TReceiverAddress",
-    gotron.Energy,
-    1000_000_000, // Amount in SUN
+  ctx,
+  "TOwnerAddress",
+  "TReceiverAddress",
+  gotron.Energy,
+  1000_000_000, // Amount in SUN
 )
 ```
 
@@ -250,8 +250,9 @@ fmt.Printf("Activation cost: %s TRX\n", estimate.Trx.String())
 // Get account resources
 resources, err := tron.TotalAvailableResources(ctx, "TAddress")
 fmt.Printf("Energy: %s, Bandwidth: %s\n",
-    resources.Energy.String(),
-    resources.Bandwidth.String())
+  resources.Energy.String(),
+  resources.Bandwidth.String(),
+)
 ```
 
 ## Network Configuration
@@ -284,11 +285,11 @@ import (
 )
 
 cfg := client.Config{
-    GRPCAddress: "your-custom-node:50051",
-    UseTLS:      true,
-    DialOptions: []grpc.DialOption{
-        // Add custom dial options here
-    },
+  GRPCAddress: "your-custom-node:50051",
+  UseTLS:      true,
+  DialOptions: []grpc.DialOption{
+      // Add custom dial options here
+  },
 }
 
 tron, err := gotron.New(cfg)
@@ -309,32 +310,38 @@ import (
 
 // Create interceptor that adds TRON-PRO-API-KEY header
 func tronGridAPIKeyInterceptor(apiKey string) grpc.UnaryClientInterceptor {
-    return func(ctx context.Context, method string, req, reply interface{},
-        cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-
-        ctx = metadata.AppendToOutgoingContext(ctx, "TRON-PRO-API-KEY", apiKey)
-        return invoker(ctx, method, req, reply, cc, opts...)
-    }
+  return func(
+    ctx context.Context,
+    method string,
+    req, reply any,
+    cc *grpc.ClientConn,
+    invoker grpc.UnaryInvoker,
+    opts ...grpc.CallOption,
+  ) error {
+    ctx = metadata.AppendToOutgoingContext(ctx, "TRON-PRO-API-KEY", apiKey)
+    return invoker(ctx, method, req, reply, cc, opts...)
+  }
 }
 
 func main() {
-    apiKey := "your-trongrid-api-key"
+  apiKey := "your-trongrid-api-key"
 
-    cfg := client.Config{
-        Network: client.NetworkMainnet,
-        DialOptions: []grpc.DialOption{
-            grpc.WithUnaryInterceptor(tronGridAPIKeyInterceptor(apiKey)),
-        },
-    }
+  cfg := client.Config{
+    Network: client.NetworkMainnet,
+    Address: "grpc.trongrid.io:50051",
+    DialOptions: []grpc.DialOption{
+        grpc.WithUnaryInterceptor(tronGridAPIKeyInterceptor(apiKey)),
+    },
+  }
 
-    tron, err := gotron.New(cfg)
-    if err != nil {
-        log.Fatal(err)
-    }
-    defer tron.Close()
+  tron, err := gotron.New(cfg)
+  if err != nil {
+    log.Fatal(err)
+  }
+  defer tron.Close()
 
-    // All requests will include the API key header
-    balance, err := tron.GetAccountBalance(ctx, "TAddress")
+  // All requests will include the API key header
+  balance, err := tron.GetAccountBalance(ctx, "TAddress")
 }
 ```
 
@@ -388,7 +395,7 @@ import "github.com/sxwebdev/gotron/pkg/client"
 
 _, err := tron.GetAccount(ctx, "invalid-address")
 if errors.Is(err, client.ErrAccountNotFound) {
-    fmt.Println("Account not found")
+  fmt.Println("Account not found")
 }
 
 // Other errors:
@@ -411,17 +418,17 @@ generator := address.NewAddressGenerator(mnemonic, "passphrase")
 
 // Customize BIP44 path
 generator.
-    SetBipPurpose(44).
-    SetCoinType(195).
-    SetAccount(0)
+  SetBipPurpose(44).
+  SetCoinType(195).
+  SetAccount(0)
 
 // Generate multiple addresses
 for i := uint32(0); i < 10; i++ {
-    addr, err := generator.Generate(i)
-    if err != nil {
-        log.Fatal(err)
-    }
-    fmt.Printf("Address %d: %s\n", i, addr.Address)
+  addr, err := generator.Generate(i)
+  if err != nil {
+      log.Fatal(err)
+  }
+  fmt.Printf("Address %d: %s\n", i, addr.Address)
 }
 ```
 

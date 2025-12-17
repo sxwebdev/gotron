@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	"github.com/shopspring/decimal"
-	"github.com/sxwebdev/gotron/pkg/utils"
+	"github.com/sxwebdev/gotron/pkg/tronutils"
 	"github.com/sxwebdev/gotron/schema/pb/api"
 	"github.com/sxwebdev/gotron/schema/pb/core"
 	pbtron "github.com/sxwebdev/gotron/schema/pb/core"
@@ -24,7 +24,7 @@ func (c *Client) GetAccount(ctx context.Context, addr string) (*pbtron.Account, 
 	account := new(pbtron.Account)
 	var err error
 
-	account.Address, err = utils.DecodeCheck(addr)
+	account.Address, err = tronutils.DecodeCheck(addr)
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +48,7 @@ func (c *Client) GetAccountBalance(ctx context.Context, address string) (decimal
 		return decimal.Zero, err
 	}
 
-	balance, err := decimal.NewFromString(utils.FormatPrecisionNumber(res.GetBalance(), TrxDecimals))
+	balance, err := decimal.NewFromString(tronutils.FormatPrecisionNumber(res.GetBalance(), TrxDecimals))
 	if err != nil {
 		return decimal.Zero, fmt.Errorf("convert balance to decimal: %w", err)
 	}
@@ -74,11 +74,11 @@ func (c *Client) CreateAccount(ctx context.Context, from, addr string) (*api.Tra
 	var err error
 
 	contract := &core.AccountCreateContract{}
-	if contract.OwnerAddress, err = utils.DecodeCheck(from); err != nil {
+	if contract.OwnerAddress, err = tronutils.DecodeCheck(from); err != nil {
 		return nil, err
 	}
 
-	if contract.AccountAddress, err = utils.DecodeCheck(addr); err != nil {
+	if contract.AccountAddress, err = tronutils.DecodeCheck(addr); err != nil {
 		return nil, err
 	}
 

@@ -12,7 +12,7 @@ import (
 
 	eABI "github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/sxwebdev/gotron/pkg/utils"
+	"github.com/sxwebdev/gotron/pkg/tronutils"
 	"github.com/sxwebdev/gotron/schema/pb/core"
 	"golang.org/x/crypto/sha3"
 )
@@ -45,7 +45,7 @@ func Signature(method string) []byte {
 func convetToAddress(v interface{}) (common.Address, error) {
 	switch v := v.(type) {
 	case string:
-		addr, err := utils.DecodeCheck(v)
+		addr, err := tronutils.DecodeCheck(v)
 		if err != nil {
 			return common.Address{}, fmt.Errorf("invalid address %s: %+v", v, err)
 		}

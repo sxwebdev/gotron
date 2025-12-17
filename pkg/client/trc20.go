@@ -10,7 +10,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/shopspring/decimal"
-	"github.com/sxwebdev/gotron/pkg/utils"
+	"github.com/sxwebdev/gotron/pkg/tronutils"
 	"github.com/sxwebdev/gotron/schema/pb/api"
 	"github.com/sxwebdev/gotron/schema/pb/core"
 )
@@ -28,23 +28,23 @@ const (
 
 func (c *Client) TRC20Call(ctx context.Context, from, contractAddress, data string, constant bool, feeLimit int64) (*api.TransactionExtention, error) {
 	var err error
-	fromDesc, err := utils.FromHex("410000000000000000000000000000000000000000")
+	fromDesc, err := tronutils.FromHex("410000000000000000000000000000000000000000")
 	if err != nil {
 		return nil, err
 	}
 
 	if len(from) > 0 {
-		fromDesc, err = utils.DecodeCheck(from)
+		fromDesc, err = tronutils.DecodeCheck(from)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	contractDesc, err := utils.DecodeCheck(contractAddress)
+	contractDesc, err := tronutils.DecodeCheck(contractAddress)
 	if err != nil {
 		return nil, err
 	}
-	dataBytes, err := utils.FromHex(data)
+	dataBytes, err := tronutils.FromHex(data)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +74,7 @@ func (c *Client) TRC20GetName(ctx context.Context, contractAddress string) (stri
 	if err != nil {
 		return "", err
 	}
-	data := utils.BytesToHexString(result.GetConstantResult()[0])
+	data := tronutils.BytesToHexString(result.GetConstantResult()[0])
 	return c.ParseTRC20StringProperty(data)
 }
 
@@ -84,7 +84,7 @@ func (c *Client) TRC20GetSymbol(ctx context.Context, contractAddress string) (st
 	if err != nil {
 		return "", err
 	}
-	data := utils.BytesToHexString(result.GetConstantResult()[0])
+	data := tronutils.BytesToHexString(result.GetConstantResult()[0])
 	return c.ParseTRC20StringProperty(data)
 }
 
@@ -94,13 +94,13 @@ func (c *Client) TRC20GetDecimals(ctx context.Context, contractAddress string) (
 	if err != nil {
 		return nil, err
 	}
-	data := utils.BytesToHexString(result.GetConstantResult()[0])
+	data := tronutils.BytesToHexString(result.GetConstantResult()[0])
 	return c.ParseTRC20NumericProperty(data)
 }
 
 // ParseTRC20NumericProperty get number from data
 func (c *Client) ParseTRC20NumericProperty(data string) (*big.Int, error) {
-	if utils.Has0xPrefix(data) {
+	if tronutils.Has0xPrefix(data) {
 		data = data[2:]
 	}
 	if len(data) == 64 {
@@ -120,7 +120,7 @@ func (c *Client) ParseTRC20NumericProperty(data string) (*big.Int, error) {
 
 // ParseTRC20StringProperty get string from data
 func (c *Client) ParseTRC20StringProperty(data string) (string, error) {
-	if utils.Has0xPrefix(data) {
+	if tronutils.Has0xPrefix(data) {
 		data = data[2:]
 	}
 	if len(data) > 128 {
@@ -152,16 +152,16 @@ func (c *Client) ParseTRC20StringProperty(data string) (string, error) {
 
 // TRC20ContractBalance get Address balance
 func (c *Client) TRC20ContractBalance(ctx context.Context, addr, contractAddress string) (*big.Int, error) {
-	addrB, err := utils.DecodeCheck(addr)
+	addrB, err := tronutils.DecodeCheck(addr)
 	if err != nil {
 		return nil, fmt.Errorf("invalid address %s: %v", addr, addr)
 	}
-	req := trc20BalanceOf + "0000000000000000000000000000000000000000000000000000000000000000"[len(utils.BytesToHexString(addrB[:]))-2:] + utils.BytesToHexString(addrB[:])[2:]
+	req := trc20BalanceOf + "0000000000000000000000000000000000000000000000000000000000000000"[len(tronutils.BytesToHexString(addrB[:]))-2:] + tronutils.BytesToHexString(addrB[:])[2:]
 	result, err := c.TRC20Call(ctx, "", contractAddress, req, true, 0)
 	if err != nil {
 		return nil, err
 	}
-	data := utils.BytesToHexString(result.GetConstantResult()[0])
+	data := tronutils.BytesToHexString(result.GetConstantResult()[0])
 	r, err := c.ParseTRC20NumericProperty(data)
 	if err != nil {
 		return nil, fmt.Errorf("contract address %s: %v", contractAddress, err)
@@ -193,29 +193,29 @@ func (c *Client) TRC20Send(ctx context.Context, from, to, contract string, amoun
 		return nil, fmt.Errorf("%w: fee limit must be greater than zero", ErrInvalidParams)
 	}
 
-	addrB, err := utils.DecodeCheck(to)
+	addrB, err := tronutils.DecodeCheck(to)
 	if err != nil {
 		return nil, err
 	}
 	ab := common.LeftPadBytes(amount.BigInt().Bytes(), 32)
-	req := trc20TransferMethodSignature + "0000000000000000000000000000000000000000000000000000000000000000"[len(utils.BytesToHexString(addrB[:]))-4:] + utils.BytesToHexString(addrB[:])[4:]
+	req := trc20TransferMethodSignature + "0000000000000000000000000000000000000000000000000000000000000000"[len(tronutils.BytesToHexString(addrB[:]))-4:] + tronutils.BytesToHexString(addrB[:])[4:]
 	req += common.Bytes2Hex(ab)
 	return c.TRC20Call(ctx, from, contract, req, false, feeLimit)
 }
 
 func (c *Client) TRC20TransferFrom(ctx context.Context, owner, from, to, contract string, amount *big.Int, feeLimit int64) (*api.TransactionExtention, error) {
-	addrA, err := utils.DecodeCheck(from)
+	addrA, err := tronutils.DecodeCheck(from)
 	if err != nil {
 		return nil, err
 	}
-	addrB, err := utils.DecodeCheck(to)
+	addrB, err := tronutils.DecodeCheck(to)
 	if err != nil {
 		return nil, err
 	}
 	ab := common.LeftPadBytes(amount.Bytes(), 32)
 	req := "0x23b872dd" +
-		"0000000000000000000000000000000000000000000000000000000000000000"[len(utils.BytesToHexString(addrA[:]))-4:] + utils.BytesToHexString(addrA[:])[4:] +
-		"0000000000000000000000000000000000000000000000000000000000000000"[len(utils.BytesToHexString(addrB[:]))-4:] + utils.BytesToHexString(addrB[:])[4:]
+		"0000000000000000000000000000000000000000000000000000000000000000"[len(tronutils.BytesToHexString(addrA[:]))-4:] + tronutils.BytesToHexString(addrA[:])[4:] +
+		"0000000000000000000000000000000000000000000000000000000000000000"[len(tronutils.BytesToHexString(addrB[:]))-4:] + tronutils.BytesToHexString(addrB[:])[4:]
 	req += common.Bytes2Hex(ab)
 	return c.TRC20Call(ctx, owner, contract, req, false, feeLimit)
 }
@@ -242,12 +242,12 @@ func (c *Client) TRC20Approve(ctx context.Context, from, to, contract string, am
 		return nil, fmt.Errorf("%w: fee limit must be greater than zero", ErrInvalidParams)
 	}
 
-	addrB, err := utils.DecodeCheck(to)
+	addrB, err := tronutils.DecodeCheck(to)
 	if err != nil {
 		return nil, err
 	}
 	ab := common.LeftPadBytes(amount.BigInt().Bytes(), 32)
-	req := trc20ApproveMethodSignature + "0000000000000000000000000000000000000000000000000000000000000000"[len(utils.BytesToHexString(addrB[:]))-4:] + utils.BytesToHexString(addrB[:])[4:]
+	req := trc20ApproveMethodSignature + "0000000000000000000000000000000000000000000000000000000000000000"[len(tronutils.BytesToHexString(addrB[:]))-4:] + tronutils.BytesToHexString(addrB[:])[4:]
 	req += common.Bytes2Hex(ab)
 	return c.TRC20Call(ctx, from, contract, req, false, feeLimit)
 }

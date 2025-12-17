@@ -6,7 +6,7 @@ import (
 
 	"github.com/shopspring/decimal"
 	"github.com/sxwebdev/gotron/pkg/address"
-	"github.com/sxwebdev/gotron/pkg/utils"
+	"github.com/sxwebdev/gotron/pkg/tronutils"
 	"github.com/sxwebdev/gotron/schema/pb/api"
 	"github.com/sxwebdev/gotron/schema/pb/core"
 	"google.golang.org/protobuf/proto"
@@ -17,7 +17,7 @@ func (c *Client) GetAccountResource(ctx context.Context, addr string) (*api.Acco
 	account := new(core.Account)
 	var err error
 
-	account.Address, err = utils.DecodeCheck(addr)
+	account.Address, err = tronutils.DecodeCheck(addr)
 	if err != nil {
 		return nil, err
 	}
@@ -27,7 +27,7 @@ func (c *Client) GetAccountResource(ctx context.Context, addr string) (*api.Acco
 
 // GetDelegatedResourcesV2 retrieves delegated resources for the specified account address
 func (c *Client) GetDelegatedResources(ctx context.Context, address string) ([]*api.DelegatedResourceList, error) {
-	addrBytes, err := utils.DecodeCheck(address)
+	addrBytes, err := tronutils.DecodeCheck(address)
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +53,7 @@ func (c *Client) GetDelegatedResources(ctx context.Context, address string) ([]*
 
 // GetDelegatedResourcesV2 retrieves delegated resources V2 for the specified account address
 func (c *Client) GetDelegatedResourcesV2(ctx context.Context, address string) ([]*api.DelegatedResourceList, error) {
-	addrBytes, err := utils.DecodeCheck(address)
+	addrBytes, err := tronutils.DecodeCheck(address)
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +80,7 @@ func (c *Client) GetDelegatedResourcesV2(ctx context.Context, address string) ([
 
 // GetCanDelegatedMaxSize retrieves the maximum size that can be delegated for a given resource type
 func (c *Client) GetCanDelegatedMaxSize(ctx context.Context, address string, resource int32) (*api.CanDelegatedMaxSizeResponseMessage, error) {
-	addrBytes, err := utils.DecodeCheck(address)
+	addrBytes, err := tronutils.DecodeCheck(address)
 	if err != nil {
 		return nil, err
 	}
@@ -116,12 +116,12 @@ func (c *Client) DelegateResource(ctx context.Context, owner, receiver string, r
 		return nil, fmt.Errorf("%w: delegate balance must be greater than zero", ErrInvalidAmount)
 	}
 
-	addrFromBytes, err := utils.DecodeCheck(owner)
+	addrFromBytes, err := tronutils.DecodeCheck(owner)
 	if err != nil {
 		return nil, err
 	}
 
-	addrToBytes, err := utils.DecodeCheck(receiver)
+	addrToBytes, err := tronutils.DecodeCheck(receiver)
 	if err != nil {
 		return nil, err
 	}
@@ -161,12 +161,12 @@ func (c *Client) ReclaimResource(ctx context.Context, owner, receiver string, re
 		return nil, fmt.Errorf("%w: delegate balance must be greater than zero", ErrInvalidAmount)
 	}
 
-	addrOwnerBytes, err := utils.DecodeCheck(owner)
+	addrOwnerBytes, err := tronutils.DecodeCheck(owner)
 	if err != nil {
 		return nil, err
 	}
 
-	addrReceiverBytes, err := utils.DecodeCheck(receiver)
+	addrReceiverBytes, err := tronutils.DecodeCheck(receiver)
 	if err != nil {
 		return nil, err
 	}

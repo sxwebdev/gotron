@@ -6,19 +6,19 @@ import (
 	"strconv"
 
 	"github.com/sxwebdev/gotron/pkg/client/abi"
-	"github.com/sxwebdev/gotron/pkg/utils"
+	"github.com/sxwebdev/gotron/pkg/tronutils"
 	"github.com/sxwebdev/gotron/schema/pb/api"
 	"github.com/sxwebdev/gotron/schema/pb/core"
 )
 
 // UpdateEnergyLimitContract update contract enery limit
 func (c *Client) UpdateEnergyLimitContract(ctx context.Context, from, contractAddress string, value int64) (*api.TransactionExtention, error) {
-	fromDesc, err := utils.DecodeCheck(from)
+	fromDesc, err := tronutils.DecodeCheck(from)
 	if err != nil {
 		return nil, err
 	}
 
-	contractDesc, err := utils.DecodeCheck(contractAddress)
+	contractDesc, err := tronutils.DecodeCheck(contractAddress)
 	if err != nil {
 		return nil, err
 	}
@@ -43,12 +43,12 @@ func (c *Client) UpdateEnergyLimitContract(ctx context.Context, from, contractAd
 
 // UpdateSettingContract change contract owner consumption ratio
 func (c *Client) UpdateSettingContract(ctx context.Context, from, contractAddress string, value int64) (*api.TransactionExtention, error) {
-	fromDesc, err := utils.DecodeCheck(from)
+	fromDesc, err := tronutils.DecodeCheck(from)
 	if err != nil {
 		return nil, err
 	}
 
-	contractDesc, err := utils.DecodeCheck(contractAddress)
+	contractDesc, err := tronutils.DecodeCheck(contractAddress)
 	if err != nil {
 		return nil, err
 	}
@@ -74,18 +74,18 @@ func (c *Client) UpdateSettingContract(ctx context.Context, from, contractAddres
 // TriggerConstantContract and return tx result
 func (c *Client) TriggerConstantContract(ctx context.Context, from, contractAddress, method, jsonString string) (*api.TransactionExtention, error) {
 	var err error
-	fromDesc, err := utils.FromHex("410000000000000000000000000000000000000000")
+	fromDesc, err := tronutils.FromHex("410000000000000000000000000000000000000000")
 	if err != nil {
 		return nil, err
 	}
 
 	if len(from) > 0 {
-		fromDesc, err = utils.DecodeCheck(from)
+		fromDesc, err = tronutils.DecodeCheck(from)
 		if err != nil {
 			return nil, err
 		}
 	}
-	contractDesc, err := utils.DecodeCheck(contractAddress)
+	contractDesc, err := tronutils.DecodeCheck(contractAddress)
 	if err != nil {
 		return nil, err
 	}
@@ -118,12 +118,12 @@ func (c *Client) triggerConstantContract(ctx context.Context, ct *core.TriggerSm
 func (c *Client) TriggerContract(ctx context.Context, from, contractAddress, method, jsonString string,
 	feeLimit, tAmount int64, tTokenID string, tTokenAmount int64,
 ) (*api.TransactionExtention, error) {
-	fromDesc, err := utils.DecodeCheck(from)
+	fromDesc, err := tronutils.DecodeCheck(from)
 	if err != nil {
 		return nil, err
 	}
 
-	contractDesc, err := utils.DecodeCheck(contractAddress)
+	contractDesc, err := tronutils.DecodeCheck(contractAddress)
 	if err != nil {
 		return nil, err
 	}
@@ -181,12 +181,12 @@ func (c *Client) triggerContract(ctx context.Context, ct *core.TriggerSmartContr
 func (c *Client) EstimateEnergy(ctx context.Context, from, contractAddress, method, jsonString string,
 	tAmount int64, tTokenID string, tTokenAmount int64,
 ) (*api.EstimateEnergyMessage, error) {
-	fromDesc, err := utils.DecodeCheck(from)
+	fromDesc, err := tronutils.DecodeCheck(from)
 	if err != nil {
 		return nil, err
 	}
 
-	contractDesc, err := utils.DecodeCheck(contractAddress)
+	contractDesc, err := tronutils.DecodeCheck(contractAddress)
 	if err != nil {
 		return nil, err
 	}
@@ -241,7 +241,7 @@ func (c *Client) DeployContract(ctx context.Context, from, contractName string,
 ) (*api.TransactionExtention, error) {
 	var err error
 
-	fromDesc, err := utils.DecodeCheck(from)
+	fromDesc, err := tronutils.DecodeCheck(from)
 	if err != nil {
 		return nil, err
 	}
@@ -253,7 +253,7 @@ func (c *Client) DeployContract(ctx context.Context, from, contractName string,
 		return nil, fmt.Errorf("origin_energy_limit must > 0")
 	}
 
-	bc, err := utils.FromHex(codeStr)
+	bc, err := tronutils.FromHex(codeStr)
 	if err != nil {
 		return nil, err
 	}
@@ -292,7 +292,7 @@ func (c *Client) UpdateHash(tx *api.TransactionExtention) error {
 // GetContractABI return smartContract
 func (c *Client) GetContractABI(ctx context.Context, contractAddress string) (*core.SmartContract_ABI, error) {
 	var err error
-	contractDesc, err := utils.DecodeCheck(contractAddress)
+	contractDesc, err := tronutils.DecodeCheck(contractAddress)
 	if err != nil {
 		return nil, err
 	}

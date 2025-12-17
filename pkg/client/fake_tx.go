@@ -6,7 +6,7 @@ import (
 
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/sxwebdev/gotron/pkg/utils"
+	"github.com/sxwebdev/gotron/pkg/tronutils"
 	"github.com/sxwebdev/gotron/schema/pb/core"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -14,12 +14,12 @@ import (
 
 // CreateFakeResourceTransaction creates a fake resource transaction.
 func CreateFakeResourceTransaction(fromAddress, toAddress string, amount int64, resourceType core.ResourceCode, reclaim bool) (*core.Transaction, error) {
-	addrFromBytes, err := utils.DecodeCheck(fromAddress)
+	addrFromBytes, err := tronutils.DecodeCheck(fromAddress)
 	if err != nil {
 		return nil, err
 	}
 
-	addrToBytes, err := utils.DecodeCheck(toAddress)
+	addrToBytes, err := tronutils.DecodeCheck(toAddress)
 	if err != nil {
 		return nil, err
 	}
@@ -77,12 +77,12 @@ func CreateFakeResourceTransaction(fromAddress, toAddress string, amount int64, 
 }
 
 func CreateFakeCreateAccountTransaction(fromAddress, toAddress string) (*core.Transaction, error) {
-	addrFromBytes, err := utils.DecodeCheck(fromAddress)
+	addrFromBytes, err := tronutils.DecodeCheck(fromAddress)
 	if err != nil {
 		return nil, err
 	}
 
-	addrToBytes, err := utils.DecodeCheck(toAddress)
+	addrToBytes, err := tronutils.DecodeCheck(toAddress)
 	if err != nil {
 		return nil, err
 	}

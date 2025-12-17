@@ -1,15 +1,10 @@
-package utils
+package tronutils
 
 import (
 	"fmt"
 	"math/big"
 
 	"golang.org/x/crypto/sha3"
-)
-
-const (
-	// HashLength is the expected length of the hash
-	HashLength = 32
 )
 
 // Hash represents the 32 byte Keccak256 hash of arbitrary data.

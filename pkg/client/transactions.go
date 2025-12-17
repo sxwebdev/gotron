@@ -8,7 +8,7 @@ import (
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/sxwebdev/gotron/pkg/utils"
+	"github.com/sxwebdev/gotron/pkg/tronutils"
 	"github.com/sxwebdev/gotron/schema/pb/api"
 	"github.com/sxwebdev/gotron/schema/pb/core"
 	"google.golang.org/protobuf/proto"
@@ -19,7 +19,7 @@ func (c *Client) GetTransactionByHash(ctx context.Context, hash string) (*core.T
 	transactionID := new(api.BytesMessage)
 	var err error
 
-	transactionID.Value, err = utils.FromHex(hash)
+	transactionID.Value, err = tronutils.FromHex(hash)
 	if err != nil {
 		return nil, fmt.Errorf("get transaction by hash error: %v", err)
 	}
@@ -39,7 +39,7 @@ func (c *Client) GetTransactionInfoByHash(ctx context.Context, hash string) (*co
 	transactionID := new(api.BytesMessage)
 	var err error
 
-	transactionID.Value, err = utils.FromHex(hash)
+	transactionID.Value, err = tronutils.FromHex(hash)
 	if err != nil {
 		return nil, fmt.Errorf("get transaction by hash error: %v", err)
 	}
