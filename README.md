@@ -1,5 +1,9 @@
 # Gotron SDK
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/sxwebdev/gotron.svg)](https://pkg.go.dev/github.com/sxwebdev/gotron)
+[![Go Version](https://img.shields.io/badge/go-1.25-blue)](https://go.dev/)
+[![License](https://img.shields.io/github/license/sxwebdev/gotron)](LICENSE)
+
 A comprehensive Go SDK for the Tron blockchain. This library provides a complete client implementation for interacting with Tron nodes via gRPC, managing addresses, creating and signing transactions, and working with TRC20 tokens.
 
 ## Features
