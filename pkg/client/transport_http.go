@@ -144,19 +144,65 @@ func isHexString(s string) bool {
 
 // bytesFields contains field names that should be treated as bytes (hex -> base64)
 var bytesFields = map[string]bool{
-	"txid":              true,
-	"txID":              true,
-	"blockid":           true,
-	"blockID":           true,
-	"id":                true,
-	"parentHash":        true,
-	"txTrieRoot":        true,
-	"witness_address":   true,
-	"witnessAddress":    true,
+	// Transaction/block identifiers
+	"txid":       true,
+	"txID":       true,
+	"blockid":    true,
+	"blockID":    true,
+	"id":         true,
+	"parentHash": true,
+	"txTrieRoot": true,
+
+	// Address fields (used in various contracts)
+	"owner_address":             true,
+	"ownerAddress":              true,
+	"to_address":                true,
+	"toAddress":                 true,
+	"contract_address":          true,
+	"contractAddress":           true,
+	"receiver_address":          true,
+	"receiverAddress":           true,
+	"resource_receiver_address": true,
+	"resourceReceiverAddress":   true,
+	"origin_address":            true,
+	"originAddress":             true,
+	"caller_address":            true,
+	"callerAddress":             true,
+	"transferTo_address":        true,
+	"transferToAddress":         true,
+	"account_address":           true,
+	"accountAddress":            true,
+	"witness_address":           true,
+	"witnessAddress":            true,
+	"frozen_address":            true,
+	"frozenAddress":             true,
+
+	// Signature and data fields
 	"witness_signature": true,
 	"witnessSignature":  true,
-	"raw_data_hex":      true,
-	"rawDataHex":        true,
+	"signature":         true,
+	"data":              true,
+	"bytecode":          true,
+	"code_hash":         true,
+	"codeHash":          true,
+	"asset_name":        true,
+	"assetName":         true,
+	"url":               true,
+	"description":       true,
+
+	// Log/event fields
+	"address": true,
+	"topics":  true,
+
+	// Internal transaction fields
+	"hash":            true,
+	"note":            true,
+	"token_info":      true,
+	"callValueInfo":   true,
+	"extra":           true,
+	"contractResult":  true,
+	"resMessage":      true,
+	"contract_result": true,
 }
 
 // transformBlockJSON transforms block response to match BlockExtention proto structure.
