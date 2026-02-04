@@ -48,6 +48,10 @@ type Transport interface {
 	DelegateResource(ctx context.Context, contract *core.DelegateResourceContract) (*api.TransactionExtention, error)
 	UnDelegateResource(ctx context.Context, contract *core.UnDelegateResourceContract) (*api.TransactionExtention, error)
 
+	// Asset operations
+	GetAssetIssueById(ctx context.Context, id []byte) (*core.AssetIssueContract, error)
+	GetAssetIssueListByName(ctx context.Context, name []byte) (*api.AssetIssueList, error)
+
 	// Network operations
 	ListNodes(ctx context.Context) (*api.NodeList, error)
 	GetChainParameters(ctx context.Context) (*core.ChainParameters, error)

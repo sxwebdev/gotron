@@ -675,6 +675,34 @@ func (t *HTTPTransport) UnDelegateResource(ctx context.Context, contract *core.U
 	return result, nil
 }
 
+// Asset operations
+
+func (t *HTTPTransport) GetAssetIssueById(ctx context.Context, id []byte) (*core.AssetIssueContract, error) {
+	reqBody := map[string]interface{}{
+		"value": string(id),
+	}
+
+	result := &core.AssetIssueContract{}
+	if err := t.doRequest(ctx, "/wallet/getassetissuebyid", reqBody, result); err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
+func (t *HTTPTransport) GetAssetIssueListByName(ctx context.Context, name []byte) (*api.AssetIssueList, error) {
+	reqBody := map[string]interface{}{
+		"value": string(name),
+	}
+
+	result := &api.AssetIssueList{}
+	if err := t.doRequest(ctx, "/wallet/getassetissuelistbyname", reqBody, result); err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
 // Network operations
 
 func (t *HTTPTransport) ListNodes(ctx context.Context) (*api.NodeList, error) {

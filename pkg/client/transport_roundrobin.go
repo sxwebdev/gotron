@@ -161,6 +161,16 @@ func (t *RoundRobinTransport) UnDelegateResource(ctx context.Context, contract *
 	return t.next().UnDelegateResource(ctx, contract)
 }
 
+// Asset operations
+
+func (t *RoundRobinTransport) GetAssetIssueById(ctx context.Context, id []byte) (*core.AssetIssueContract, error) {
+	return t.next().GetAssetIssueById(ctx, id)
+}
+
+func (t *RoundRobinTransport) GetAssetIssueListByName(ctx context.Context, name []byte) (*api.AssetIssueList, error) {
+	return t.next().GetAssetIssueListByName(ctx, name)
+}
+
 // Network operations
 
 func (t *RoundRobinTransport) ListNodes(ctx context.Context) (*api.NodeList, error) {

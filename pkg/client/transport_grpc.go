@@ -193,6 +193,18 @@ func (t *GRPCTransport) UnDelegateResource(ctx context.Context, contract *core.U
 	return t.walletClient.UnDelegateResource(ctx, contract)
 }
 
+// Asset operations
+
+func (t *GRPCTransport) GetAssetIssueById(ctx context.Context, id []byte) (*core.AssetIssueContract, error) {
+	req := &api.BytesMessage{Value: id}
+	return t.walletClient.GetAssetIssueById(ctx, req)
+}
+
+func (t *GRPCTransport) GetAssetIssueListByName(ctx context.Context, name []byte) (*api.AssetIssueList, error) {
+	req := &api.BytesMessage{Value: name}
+	return t.walletClient.GetAssetIssueListByName(ctx, req)
+}
+
 // Network operations
 
 func (t *GRPCTransport) ListNodes(ctx context.Context) (*api.NodeList, error) {
