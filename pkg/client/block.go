@@ -5,14 +5,11 @@ import (
 
 	"github.com/sxwebdev/gotron/schema/pb/api"
 	"github.com/sxwebdev/gotron/schema/pb/core"
-	"google.golang.org/grpc"
 )
-
-var defaultMaxSizeOption = grpc.MaxCallRecvMsgSize(32 * 10e6)
 
 // GetLastBlockHeight return last block number from the blockchain.
 func (c *Client) GetLastBlockHeight(ctx context.Context) (uint64, error) {
-	result, err := c.walletClient.GetNowBlock2(ctx, new(api.EmptyMessage))
+	result, err := c.transport.GetNowBlock(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -26,7 +23,7 @@ func (c *Client) GetLastBlockHeight(ctx context.Context) (uint64, error) {
 
 // GetLastBlock return last block from the blockchain.
 func (c *Client) GetLastBlock(ctx context.Context) (*api.BlockExtention, error) {
-	result, err := c.walletClient.GetNowBlock2(ctx, new(api.EmptyMessage))
+	result, err := c.transport.GetNowBlock(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -40,11 +37,7 @@ func (c *Client) GetLastBlock(ctx context.Context) (*api.BlockExtention, error) 
 
 // GetBlockByHeight returns block by its number.
 func (c *Client) GetBlockByHeight(ctx context.Context, height uint64) (*api.BlockExtention, error) {
-	req := &api.NumberMessage{
-		Num: int64(height),
-	}
-
-	result, err := c.walletClient.GetBlockByNum2(ctx, req, defaultMaxSizeOption)
+	result, err := c.transport.GetBlockByNum(ctx, int64(height))
 	if err != nil {
 		return nil, err
 	}
@@ -58,11 +51,7 @@ func (c *Client) GetBlockByHeight(ctx context.Context, height uint64) (*api.Bloc
 
 // GetBlockByHash returns block by its hash.
 func (c *Client) GetBlockByHash(ctx context.Context, hash []byte) (*core.Block, error) {
-	req := &api.BytesMessage{
-		Value: hash,
-	}
-
-	result, err := c.walletClient.GetBlockById(ctx, req, defaultMaxSizeOption)
+	result, err := c.transport.GetBlockById(ctx, hash)
 	if err != nil {
 		return nil, err
 	}
@@ -76,11 +65,7 @@ func (c *Client) GetBlockByHash(ctx context.Context, hash []byte) (*core.Block, 
 
 // GetTransactionInfoByBlockNum returns transaction info list by block number.
 func (c *Client) GetTransactionInfoByBlockNum(ctx context.Context, number uint64) (*api.TransactionInfoList, error) {
-	req := &api.NumberMessage{
-		Num: int64(number),
-	}
-
-	result, err := c.walletClient.GetTransactionInfoByBlockNum(ctx, req, defaultMaxSizeOption)
+	result, err := c.transport.GetTransactionInfoByBlockNum(ctx, int64(number))
 	if err != nil {
 		return nil, err
 	}
@@ -94,12 +79,7 @@ func (c *Client) GetTransactionInfoByBlockNum(ctx context.Context, number uint64
 
 // GetBlockByLimitNext returns blocks in the range [start, start+limit).
 func (c *Client) GetBlockByLimitNext2(ctx context.Context, start uint64, end uint64) (*api.BlockListExtention, error) {
-	req := &api.BlockLimit{
-		StartNum: int64(start),
-		EndNum:   int64(end),
-	}
-
-	result, err := c.walletClient.GetBlockByLimitNext2(ctx, req, defaultMaxSizeOption)
+	result, err := c.transport.GetBlockByLimitNext(ctx, int64(start), int64(end))
 	if err != nil {
 		return nil, err
 	}
@@ -113,11 +93,7 @@ func (c *Client) GetBlockByLimitNext2(ctx context.Context, start uint64, end uin
 
 // GetBlockByLatestNum returns the latest 'num' blocks.
 func (c *Client) GetBlockByLatestNum2(ctx context.Context, height uint64) (*api.BlockListExtention, error) {
-	req := &api.NumberMessage{
-		Num: int64(height),
-	}
-
-	result, err := c.walletClient.GetBlockByLatestNum2(ctx, req, defaultMaxSizeOption)
+	result, err := c.transport.GetBlockByLatestNum(ctx, int64(height))
 	if err != nil {
 		return nil, err
 	}

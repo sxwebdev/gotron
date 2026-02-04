@@ -43,7 +43,7 @@ func (c *Client) CreateTransferTransaction(ctx context.Context, from, to string,
 	contract.Amount = amount.IntPart()
 
 	// Create the transaction
-	tx, err := c.walletClient.CreateTransaction2(ctx, contract)
+	tx, err := c.transport.CreateTransaction(ctx, contract)
 	if err != nil {
 		return nil, err
 	}

@@ -16,15 +16,12 @@ import (
 
 // GetTransactionByHash returns transaction details by hash
 func (c *Client) GetTransactionByHash(ctx context.Context, hash string) (*core.Transaction, error) {
-	transactionID := new(api.BytesMessage)
-	var err error
-
-	transactionID.Value, err = tronutils.FromHex(hash)
+	hashBytes, err := tronutils.FromHex(hash)
 	if err != nil {
 		return nil, fmt.Errorf("get transaction by hash error: %v", err)
 	}
 
-	tx, err := c.walletClient.GetTransactionById(ctx, transactionID)
+	tx, err := c.transport.GetTransactionById(ctx, hashBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -36,19 +33,16 @@ func (c *Client) GetTransactionByHash(ctx context.Context, hash string) (*core.T
 
 // GetTransactionInfoByHash returns transaction receipt by hash
 func (c *Client) GetTransactionInfoByHash(ctx context.Context, hash string) (*core.TransactionInfo, error) {
-	transactionID := new(api.BytesMessage)
-	var err error
-
-	transactionID.Value, err = tronutils.FromHex(hash)
+	hashBytes, err := tronutils.FromHex(hash)
 	if err != nil {
 		return nil, fmt.Errorf("get transaction by hash error: %v", err)
 	}
 
-	txi, err := c.walletClient.GetTransactionInfoById(ctx, transactionID)
+	txi, err := c.transport.GetTransactionInfoById(ctx, hashBytes)
 	if err != nil {
 		return nil, err
 	}
-	if bytes.Equal(txi.Id, transactionID.Value) {
+	if bytes.Equal(txi.Id, hashBytes) {
 		return txi, nil
 	}
 	return nil, ErrTransactionInfoNotFound
@@ -85,7 +79,7 @@ func (c *Client) GetTransactionExtensionByHash(ctx context.Context, hash string)
 
 // BroadcastTransaction broadcasts a signed transaction to the network
 func (c *Client) BroadcastTransaction(ctx context.Context, tx *core.Transaction) (*api.Return, error) {
-	result, err := c.walletClient.BroadcastTransaction(ctx, tx)
+	result, err := c.transport.BroadcastTransaction(ctx, tx)
 	if err != nil {
 		return nil, err
 	}

@@ -29,7 +29,7 @@ func (c *Client) UpdateEnergyLimitContract(ctx context.Context, from, contractAd
 		OriginEnergyLimit: value,
 	}
 
-	tx, err := c.walletClient.UpdateEnergyLimit(ctx, ct)
+	tx, err := c.transport.UpdateEnergyLimit(ctx, ct)
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +59,7 @@ func (c *Client) UpdateSettingContract(ctx context.Context, from, contractAddres
 		ConsumeUserResourcePercent: value,
 	}
 
-	tx, err := c.walletClient.UpdateSetting(ctx, ct)
+	tx, err := c.transport.UpdateSetting(ctx, ct)
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +111,7 @@ func (c *Client) TriggerConstantContract(ctx context.Context, from, contractAddr
 
 // triggerConstantContract and return tx result
 func (c *Client) triggerConstantContract(ctx context.Context, ct *core.TriggerSmartContract) (*api.TransactionExtention, error) {
-	return c.walletClient.TriggerConstantContract(ctx, ct)
+	return c.transport.TriggerConstantContract(ctx, ct)
 }
 
 // TriggerContract and return tx result
@@ -159,7 +159,7 @@ func (c *Client) TriggerContract(ctx context.Context, from, contractAddress, met
 
 // triggerContract and return tx result
 func (c *Client) triggerContract(ctx context.Context, ct *core.TriggerSmartContract, feeLimit int64) (*api.TransactionExtention, error) {
-	tx, err := c.walletClient.TriggerContract(ctx, ct)
+	tx, err := c.transport.TriggerContract(ctx, ct)
 	if err != nil {
 		return nil, err
 	}
@@ -220,9 +220,9 @@ func (c *Client) EstimateEnergy(ctx context.Context, from, contractAddress, meth
 	return c.estimateEnergy(ctx, ct)
 }
 
-// triggerContract and return tx result
+// estimateEnergy and return tx result
 func (c *Client) estimateEnergy(ctx context.Context, ct *core.TriggerSmartContract) (*api.EstimateEnergyMessage, error) {
-	tx, err := c.walletClient.EstimateEnergy(ctx, ct)
+	tx, err := c.transport.EstimateEnergy(ctx, ct)
 	if err != nil {
 		return nil, err
 	}
@@ -270,7 +270,7 @@ func (c *Client) DeployContract(ctx context.Context, from, contractName string,
 		},
 	}
 
-	tx, err := c.walletClient.DeployContract(ctx, ct)
+	tx, err := c.transport.DeployContract(ctx, ct)
 	if err != nil {
 		return nil, err
 	}
@@ -297,7 +297,7 @@ func (c *Client) GetContractABI(ctx context.Context, contractAddress string) (*c
 		return nil, err
 	}
 
-	sm, err := c.walletClient.GetContract(ctx, GetMessageBytes(contractDesc))
+	sm, err := c.transport.GetContract(ctx, contractDesc)
 	if err != nil {
 		return nil, err
 	}

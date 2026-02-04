@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/sxwebdev/gotron/schema/pb/api"
 	"github.com/sxwebdev/gotron/schema/pb/core"
 )
 
@@ -19,7 +18,7 @@ type ChainParams struct {
 
 // ChainParam get chain parameters
 func (c *Client) ChainParam(ctx context.Context, paramKey string) (*core.ChainParameters_ChainParameter, error) {
-	data, err := c.walletClient.GetChainParameters(ctx, new(api.EmptyMessage))
+	data, err := c.transport.GetChainParameters(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -34,7 +33,7 @@ func (c *Client) ChainParam(ctx context.Context, paramKey string) (*core.ChainPa
 }
 
 func (c *Client) ChainParams(ctx context.Context) (*ChainParams, error) {
-	data, err := c.walletClient.GetChainParameters(ctx, new(api.EmptyMessage))
+	data, err := c.transport.GetChainParameters(ctx)
 	if err != nil {
 		return nil, err
 	}

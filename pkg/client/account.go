@@ -29,7 +29,7 @@ func (c *Client) GetAccount(ctx context.Context, addr string) (*pbtron.Account, 
 		return nil, err
 	}
 
-	acc, err := c.walletClient.GetAccount(ctx, account)
+	acc, err := c.transport.GetAccount(ctx, account)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +82,7 @@ func (c *Client) CreateAccount(ctx context.Context, from, addr string) (*api.Tra
 		return nil, err
 	}
 
-	tx, err := c.walletClient.CreateAccount2(ctx, contract)
+	tx, err := c.transport.CreateAccount(ctx, contract)
 	if err != nil {
 		return nil, err
 	}

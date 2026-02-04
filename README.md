@@ -4,11 +4,12 @@
 [![Go Version](https://img.shields.io/badge/go-1.25-blue)](https://go.dev/)
 [![License](https://img.shields.io/github/license/sxwebdev/gotron)](LICENSE)
 
-A comprehensive Go SDK for the Tron blockchain. This library provides a complete client implementation for interacting with Tron nodes via gRPC, managing addresses, creating and signing transactions, and working with TRC20 tokens.
+A comprehensive Go SDK for the Tron blockchain. This library provides a complete client implementation for interacting with Tron nodes via gRPC or HTTP, managing addresses, creating and signing transactions, and working with TRC20 tokens.
 
 ## Features
 
-- **Complete gRPC Client** - Full implementation of Tron Wallet API
+- **Dual Transport Support** - gRPC and HTTP REST API
+- **Complete API Client** - Full implementation of Tron Wallet API
 - **Address Management** - BIP39/BIP44 mnemonic support, address generation and validation
 - **Transaction Handling** - Create, sign, and broadcast transactions
 - **TRC20 Token Support** - Transfer, approve, balance queries, token info
@@ -261,6 +262,48 @@ fmt.Printf("Energy: %s, Bandwidth: %s\n",
 
 ## Network Configuration
 
+### Transport Protocols
+
+The SDK supports two transport protocols: **gRPC** (default) and **HTTP REST API**.
+
+#### gRPC Transport (Default)
+
+```go
+import "github.com/sxwebdev/gotron/pkg/client"
+
+cfg := client.Config{
+    GRPCAddress: "grpc.trongrid.io:50051",
+    UseTLS:      true,
+}
+
+tron, err := client.New(cfg)
+```
+
+#### HTTP Transport
+
+```go
+import "github.com/sxwebdev/gotron/pkg/client"
+
+cfg := client.Config{
+    Protocol:    client.ProtocolHTTP,
+    HTTPAddress: "https://api.trongrid.io",
+    HTTPHeaders: map[string]string{
+        "TRON-PRO-API-KEY": "your-api-key",  // TronGrid
+        // Add any custom headers for your provider
+    },
+}
+
+tron, err := client.New(cfg)
+```
+
+Both transports use the same high-level API:
+
+```go
+// Works with both gRPC and HTTP
+account, err := tron.GetAccount(ctx, "TAddress...")
+balance, err := tron.GetAccountBalance(ctx, "TAddress...")
+```
+
 ### Predefined Networks
 
 ```go
@@ -288,6 +331,7 @@ import (
     "google.golang.org/grpc"
 )
 
+// gRPC with custom options
 cfg := client.Config{
   GRPCAddress: "your-custom-node:50051",
   UseTLS:      true,
@@ -296,7 +340,29 @@ cfg := client.Config{
   },
 }
 
-tron, err := gotron.New(cfg)
+tron, err := client.New(cfg)
+```
+
+```go
+import (
+    "net/http"
+    "time"
+    "github.com/sxwebdev/gotron/pkg/client"
+)
+
+// HTTP with custom client
+cfg := client.Config{
+    Protocol:    client.ProtocolHTTP,
+    HTTPAddress: "https://your-custom-node",
+    HTTPClient: &http.Client{
+        Timeout: 60 * time.Second,
+    },
+    HTTPHeaders: map[string]string{
+        "Authorization": "Bearer your-token",
+    },
+}
+
+tron, err := client.New(cfg)
 ```
 
 ### TronGrid with API Key (Interceptor Pattern)
@@ -353,22 +419,26 @@ func main() {
 
 ```text
 gotron/
-├── tron.go              # High-level wrapper and constants
+├── tron.go                  # High-level wrapper and constants
 ├── pkg/
-│   ├── address/         # Address generation, validation, BIP39/BIP44
-│   ├── client/          # Core gRPC client implementation
-│   │   ├── client.go    # Client initialization
-│   │   ├── account.go   # Account operations
-│   │   ├── transfer.go  # TRX transfers
-│   │   ├── trc20.go     # TRC20 token operations
-│   │   ├── resources.go # Resource delegation
-│   │   ├── block.go     # Block queries
-│   │   ├── transactions.go # Transaction operations
+│   ├── address/             # Address generation, validation, BIP39/BIP44
+│   ├── client/              # Client implementation
+│   │   ├── client.go        # Client initialization
+│   │   ├── config.go        # Configuration (Protocol, addresses, headers)
+│   │   ├── transport.go     # Transport interface
+│   │   ├── transport_grpc.go # gRPC transport implementation
+│   │   ├── transport_http.go # HTTP transport implementation
+│   │   ├── account.go       # Account operations
+│   │   ├── transfer.go      # TRX transfers
+│   │   ├── trc20.go         # TRC20 token operations
+│   │   ├── resources.go     # Resource delegation
+│   │   ├── block.go         # Block queries
+│   │   ├── transactions.go  # Transaction operations
 │   │   └── ...
-│   └── utils/           # Utility functions
-└── schema/pb/           # Protocol buffer definitions
-    ├── api/             # Tron API definitions
-    └── core/            # Core protocol types
+│   └── tronutils/           # Utility functions
+└── schema/pb/               # Protocol buffer definitions
+    ├── api/                 # Tron API definitions
+    └── core/                # Core protocol types
 ```
 
 ## Constants

@@ -1,21 +1,19 @@
-// Package client provides a gRPC client for interacting with Tron nodes.
+// Package client provides a client for interacting with Tron nodes via gRPC or HTTP.
 package client
 
 import (
-	"crypto/tls"
 	"fmt"
 
 	"github.com/sxwebdev/gotron/schema/pb/api"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 // Client represents a Tron blockchain client
 type Client struct {
-	conn   *grpc.ClientConn
-	config Config
+	transport Transport
+	config    Config
 
+	// walletClient is kept for backward compatibility with API() method
+	// Only available when using gRPC transport
 	walletClient api.WalletClient
 }
 
@@ -29,47 +27,52 @@ func New(cfg Config) (*Client, error) {
 		config: cfg,
 	}
 
-	opts := append(
-		cfg.DialOptions,
-		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(1024*1024*100)),
-	)
+	var err error
 
-	if cfg.UseTLS {
-		opts = append(opts, grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{
-			InsecureSkipVerify: false,
-			MinVersion:         tls.VersionTLS13,
-		})))
-	} else {
-		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	switch cfg.GetProtocol() {
+	case ProtocolGRPC:
+		grpcTransport, err := NewGRPCTransport(cfg)
+		if err != nil {
+			return nil, err
+		}
+		client.transport = grpcTransport
+		// For backward compatibility, expose walletClient
+		client.walletClient = grpcTransport.WalletClient()
+
+	case ProtocolHTTP:
+		client.transport, err = NewHTTPTransport(cfg)
+		if err != nil {
+			return nil, err
+		}
+
+	default:
+		return nil, fmt.Errorf("%w: unsupported protocol %s", ErrInvalidConfig, cfg.Protocol)
 	}
-
-	conn, err := grpc.NewClient(cfg.GRPCAddress, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to dial gRPC: %w", err)
-	}
-
-	client.conn = conn
-
-	client.walletClient = api.NewWalletClient(client.conn)
 
 	return client, nil
 }
 
 // Close closes the client connection
 func (c *Client) Close() error {
-	if c.conn != nil {
-		return c.conn.Close()
+	if c.transport != nil {
+		return c.transport.Close()
 	}
-
 	return nil
 }
 
-// GetNetwork returns the current network based on gRPC address
+// GetNetwork returns the current network based on configuration
 func (c *Client) GetNetwork() Network {
 	return c.config.Network
 }
 
-// API returns the underlying WalletClient API
+// GetProtocol returns the current transport protocol
+func (c *Client) GetProtocol() Protocol {
+	return c.config.GetProtocol()
+}
+
+// API returns the underlying WalletClient API (gRPC only)
+// Deprecated: This method only works with gRPC transport.
+// Use the high-level Client methods instead for protocol-agnostic code.
 func (c *Client) API() api.WalletClient {
 	return c.walletClient
 }

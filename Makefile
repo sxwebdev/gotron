@@ -7,3 +7,6 @@ genabi:
 
 install-dev-tools:
 	go install github.com/ethereum/go-ethereum/cmd/abigen@latest
+
+make test:
+	go test ./tests/... -v

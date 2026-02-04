@@ -22,7 +22,7 @@ func (c *Client) GetAccountResource(ctx context.Context, addr string) (*api.Acco
 		return nil, err
 	}
 
-	return c.walletClient.GetAccountResource(ctx, account)
+	return c.transport.GetAccountResource(ctx, account)
 }
 
 // GetDelegatedResourcesV2 retrieves delegated resources for the specified account address
@@ -32,7 +32,7 @@ func (c *Client) GetDelegatedResources(ctx context.Context, address string) ([]*
 		return nil, err
 	}
 
-	ai, err := c.walletClient.GetDelegatedResourceAccountIndex(ctx, GetMessageBytes(addrBytes))
+	ai, err := c.transport.GetDelegatedResourceAccountIndex(ctx, addrBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -42,7 +42,7 @@ func (c *Client) GetDelegatedResources(ctx context.Context, address string) ([]*
 			FromAddress: addrBytes,
 			ToAddress:   addrTo,
 		}
-		resource, err := c.walletClient.GetDelegatedResource(ctx, dm)
+		resource, err := c.transport.GetDelegatedResource(ctx, dm)
 		if err != nil {
 			return nil, err
 		}
@@ -58,7 +58,7 @@ func (c *Client) GetDelegatedResourcesV2(ctx context.Context, address string) ([
 		return nil, err
 	}
 
-	ai, err := c.walletClient.GetDelegatedResourceAccountIndexV2(ctx, GetMessageBytes(addrBytes))
+	ai, err := c.transport.GetDelegatedResourceAccountIndexV2(ctx, addrBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +69,7 @@ func (c *Client) GetDelegatedResourcesV2(ctx context.Context, address string) ([
 			FromAddress: addrBytes,
 			ToAddress:   addrTo,
 		}
-		resource, err := c.walletClient.GetDelegatedResourceV2(ctx, dm)
+		resource, err := c.transport.GetDelegatedResourceV2(ctx, dm)
 		if err != nil {
 			return nil, err
 		}
@@ -90,7 +90,7 @@ func (c *Client) GetCanDelegatedMaxSize(ctx context.Context, address string, res
 	dm.Type = resource
 	dm.OwnerAddress = addrBytes
 
-	response, err := c.walletClient.GetCanDelegatedMaxSize(ctx, dm)
+	response, err := c.transport.GetCanDelegatedMaxSize(ctx, dm)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +135,7 @@ func (c *Client) DelegateResource(ctx context.Context, owner, receiver string, r
 	contract.Lock = lock
 	contract.LockPeriod = lockPeriod
 
-	response, err := c.walletClient.DelegateResource(ctx, contract)
+	response, err := c.transport.DelegateResource(ctx, contract)
 	if err != nil {
 		return nil, err
 	}
@@ -178,7 +178,7 @@ func (c *Client) ReclaimResource(ctx context.Context, owner, receiver string, re
 	contract.ReceiverAddress = addrReceiverBytes
 	contract.Balance = delegateBalance
 
-	response, err := c.walletClient.UnDelegateResource(ctx, contract)
+	response, err := c.transport.UnDelegateResource(ctx, contract)
 	if err != nil {
 		return nil, err
 	}
