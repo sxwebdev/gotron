@@ -40,7 +40,7 @@ func NewHTTPTransport(cfg NodeConfig) (*HTTPTransport, error) {
 	return &HTTPTransport{
 		baseURL:    baseURL,
 		httpClient: httpClient,
-		headers:    cfg.HTTPHeaders,
+		headers:    cfg.Headers,
 	}, nil
 }
 

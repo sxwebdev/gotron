@@ -37,8 +37,8 @@ type NodeConfig struct {
 	// HTTPClient allows providing a custom HTTP client (HTTP only)
 	HTTPClient *http.Client
 
-	// HTTPHeaders are custom headers for HTTP requests (HTTP only)
-	HTTPHeaders map[string]string
+	// Headers are custom headers/metadata for requests (HTTP headers and gRPC metadata)
+	Headers map[string]string
 }
 
 // Config holds the configuration for the Tron client

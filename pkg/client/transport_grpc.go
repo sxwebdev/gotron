@@ -10,6 +10,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 )
 
 // defaultMaxSizeOption is the default max message size for gRPC calls
@@ -37,6 +38,11 @@ func NewGRPCTransport(cfg NodeConfig) (*GRPCTransport, error) {
 		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	}
 
+	// Add interceptor to inject headers as gRPC metadata
+	if len(cfg.Headers) > 0 {
+		opts = append(opts, grpc.WithUnaryInterceptor(headersInterceptor(cfg.Headers)))
+	}
+
 	conn, err := grpc.NewClient(cfg.Address, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to dial gRPC: %w", err)
@@ -46,6 +52,15 @@ func NewGRPCTransport(cfg NodeConfig) (*GRPCTransport, error) {
 		conn:         conn,
 		walletClient: api.NewWalletClient(conn),
 	}, nil
+}
+
+// headersInterceptor returns a gRPC unary interceptor that adds headers as metadata
+func headersInterceptor(headers map[string]string) grpc.UnaryClientInterceptor {
+	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		md := metadata.New(headers)
+		ctx = metadata.NewOutgoingContext(ctx, md)
+		return invoker(ctx, method, req, reply, cc, opts...)
+	}
 }
 
 // WalletClient returns the underlying WalletClient for direct access

@@ -299,7 +299,7 @@ cfg := client.Config{
         {
             Protocol: client.ProtocolHTTP,
             Address:  "https://api.trongrid.io",
-            HTTPHeaders: map[string]string{
+            Headers: map[string]string{
                 "TRON-PRO-API-KEY": "your-api-key",
             },
         },
@@ -324,7 +324,7 @@ cfg := client.Config{
         {
             Protocol: client.ProtocolHTTP,
             Address:  "https://api.trongrid.io",
-            HTTPHeaders: map[string]string{
+            Headers: map[string]string{
                 "TRON-PRO-API-KEY": "your-api-key",
             },
         },
@@ -340,56 +340,27 @@ tron, err := client.New(cfg)
 
 Each request uses the next node in round-robin fashion. Errors are returned as-is without retries.
 
-### TronGrid with API Key (gRPC Interceptor)
+### TronGrid with API Key (gRPC)
 
-For gRPC with TronGrid, use a dial option interceptor:
+The `Headers` field works for both HTTP and gRPC transports:
 
 ```go
-import (
-    "context"
+import "github.com/sxwebdev/gotron/pkg/client"
 
-    "github.com/sxwebdev/gotron/pkg/client"
-    "google.golang.org/grpc"
-    "google.golang.org/grpc/metadata"
-)
-
-func tronGridAPIKeyInterceptor(apiKey string) grpc.UnaryClientInterceptor {
-  return func(
-    ctx context.Context,
-    method string,
-    req, reply any,
-    cc *grpc.ClientConn,
-    invoker grpc.UnaryInvoker,
-    opts ...grpc.CallOption,
-  ) error {
-    ctx = metadata.AppendToOutgoingContext(ctx, "TRON-PRO-API-KEY", apiKey)
-    return invoker(ctx, method, req, reply, cc, opts...)
-  }
-}
-
-func main() {
-  cfg := client.Config{
+cfg := client.Config{
     Nodes: []client.NodeConfig{
-      {
-        Protocol: client.ProtocolGRPC,
-        Address:  "grpc.trongrid.io:50051",
-        UseTLS:   true,
-        DialOptions: []grpc.DialOption{
-          grpc.WithUnaryInterceptor(tronGridAPIKeyInterceptor("your-api-key")),
+        {
+            Protocol: client.ProtocolGRPC,
+            Address:  "grpc.trongrid.io:50051",
+            UseTLS:   true,
+            Headers: map[string]string{
+                "TRON-PRO-API-KEY": "your-api-key",
+            },
         },
-      },
     },
-  }
-
-  tron, err := client.New(cfg)
-  if err != nil {
-    log.Fatal(err)
-  }
-  defer tron.Close()
-
-  // All requests will include the API key header
-  balance, err := tron.GetAccountBalance(ctx, "TAddress")
 }
+
+tron, err := client.New(cfg)
 ```
 
 ### Custom HTTP Client
@@ -409,7 +380,7 @@ cfg := client.Config{
             HTTPClient: &http.Client{
                 Timeout: 60 * time.Second,
             },
-            HTTPHeaders: map[string]string{
+            Headers: map[string]string{
                 "Authorization": "Bearer your-token",
             },
         },

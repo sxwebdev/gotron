@@ -80,7 +80,7 @@
 //	        {
 //	            Protocol: client.ProtocolHTTP,
 //	            Address:  "https://api.trongrid.io",
-//	            HTTPHeaders: map[string]string{
+//	            Headers: map[string]string{
 //	                "TRON-PRO-API-KEY": "your-api-key",
 //	            },
 //	        },
@@ -99,7 +99,7 @@
 //	        {
 //	            Protocol: client.ProtocolHTTP,
 //	            Address:  "https://api.trongrid.io",
-//	            HTTPHeaders: map[string]string{
+//	            Headers: map[string]string{
 //	                "TRON-PRO-API-KEY": "your-api-key",
 //	            },
 //	        },
@@ -116,56 +116,19 @@
 // # Using TronGrid with API Key
 //
 // TronGrid requires an API key via the TRON-PRO-API-KEY header.
-//
-// For HTTP transport, use HTTPHeaders in NodeConfig:
+// Use the Headers field in NodeConfig - it works for both HTTP and gRPC transports:
 //
 //	cfg := client.Config{
 //	    Nodes: []client.NodeConfig{
 //	        {
-//	            Protocol: client.ProtocolHTTP,
-//	            Address:  "https://api.trongrid.io",
-//	            HTTPHeaders: map[string]string{
+//	            Protocol: client.ProtocolGRPC,
+//	            Address:  "grpc.trongrid.io:50051",
+//	            UseTLS:   true,
+//	            Headers: map[string]string{
 //	                "TRON-PRO-API-KEY": "your-api-key",
 //	            },
 //	        },
 //	    },
-//	}
-//
-// For gRPC transport, use DialOptions with an interceptor:
-//
-//	import (
-//	    "context"
-//
-//	    "github.com/sxwebdev/gotron/pkg/client"
-//	    "google.golang.org/grpc"
-//	    "google.golang.org/grpc/metadata"
-//	)
-//
-//	func apiKeyInterceptor(apiKey string) grpc.UnaryClientInterceptor {
-//	    return func(ctx context.Context, method string, req, reply interface{},
-//	        cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-//
-//	        ctx = metadata.AppendToOutgoingContext(ctx, "TRON-PRO-API-KEY", apiKey)
-//	        return invoker(ctx, method, req, reply, cc, opts...)
-//	    }
-//	}
-//
-//	func main() {
-//	    cfg := client.Config{
-//	        Nodes: []client.NodeConfig{
-//	            {
-//	                Protocol: client.ProtocolGRPC,
-//	                Address:  "grpc.trongrid.io:50051",
-//	                UseTLS:   true,
-//	                DialOptions: []grpc.DialOption{
-//	                    grpc.WithUnaryInterceptor(apiKeyInterceptor("your-api-key")),
-//	                },
-//	            },
-//	        },
-//	    }
-//
-//	    tron, err := client.New(cfg)
-//	    // Use client...
 //	}
 //
 // # Address Generation
