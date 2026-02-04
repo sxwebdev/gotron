@@ -55,7 +55,7 @@ func (c *Client) TRC20Call(ctx context.Context, from, contractAddress, data stri
 	}
 	var result *api.TransactionExtention
 	if constant {
-		result, err = c.triggerConstantContract(ctx, ct)
+		result, err = c.TriggerConstantContract(ctx, ct)
 	} else {
 		result, err = c.triggerContract(ctx, ct, feeLimit)
 	}

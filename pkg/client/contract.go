@@ -71,8 +71,8 @@ func (c *Client) UpdateSettingContract(ctx context.Context, from, contractAddres
 	return tx, err
 }
 
-// TriggerConstantContract and return tx result
-func (c *Client) TriggerConstantContract(ctx context.Context, from, contractAddress, method, jsonString string) (*api.TransactionExtention, error) {
+// TriggerConstantContractCustom and return tx result
+func (c *Client) TriggerConstantContractCustom(ctx context.Context, from, contractAddress, method, jsonString string) (*api.TransactionExtention, error) {
 	var err error
 	fromDesc, err := tronutils.FromHex("410000000000000000000000000000000000000000")
 	if err != nil {
@@ -106,11 +106,11 @@ func (c *Client) TriggerConstantContract(ctx context.Context, from, contractAddr
 		Data:            dataBytes,
 	}
 
-	return c.triggerConstantContract(ctx, ct)
+	return c.TriggerConstantContract(ctx, ct)
 }
 
-// triggerConstantContract and return tx result
-func (c *Client) triggerConstantContract(ctx context.Context, ct *core.TriggerSmartContract) (*api.TransactionExtention, error) {
+// TriggerConstantContract and return tx result
+func (c *Client) TriggerConstantContract(ctx context.Context, ct *core.TriggerSmartContract) (*api.TransactionExtention, error) {
 	return c.transport.TriggerConstantContract(ctx, ct)
 }
 
