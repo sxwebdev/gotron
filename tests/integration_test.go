@@ -631,3 +631,67 @@ func TestGetAssetIssueListByName_HTTP(t *testing.T) {
 			asset.GetId(), string(asset.GetName()), string(asset.GetAbbr()))
 	}
 }
+
+// Contract operations tests
+
+func TestGetContract_GRPC(t *testing.T) {
+	c := newGRPCClient(t)
+	defer c.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// USDT contract
+	contract, err := c.GetContract(ctx, usdtContract)
+	require.NoError(t, err)
+	require.NotNil(t, contract)
+
+	t.Logf("gRPC: Contract name: %s, consume_user_resource_percent: %d",
+		contract.GetName(), contract.GetConsumeUserResourcePercent())
+}
+
+func TestGetContract_HTTP(t *testing.T) {
+	c := newHTTPClient(t)
+	defer c.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// USDT contract
+	contract, err := c.GetContract(ctx, usdtContract)
+	require.NoError(t, err)
+	require.NotNil(t, contract)
+
+	t.Logf("HTTP: Contract name: %s, consume_user_resource_percent: %d",
+		contract.GetName(), contract.GetConsumeUserResourcePercent())
+}
+
+func TestGetContractABI_GRPC(t *testing.T) {
+	c := newGRPCClient(t)
+	defer c.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// USDT contract
+	abi, err := c.GetContractABI(ctx, usdtContract)
+	require.NoError(t, err)
+	require.NotNil(t, abi)
+
+	t.Logf("gRPC: Contract ABI has %d entries", len(abi.GetEntrys()))
+}
+
+func TestGetContractABI_HTTP(t *testing.T) {
+	c := newHTTPClient(t)
+	defer c.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// USDT contract
+	abi, err := c.GetContractABI(ctx, usdtContract)
+	require.NoError(t, err)
+	require.NotNil(t, abi)
+
+	t.Logf("HTTP: Contract ABI has %d entries", len(abi.GetEntrys()))
+}

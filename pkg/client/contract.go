@@ -289,9 +289,8 @@ func (c *Client) UpdateHash(tx *api.TransactionExtention) error {
 	return tx.UpdateHash()
 }
 
-// GetContractABI return smartContract
-func (c *Client) GetContractABI(ctx context.Context, contractAddress string) (*core.SmartContract_ABI, error) {
-	var err error
+// GetContract returns smart contract information by address
+func (c *Client) GetContract(ctx context.Context, contractAddress string) (*core.SmartContract, error) {
 	contractDesc, err := tronutils.DecodeCheck(contractAddress)
 	if err != nil {
 		return nil, err
@@ -302,7 +301,20 @@ func (c *Client) GetContractABI(ctx context.Context, contractAddress string) (*c
 		return nil, err
 	}
 	if sm == nil {
-		return nil, fmt.Errorf("invalid contract abi")
+		return nil, fmt.Errorf("contract not found")
+	}
+
+	return sm, nil
+}
+
+// GetContractABI return smartContract
+func (c *Client) GetContractABI(ctx context.Context, contractAddress string) (*core.SmartContract_ABI, error) {
+	sm, err := c.GetContract(ctx, contractAddress)
+	if err != nil {
+		return nil, err
+	}
+	if sm.Abi == nil {
+		return nil, fmt.Errorf("contract has no ABI")
 	}
 
 	return sm.Abi, nil
