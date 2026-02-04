@@ -13,8 +13,13 @@ import (
 func initClient() (*client.Client, error) {
 	// Initialize the Tron client for testing
 	cfg := client.Config{
-		GRPCAddress: "tron-grpc.publicnode.com:443",
-		UseTLS:      true,
+		Nodes: []client.NodeConfig{
+			{
+				Protocol: client.ProtocolGRPC,
+				Address:  "tron-grpc.publicnode.com:443",
+				UseTLS:   true,
+			},
+		},
 	}
 
 	client, err := client.New(cfg)

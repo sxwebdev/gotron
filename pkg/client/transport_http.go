@@ -26,7 +26,7 @@ type HTTPTransport struct {
 }
 
 // NewHTTPTransport creates a new HTTP transport
-func NewHTTPTransport(cfg Config) (*HTTPTransport, error) {
+func NewHTTPTransport(cfg NodeConfig) (*HTTPTransport, error) {
 	httpClient := cfg.HTTPClient
 	if httpClient == nil {
 		httpClient = &http.Client{
@@ -34,7 +34,7 @@ func NewHTTPTransport(cfg Config) (*HTTPTransport, error) {
 		}
 	}
 
-	baseURL := strings.TrimSuffix(cfg.HTTPAddress, "/")
+	baseURL := strings.TrimSuffix(cfg.Address, "/")
 
 	return &HTTPTransport{
 		baseURL:    baseURL,

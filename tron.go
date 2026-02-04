@@ -45,7 +45,13 @@ type Config = client.Config
 // Example:
 //
 //	cfg := gotron.Config{
-//	    GRPCAddress: "your-custom-node-grpc-address:50051",
+//	    Nodes: []client.NodeConfig{
+//	        {
+//	            Protocol: client.ProtocolGRPC,
+//	            Address:  "grpc.trongrid.io:50051",
+//	            UseTLS:   true,
+//	        },
+//	    },
 //	}
 //	tron, err := gotron.New(cfg)
 //	if err != nil {

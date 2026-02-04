@@ -22,7 +22,7 @@ type GRPCTransport struct {
 }
 
 // NewGRPCTransport creates a new gRPC transport
-func NewGRPCTransport(cfg Config) (*GRPCTransport, error) {
+func NewGRPCTransport(cfg NodeConfig) (*GRPCTransport, error) {
 	opts := append(
 		cfg.DialOptions,
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(1024*1024*100)),
@@ -37,7 +37,7 @@ func NewGRPCTransport(cfg Config) (*GRPCTransport, error) {
 		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	}
 
-	conn, err := grpc.NewClient(cfg.GRPCAddress, opts...)
+	conn, err := grpc.NewClient(cfg.Address, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to dial gRPC: %w", err)
 	}

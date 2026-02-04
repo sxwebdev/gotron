@@ -23,9 +23,13 @@ const (
 
 func newGRPCClient(t *testing.T) *client.Client {
 	cfg := client.Config{
-		Protocol:    client.ProtocolGRPC,
-		GRPCAddress: grpcAddress,
-		UseTLS:      true,
+		Nodes: []client.NodeConfig{
+			{
+				Protocol: client.ProtocolGRPC,
+				Address:  grpcAddress,
+				UseTLS:   true,
+			},
+		},
 	}
 	c, err := client.New(cfg)
 	require.NoError(t, err)
@@ -34,8 +38,12 @@ func newGRPCClient(t *testing.T) *client.Client {
 
 func newHTTPClient(t *testing.T) *client.Client {
 	cfg := client.Config{
-		Protocol:    client.ProtocolHTTP,
-		HTTPAddress: httpAddress,
+		Nodes: []client.NodeConfig{
+			{
+				Protocol: client.ProtocolHTTP,
+				Address:  httpAddress,
+			},
+		},
 	}
 	c, err := client.New(cfg)
 	require.NoError(t, err)
