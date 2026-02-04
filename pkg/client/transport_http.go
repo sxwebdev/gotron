@@ -3,6 +3,7 @@ package client
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -46,6 +47,223 @@ func NewHTTPTransport(cfg NodeConfig) (*HTTPTransport, error) {
 // Close closes the HTTP transport (no-op for HTTP)
 func (t *HTTPTransport) Close() error {
 	return nil
+}
+
+// transformTronJSON converts Tron's non-standard JSON format to standard protobuf JSON format.
+// It handles:
+// 1. Any types: {"type_url": "...", "value": {...}} -> {"@type": "...", ...fields...}
+// 2. Field name normalization (e.g., blockID -> blockid, txID -> txid)
+// 3. Hex to base64 conversion for bytes fields
+func transformTronJSON(data interface{}) interface{} {
+	return transformTronJSONWithKey(data, "")
+}
+
+func transformTronJSONWithKey(data interface{}, fieldName string) interface{} {
+	switch v := data.(type) {
+	case map[string]interface{}:
+		// Check if this is a Tron-style Any type (has type_url and value)
+		typeURL, hasTypeURL := v["type_url"].(string)
+		valueObj, hasValue := v["value"].(map[string]interface{})
+
+		if hasTypeURL && hasValue && len(v) == 2 {
+			// Transform to standard protojson Any format
+			result := map[string]interface{}{
+				"@type": typeURL,
+			}
+			// Merge value fields into result
+			for k, val := range valueObj {
+				result[k] = transformTronJSONWithKey(val, k)
+			}
+			return result
+		}
+
+		// Recursively transform all values with field name normalization
+		result := make(map[string]interface{}, len(v))
+		for k, val := range v {
+			// Normalize field names
+			normalizedKey := normalizeFieldName(k)
+			result[normalizedKey] = transformTronJSONWithKey(val, k)
+		}
+		return result
+
+	case []interface{}:
+		// Recursively transform array elements
+		result := make([]interface{}, len(v))
+		for i, val := range v {
+			result[i] = transformTronJSONWithKey(val, fieldName)
+		}
+		return result
+
+	case string:
+		// Convert hex strings to base64 for known bytes fields
+		if bytesFields[fieldName] && isHexString(v) {
+			return hexToBase64(v)
+		}
+		return v
+
+	default:
+		return data
+	}
+}
+
+// normalizeFieldName converts Tron HTTP API field names to protobuf JSON field names
+func normalizeFieldName(name string) string {
+	// Map of Tron HTTP API field names to protobuf field names
+	fieldMap := map[string]string{
+		"blockID": "blockid",
+		"txID":    "txid",
+	}
+
+	if mapped, ok := fieldMap[name]; ok {
+		return mapped
+	}
+	return name
+}
+
+// hexToBase64 converts a hex string to base64 string (for protojson bytes fields)
+func hexToBase64(hexStr string) string {
+	data, err := hex.DecodeString(hexStr)
+	if err != nil {
+		return hexStr // Return original if not valid hex
+	}
+	return base64.StdEncoding.EncodeToString(data)
+}
+
+// isHexString checks if a string looks like a hex-encoded bytes value
+func isHexString(s string) bool {
+	if len(s) == 0 || len(s)%2 != 0 {
+		return false
+	}
+	for _, c := range s {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+			return false
+		}
+	}
+	return true
+}
+
+// bytesFields contains field names that should be treated as bytes (hex -> base64)
+var bytesFields = map[string]bool{
+	"txid":              true,
+	"txID":              true,
+	"blockid":           true,
+	"blockID":           true,
+	"id":                true,
+	"parentHash":        true,
+	"txTrieRoot":        true,
+	"witness_address":   true,
+	"witnessAddress":    true,
+	"witness_signature": true,
+	"witnessSignature":  true,
+	"raw_data_hex":      true,
+	"rawDataHex":        true,
+}
+
+// transformBlockJSON transforms block response to match BlockExtention proto structure.
+// The HTTP API returns transactions as plain Transaction objects, but BlockExtention
+// expects TransactionExtention objects with nested transaction field.
+func transformBlockJSON(data interface{}) interface{} {
+	blockMap, ok := data.(map[string]interface{})
+	if !ok {
+		return transformTronJSON(data)
+	}
+
+	result := make(map[string]interface{})
+
+	for k, v := range blockMap {
+		normalizedKey := normalizeFieldName(k)
+
+		if normalizedKey == "transactions" {
+			// Transform transactions array: wrap each Transaction in TransactionExtention
+			txs, ok := v.([]interface{})
+			if ok {
+				transformedTxs := make([]interface{}, len(txs))
+				for i, tx := range txs {
+					transformedTxs[i] = wrapTransactionExtention(tx)
+				}
+				result[normalizedKey] = transformedTxs
+			} else {
+				result[normalizedKey] = transformTronJSON(v)
+			}
+		} else {
+			result[normalizedKey] = transformTronJSON(v)
+		}
+	}
+
+	return result
+}
+
+// wrapTransactionExtention wraps a Transaction JSON into TransactionExtention structure
+func wrapTransactionExtention(tx interface{}) interface{} {
+	txMap, ok := tx.(map[string]interface{})
+	if !ok {
+		return transformTronJSON(tx)
+	}
+
+	// Extract txID for the txid field and convert hex to base64
+	var txid interface{}
+	if txID, ok := txMap["txID"].(string); ok {
+		if isHexString(txID) {
+			txid = hexToBase64(txID)
+		} else {
+			txid = txID
+		}
+	}
+
+	// The rest of the fields belong to the nested transaction object
+	transactionFields := make(map[string]interface{})
+	for k, v := range txMap {
+		if k == "txID" {
+			continue // txID goes to txid at TransactionExtention level
+		}
+		transactionFields[k] = v
+	}
+
+	// Build TransactionExtention structure
+	result := map[string]interface{}{
+		"transaction": transformTronJSON(transactionFields),
+	}
+	if txid != nil {
+		result["txid"] = txid
+	}
+
+	return result
+}
+
+// transformBlockListJSON transforms block list response to match BlockListExtention proto structure.
+func transformBlockListJSON(data interface{}) interface{} {
+	// The HTTP API returns an array of blocks directly, but BlockListExtention
+	// expects an object with "block" field
+	if blocks, ok := data.([]interface{}); ok {
+		transformedBlocks := make([]interface{}, len(blocks))
+		for i, block := range blocks {
+			transformedBlocks[i] = transformBlockJSON(block)
+		}
+		return map[string]interface{}{
+			"block": transformedBlocks,
+		}
+	}
+
+	// If it's already an object, check for "block" field
+	if obj, ok := data.(map[string]interface{}); ok {
+		if blocks, ok := obj["block"].([]interface{}); ok {
+			transformedBlocks := make([]interface{}, len(blocks))
+			for i, block := range blocks {
+				transformedBlocks[i] = transformBlockJSON(block)
+			}
+			result := make(map[string]interface{})
+			for k, v := range obj {
+				if k == "block" {
+					result[k] = transformedBlocks
+				} else {
+					result[normalizeFieldName(k)] = transformTronJSON(v)
+				}
+			}
+			return result
+		}
+	}
+
+	return transformTronJSON(data)
 }
 
 // doRequestRaw performs an HTTP POST request and returns raw JSON response
@@ -103,6 +321,109 @@ func (t *HTTPTransport) doRequest(ctx context.Context, endpoint string, body int
 		opts := protojson.UnmarshalOptions{DiscardUnknown: true}
 		if err := opts.Unmarshal(respBody, result); err != nil {
 			return fmt.Errorf("unmarshal response: %w (body: %s)", err, string(respBody))
+		}
+	}
+
+	return nil
+}
+
+// doRequestTransformed performs an HTTP POST request and transforms Tron's
+// non-standard JSON format to standard protobuf JSON before unmarshaling.
+// This is needed for endpoints that return protobuf Any types.
+func (t *HTTPTransport) doRequestTransformed(ctx context.Context, endpoint string, body interface{}, result proto.Message) error {
+	respBody, err := t.doRequestRaw(ctx, endpoint, body)
+	if err != nil {
+		return err
+	}
+
+	if result != nil {
+		// Parse JSON into generic structure
+		var data interface{}
+		if err := json.Unmarshal(respBody, &data); err != nil {
+			return fmt.Errorf("parse json: %w (body: %s)", err, string(respBody))
+		}
+
+		// Transform Tron's JSON format to standard protobuf JSON
+		transformed := transformTronJSON(data)
+
+		// Marshal back to JSON
+		transformedJSON, err := json.Marshal(transformed)
+		if err != nil {
+			return fmt.Errorf("marshal transformed json: %w", err)
+		}
+
+		// Unmarshal with protojson
+		opts := protojson.UnmarshalOptions{DiscardUnknown: true}
+		if err := opts.Unmarshal(transformedJSON, result); err != nil {
+			return fmt.Errorf("unmarshal response: %w (body: %s)", err, string(transformedJSON))
+		}
+	}
+
+	return nil
+}
+
+// doBlockRequest performs an HTTP POST request for block endpoints and transforms
+// the response to match BlockExtention proto structure.
+func (t *HTTPTransport) doBlockRequest(ctx context.Context, endpoint string, body interface{}, result proto.Message) error {
+	respBody, err := t.doRequestRaw(ctx, endpoint, body)
+	if err != nil {
+		return err
+	}
+
+	if result != nil {
+		// Parse JSON into generic structure
+		var data interface{}
+		if err := json.Unmarshal(respBody, &data); err != nil {
+			return fmt.Errorf("parse json: %w (body: %s)", err, string(respBody))
+		}
+
+		// Transform block JSON to match protobuf structure
+		transformed := transformBlockJSON(data)
+
+		// Marshal back to JSON
+		transformedJSON, err := json.Marshal(transformed)
+		if err != nil {
+			return fmt.Errorf("marshal transformed json: %w", err)
+		}
+
+		// Unmarshal with protojson
+		opts := protojson.UnmarshalOptions{DiscardUnknown: true}
+		if err := opts.Unmarshal(transformedJSON, result); err != nil {
+			return fmt.Errorf("unmarshal response: %w (body: %s)", err, string(transformedJSON))
+		}
+	}
+
+	return nil
+}
+
+// doBlockListRequest performs an HTTP POST request for block list endpoints and transforms
+// the response to match BlockListExtention proto structure.
+func (t *HTTPTransport) doBlockListRequest(ctx context.Context, endpoint string, body interface{}, result proto.Message) error {
+	respBody, err := t.doRequestRaw(ctx, endpoint, body)
+	if err != nil {
+		return err
+	}
+
+	if result != nil {
+		// Parse JSON into generic structure
+		var data interface{}
+		if err := json.Unmarshal(respBody, &data); err != nil {
+			return fmt.Errorf("parse json: %w (body: %s)", err, string(respBody))
+		}
+
+		// Transform block list JSON to match protobuf structure
+		transformed := transformBlockListJSON(data)
+
+		// Marshal back to JSON
+		transformedJSON, err := json.Marshal(transformed)
+		if err != nil {
+			return fmt.Errorf("marshal transformed json: %w", err)
+		}
+
+		// Unmarshal with protojson
+		opts := protojson.UnmarshalOptions{DiscardUnknown: true}
+		if err := opts.Unmarshal(transformedJSON, result); err != nil {
+			return fmt.Errorf("unmarshal response: %w (body: %s)", err, string(transformedJSON))
 		}
 	}
 
@@ -242,7 +563,7 @@ func (t *HTTPTransport) CreateAccount(ctx context.Context, contract *core.Accoun
 
 func (t *HTTPTransport) GetNowBlock(ctx context.Context) (*api.BlockExtention, error) {
 	result := &api.BlockExtention{}
-	if err := t.doRequest(ctx, "/wallet/getnowblock", nil, result); err != nil {
+	if err := t.doBlockRequest(ctx, "/wallet/getnowblock", nil, result); err != nil {
 		return nil, err
 	}
 
@@ -255,7 +576,7 @@ func (t *HTTPTransport) GetBlockByNum(ctx context.Context, num int64) (*api.Bloc
 	}
 
 	result := &api.BlockExtention{}
-	if err := t.doRequest(ctx, "/wallet/getblockbynum", reqBody, result); err != nil {
+	if err := t.doBlockRequest(ctx, "/wallet/getblockbynum", reqBody, result); err != nil {
 		return nil, err
 	}
 
@@ -268,7 +589,9 @@ func (t *HTTPTransport) GetBlockById(ctx context.Context, id []byte) (*core.Bloc
 	}
 
 	result := &core.Block{}
-	if err := t.doRequest(ctx, "/wallet/getblockbyid", reqBody, result); err != nil {
+	// core.Block uses Transaction directly (not TransactionExtention),
+	// so we use doRequestTransformed instead of doBlockRequest
+	if err := t.doRequestTransformed(ctx, "/wallet/getblockbyid", reqBody, result); err != nil {
 		return nil, err
 	}
 
@@ -282,7 +605,7 @@ func (t *HTTPTransport) GetBlockByLimitNext(ctx context.Context, start, end int6
 	}
 
 	result := &api.BlockListExtention{}
-	if err := t.doRequest(ctx, "/wallet/getblockbylimitnext", reqBody, result); err != nil {
+	if err := t.doBlockListRequest(ctx, "/wallet/getblockbylimitnext", reqBody, result); err != nil {
 		return nil, err
 	}
 
@@ -295,7 +618,7 @@ func (t *HTTPTransport) GetBlockByLatestNum(ctx context.Context, num int64) (*ap
 	}
 
 	result := &api.BlockListExtention{}
-	if err := t.doRequest(ctx, "/wallet/getblockbylatestnum", reqBody, result); err != nil {
+	if err := t.doBlockListRequest(ctx, "/wallet/getblockbylatestnum", reqBody, result); err != nil {
 		return nil, err
 	}
 
@@ -313,13 +636,32 @@ func (t *HTTPTransport) GetTransactionInfoByBlockNum(ctx context.Context, num in
 	}
 
 	// HTTP API returns a JSON array directly, but TransactionInfoList expects an object
-	// with "transactionInfo" field. Wrap the array in the expected format.
-	wrappedJSON := fmt.Sprintf(`{"transactionInfo":%s}`, string(respBody))
+	// with "transactionInfo" field. Parse, transform (hex->base64), and wrap.
+	var data []interface{}
+	if err := json.Unmarshal(respBody, &data); err != nil {
+		return nil, fmt.Errorf("parse json: %w (body: %s)", err, string(respBody))
+	}
+
+	// Transform each TransactionInfo to convert hex fields to base64
+	transformedData := make([]interface{}, len(data))
+	for i, item := range data {
+		transformedData[i] = transformTronJSON(item)
+	}
+
+	// Wrap in expected format
+	wrapped := map[string]interface{}{
+		"transactionInfo": transformedData,
+	}
+
+	wrappedJSON, err := json.Marshal(wrapped)
+	if err != nil {
+		return nil, fmt.Errorf("marshal transformed json: %w", err)
+	}
 
 	result := &api.TransactionInfoList{}
 	opts := protojson.UnmarshalOptions{DiscardUnknown: true}
-	if err := opts.Unmarshal([]byte(wrappedJSON), result); err != nil {
-		return nil, fmt.Errorf("unmarshal response: %w (body: %s)", err, string(respBody))
+	if err := opts.Unmarshal(wrappedJSON, result); err != nil {
+		return nil, fmt.Errorf("unmarshal response: %w (body: %s)", err, string(wrappedJSON))
 	}
 
 	return result, nil
