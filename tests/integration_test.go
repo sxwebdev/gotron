@@ -695,3 +695,35 @@ func TestGetContractABI_HTTP(t *testing.T) {
 
 	t.Logf("HTTP: Contract ABI has %d entries", len(abi.GetEntrys()))
 }
+
+func TestGetTransactionInfoByBlockNum_GRPC(t *testing.T) {
+	c := newGRPCClient(t)
+	defer c.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Block with transactions
+	blockNum := uint64(79831098)
+	txInfoList, err := c.GetTransactionInfoByBlockNum(ctx, blockNum)
+	require.NoError(t, err)
+	require.NotNil(t, txInfoList)
+
+	t.Logf("gRPC: Block %d has %d transaction infos", blockNum, len(txInfoList.GetTransactionInfo()))
+}
+
+func TestGetTransactionInfoByBlockNum_HTTP(t *testing.T) {
+	c := newHTTPClient(t)
+	defer c.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Block with transactions
+	blockNum := uint64(79831098)
+	txInfoList, err := c.GetTransactionInfoByBlockNum(ctx, blockNum)
+	require.NoError(t, err)
+	require.NotNil(t, txInfoList)
+
+	t.Logf("HTTP: Block %d has %d transaction infos", blockNum, len(txInfoList.GetTransactionInfo()))
+}

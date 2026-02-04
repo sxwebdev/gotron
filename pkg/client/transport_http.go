@@ -307,9 +307,19 @@ func (t *HTTPTransport) GetTransactionInfoByBlockNum(ctx context.Context, num in
 		"num": num,
 	}
 
-	result := &api.TransactionInfoList{}
-	if err := t.doRequest(ctx, "/wallet/gettransactioninfobyblocknum", reqBody, result); err != nil {
+	respBody, err := t.doRequestRaw(ctx, "/wallet/gettransactioninfobyblocknum", reqBody)
+	if err != nil {
 		return nil, err
+	}
+
+	// HTTP API returns a JSON array directly, but TransactionInfoList expects an object
+	// with "transactionInfo" field. Wrap the array in the expected format.
+	wrappedJSON := fmt.Sprintf(`{"transactionInfo":%s}`, string(respBody))
+
+	result := &api.TransactionInfoList{}
+	opts := protojson.UnmarshalOptions{DiscardUnknown: true}
+	if err := opts.Unmarshal([]byte(wrappedJSON), result); err != nil {
+		return nil, fmt.Errorf("unmarshal response: %w (body: %s)", err, string(respBody))
 	}
 
 	return result, nil
