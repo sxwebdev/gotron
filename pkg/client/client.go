@@ -13,7 +13,7 @@ type Client struct {
 	config    Config
 
 	// walletClient is kept for backward compatibility with API() method
-	// Only available when using gRPC transport
+	// Only available when using single gRPC transport
 	walletClient api.WalletClient
 }
 
@@ -27,6 +27,37 @@ func New(cfg Config) (*Client, error) {
 		config: cfg,
 	}
 
+	// Handle multiple nodes configuration
+	if len(cfg.Nodes) > 0 {
+		transports := make([]Transport, 0, len(cfg.Nodes))
+		for i, nodeCfg := range cfg.Nodes {
+			transport, err := createTransportFromNode(nodeCfg)
+			if err != nil {
+				// Close already created transports on error
+				for _, t := range transports {
+					t.Close()
+				}
+				return nil, fmt.Errorf("failed to create transport for node %d: %w", i, err)
+			}
+			transports = append(transports, transport)
+		}
+
+		if len(transports) == 1 {
+			// Single node - use it directly
+			client.transport = transports[0]
+			// For backward compatibility with single gRPC node
+			if grpcTransport, ok := transports[0].(*GRPCTransport); ok {
+				client.walletClient = grpcTransport.WalletClient()
+			}
+		} else {
+			// Multiple nodes - use round-robin
+			client.transport = NewRoundRobinTransport(transports)
+		}
+
+		return client, nil
+	}
+
+	// Handle legacy single node configuration
 	var err error
 
 	switch cfg.GetProtocol() {
@@ -50,6 +81,34 @@ func New(cfg Config) (*Client, error) {
 	}
 
 	return client, nil
+}
+
+// createTransportFromNode creates a Transport from NodeConfig
+func createTransportFromNode(nodeCfg NodeConfig) (Transport, error) {
+	switch nodeCfg.GetProtocol() {
+	case ProtocolGRPC:
+		// Convert NodeConfig to Config for gRPC transport
+		cfg := Config{
+			Protocol:    ProtocolGRPC,
+			GRPCAddress: nodeCfg.Address,
+			UseTLS:      nodeCfg.UseTLS,
+			DialOptions: nodeCfg.DialOptions,
+		}
+		return NewGRPCTransport(cfg)
+
+	case ProtocolHTTP:
+		// Convert NodeConfig to Config for HTTP transport
+		cfg := Config{
+			Protocol:    ProtocolHTTP,
+			HTTPAddress: nodeCfg.Address,
+			HTTPClient:  nodeCfg.HTTPClient,
+			HTTPHeaders: nodeCfg.HTTPHeaders,
+		}
+		return NewHTTPTransport(cfg)
+
+	default:
+		return nil, fmt.Errorf("unsupported protocol: %s", nodeCfg.Protocol)
+	}
 }
 
 // Close closes the client connection

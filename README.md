@@ -9,6 +9,7 @@ A comprehensive Go SDK for the Tron blockchain. This library provides a complete
 ## Features
 
 - **Dual Transport Support** - gRPC and HTTP REST API
+- **Multi-Node Load Balancing** - Round-robin across multiple nodes (gRPC/HTTP mixed)
 - **Complete API Client** - Full implementation of Tron Wallet API
 - **Address Management** - BIP39/BIP44 mnemonic support, address generation and validation
 - **Transaction Handling** - Create, sign, and broadcast transactions
@@ -303,6 +304,39 @@ Both transports use the same high-level API:
 account, err := tron.GetAccount(ctx, "TAddress...")
 balance, err := tron.GetAccountBalance(ctx, "TAddress...")
 ```
+
+### Multi-Node Support
+
+The SDK supports multiple nodes with round-robin load balancing. You can mix gRPC and HTTP nodes:
+
+```go
+import "github.com/sxwebdev/gotron/pkg/client"
+
+cfg := client.Config{
+    Nodes: []client.NodeConfig{
+        {
+            Protocol: client.ProtocolGRPC,
+            Address:  "grpc.trongrid.io:50051",
+            UseTLS:   true,
+        },
+        {
+            Protocol: client.ProtocolHTTP,
+            Address:  "https://api.trongrid.io",
+            HTTPHeaders: map[string]string{
+                "TRON-PRO-API-KEY": "your-api-key",
+            },
+        },
+        {
+            Protocol: client.ProtocolHTTP,
+            Address:  "https://tron-rpc.publicnode.com",
+        },
+    },
+}
+
+tron, err := client.New(cfg)
+```
+
+Each request uses the next node in round-robin fashion. Errors are returned as-is without retries.
 
 ### Predefined Networks
 

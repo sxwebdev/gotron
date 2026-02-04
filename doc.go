@@ -1,12 +1,15 @@
 // Package gotron provides a comprehensive SDK for interacting with the Tron blockchain.
 //
-// This package offers a complete implementation of Tron's gRPC API with a clean,
-// idiomatic Go interface. It handles address generation, transaction creation and signing,
+// This package offers a complete implementation of Tron's API with a clean,
+// idiomatic Go interface. It supports both gRPC and HTTP REST API transports,
+// handles address generation, transaction creation and signing,
 // TRC20 token operations, resource management, and blockchain queries.
 //
 // # Features
 //
-//   - Full gRPC client for Tron Wallet API
+//   - Dual transport support: gRPC and HTTP REST API
+//   - Multi-node load balancing: round-robin across multiple nodes
+//   - Full client for Tron Wallet API
 //   - BIP39/BIP44 mnemonic and address generation
 //   - Transaction creation, signing, and broadcasting
 //   - TRC20 token support (transfer, balance, metadata)
@@ -48,10 +51,83 @@
 //	    fmt.Printf("Balance: %s TRX\n", balance.String())
 //	}
 //
+// # Transport Protocols
+//
+// The SDK supports two transport protocols: gRPC (default) and HTTP REST API.
+// Both transports provide the same high-level API.
+//
+// Using gRPC transport (default):
+//
+//	cfg := client.Config{
+//	    Protocol:    client.ProtocolGRPC, // optional, gRPC is default
+//	    GRPCAddress: "grpc.trongrid.io:50051",
+//	    UseTLS:      true,
+//	}
+//	tron, err := client.New(cfg)
+//
+// Using HTTP transport:
+//
+//	cfg := client.Config{
+//	    Protocol:    client.ProtocolHTTP,
+//	    HTTPAddress: "https://api.trongrid.io",
+//	    HTTPHeaders: map[string]string{
+//	        "TRON-PRO-API-KEY": "your-api-key",
+//	    },
+//	}
+//	tron, err := client.New(cfg)
+//
+// Both transports use identical method signatures:
+//
+//	// Works with both gRPC and HTTP
+//	account, err := tron.GetAccount(ctx, "TAddress...")
+//	balance, err := tron.GetAccountBalance(ctx, "TAddress...")
+//
+// # Multi-Node Support
+//
+// The SDK supports multiple nodes with round-robin load balancing.
+// You can mix gRPC and HTTP nodes in the same configuration:
+//
+//	cfg := client.Config{
+//	    Nodes: []client.NodeConfig{
+//	        {
+//	            Protocol: client.ProtocolGRPC,
+//	            Address:  "grpc.trongrid.io:50051",
+//	            UseTLS:   true,
+//	        },
+//	        {
+//	            Protocol: client.ProtocolHTTP,
+//	            Address:  "https://api.trongrid.io",
+//	            HTTPHeaders: map[string]string{
+//	                "TRON-PRO-API-KEY": "your-api-key",
+//	            },
+//	        },
+//	        {
+//	            Protocol: client.ProtocolHTTP,
+//	            Address:  "https://tron-rpc.publicnode.com",
+//	        },
+//	    },
+//	}
+//	tron, err := client.New(cfg)
+//
+// Each request will use the next node in round-robin fashion.
+// No retries are performed on errors - errors are returned as-is.
+//
 // # Using TronGrid with API Key
 //
 // TronGrid requires an API key via the TRON-PRO-API-KEY header.
-// Use a gRPC interceptor to add it:
+//
+// For HTTP transport, use HTTPHeaders:
+//
+//	cfg := client.Config{
+//	    Protocol:    client.ProtocolHTTP,
+//	    HTTPAddress: "https://api.trongrid.io",
+//	    HTTPHeaders: map[string]string{
+//	        "TRON-PRO-API-KEY": "your-api-key",
+//	    },
+//	}
+//	tron, err := client.New(cfg)
+//
+// For gRPC transport, use an interceptor:
 //
 //	import (
 //	    "context"
@@ -72,13 +148,14 @@
 //
 //	func main() {
 //	    cfg := client.Config{
-//	        Network: client.NetworkMainnet,
+//	        GRPCAddress: "grpc.trongrid.io:50051",
+//	        UseTLS:      true,
 //	        DialOptions: []grpc.DialOption{
 //	            grpc.WithUnaryInterceptor(apiKeyInterceptor("your-api-key")),
 //	        },
 //	    }
 //
-//	    tron, err := gotron.New(cfg)
+//	    tron, err := client.New(cfg)
 //	    // Use client...
 //	}
 //
@@ -199,11 +276,20 @@
 //	// Nile Testnet
 //	cfg := gotron.Config{Network: gotron.Nile}
 //
-//	// Custom node
+//	// Custom gRPC node
 //	cfg := client.Config{
 //	    GRPCAddress: "custom-node:50051",
 //	    UseTLS:      true,
 //	    Network:     client.NetworkMainnet,
+//	}
+//
+//	// Custom HTTP node with headers
+//	cfg := client.Config{
+//	    Protocol:    client.ProtocolHTTP,
+//	    HTTPAddress: "https://custom-node",
+//	    HTTPHeaders: map[string]string{
+//	        "Authorization": "Bearer your-token",
+//	    },
 //	}
 //
 // # Package Organization
@@ -211,10 +297,13 @@
 // The SDK is organized into several packages:
 //
 //   - gotron: High-level wrapper and convenience functions
-//   - pkg/client: Core gRPC client with all blockchain operations
+//   - pkg/client: Core client with gRPC and HTTP transport implementations
 //   - pkg/address: Address generation, validation, and key management
-//   - pkg/utils: Utility functions for encoding, formatting, etc.
+//   - pkg/tronutils: Utility functions for encoding, formatting, etc.
 //   - schema/pb: Protocol buffer definitions from Tron protocol
+//
+// The client package uses a Transport interface pattern, allowing seamless
+// switching between gRPC and HTTP without changing application code.
 //
 // # Error Handling
 //
