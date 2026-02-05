@@ -34,7 +34,11 @@ func New(cfg Config) (*Client, error) {
 
 	// Wrap with metrics transport if metrics are configured
 	if cfg.Metrics != nil {
-		transport = NewMetricsTransport(transport, cfg.Metrics)
+		blockchain := cfg.Blockchain
+		if blockchain == "" {
+			blockchain = "tron"
+		}
+		transport = NewMetricsTransport(transport, cfg.Metrics, blockchain)
 	}
 
 	return &Client{

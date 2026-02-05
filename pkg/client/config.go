@@ -50,9 +50,15 @@ type Config struct {
 	// Network specifies the Tron network type (informational only)
 	Network Network
 
-	// Metrics is optional Prometheus metrics collector.
+	// Blockchain identifies this blockchain for metrics labels.
+	// Default: "tron"
+	Blockchain string
+
+	// Metrics is an optional metrics collector.
 	// If nil, no metrics are collected.
-	Metrics *Metrics
+	// Use NewMetrics() for built-in Prometheus metrics,
+	// or provide a custom MetricsCollector implementation.
+	Metrics MetricsCollector
 }
 
 // Validate validates the client configuration

@@ -392,9 +392,9 @@ tron, err := client.New(cfg)
 
 ## Prometheus Metrics
 
-The SDK supports optional Prometheus metrics for monitoring RPC performance.
+The SDK supports optional metrics for monitoring RPC performance. You can use the built-in Prometheus metrics or provide a custom `MetricsCollector` implementation.
 
-### Enable Metrics
+### Built-in Prometheus Metrics
 
 ```go
 import (
@@ -402,7 +402,7 @@ import (
     "github.com/sxwebdev/gotron/pkg/client"
 )
 
-// Create metrics collector
+// Create built-in metrics collector
 metrics := client.NewMetrics(prometheus.DefaultRegisterer)
 
 // Create client with metrics
@@ -413,48 +413,61 @@ cfg := client.Config{
             UseTLS:  true,
         },
     },
-    Metrics: metrics,
+    Blockchain: "tron", // Label for metrics (default: "tron")
+    Metrics:    metrics,
 }
 
 tron, err := client.New(cfg)
 ```
 
+### Custom MetricsCollector
+
+Implement the `MetricsCollector` interface to use your own metrics:
+
+```go
+type MetricsCollector interface {
+    RecordRequest(blockchain, method, status string, duration time.Duration)
+    RecordRetry(blockchain, method string)
+    SetPoolHealth(blockchain string, total, healthy, disabled int)
+}
+```
+
+Example with external metrics:
+
+```go
+cfg := client.Config{
+    Nodes:      nodes,
+    Blockchain: "tron",
+    Metrics:    myExternalMetrics, // any MetricsCollector implementation
+}
+```
+
 ### Available Metrics
 
-| Metric                        | Type      | Labels                 | Description                              |
-| ----------------------------- | --------- | ---------------------- | ---------------------------------------- |
-| `gotron_rpc_requests_total`   | Counter   | `method`, `status`     | Total number of RPC requests             |
-| `gotron_rpc_duration_seconds` | Histogram | `method`               | RPC request duration in seconds          |
-| `gotron_rpc_in_flight`        | Gauge     | -                      | Number of requests currently in progress |
-| `gotron_rpc_errors_total`     | Counter   | `method`, `error_type` | Total number of errors by type           |
-
-### Error Types
-
-The `error_type` label categorizes errors:
-
-- `timeout` - Request timeout or deadline exceeded
-- `connection` - Connection refused, reset, or network unreachable
-- `canceled` - Request canceled by context
-- `unavailable` - Service unavailable
-- `other` - Other errors
+| Metric                        | Type      | Labels                           | Description                              |
+| ----------------------------- | --------- | -------------------------------- | ---------------------------------------- |
+| `gotron_rpc_requests_total`   | Counter   | `blockchain`, `method`, `status` | Total number of RPC requests             |
+| `gotron_rpc_duration_seconds` | Histogram | `blockchain`, `method`           | RPC request duration in seconds          |
+| `gotron_rpc_in_flight`        | Gauge     | -                                | Number of requests currently in progress |
+| `gotron_rpc_retries_total`    | Counter   | `blockchain`, `method`           | Total number of RPC retries              |
+| `gotron_rpc_pool_total`       | Gauge     | `blockchain`                     | Total number of nodes in the pool        |
+| `gotron_rpc_pool_healthy`     | Gauge     | `blockchain`                     | Number of healthy nodes in the pool      |
+| `gotron_rpc_pool_disabled`    | Gauge     | `blockchain`                     | Number of disabled nodes in the pool     |
 
 ### Example Prometheus Queries
 
 ```promql
 # Request rate per method
-rate(gotron_rpc_requests_total[5m])
+rate(gotron_rpc_requests_total{blockchain="tron"}[5m])
 
 # Error rate
-rate(gotron_rpc_requests_total{status="error"}[5m])
+rate(gotron_rpc_requests_total{blockchain="tron",status="error"}[5m])
 
 # P99 latency
-histogram_quantile(0.99, rate(gotron_rpc_duration_seconds_bucket[5m]))
+histogram_quantile(0.99, rate(gotron_rpc_duration_seconds_bucket{blockchain="tron"}[5m]))
 
 # Current in-flight requests
 gotron_rpc_in_flight
-
-# Errors by type
-rate(gotron_rpc_errors_total[5m])
 ```
 
 ## Package Structure

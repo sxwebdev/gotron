@@ -268,13 +268,10 @@
 //
 // # Prometheus Metrics
 //
-// The SDK supports optional Prometheus metrics for monitoring RPC performance.
-// Create metrics and pass them to the client configuration:
+// The SDK supports optional metrics for monitoring RPC performance.
+// Use the built-in Prometheus implementation or provide a custom MetricsCollector.
 //
-//	import (
-//	    "github.com/prometheus/client_golang/prometheus"
-//	    "github.com/sxwebdev/gotron/pkg/client"
-//	)
+// Built-in Prometheus metrics:
 //
 //	metrics := client.NewMetrics(prometheus.DefaultRegisterer)
 //
@@ -282,18 +279,33 @@
 //	    Nodes: []client.NodeConfig{
 //	        {Address: "grpc.trongrid.io:50051", UseTLS: true},
 //	    },
-//	    Metrics: metrics,
+//	    Blockchain: "tron",
+//	    Metrics:    metrics,
 //	}
 //
 //	tron, err := client.New(cfg)
 //
-// Available metrics:
-//   - gotron_rpc_requests_total: Counter with labels method, status
-//   - gotron_rpc_duration_seconds: Histogram with label method
+// Available built-in metrics:
+//   - gotron_rpc_requests_total: Counter with labels blockchain, method, status
+//   - gotron_rpc_duration_seconds: Histogram with labels blockchain, method
 //   - gotron_rpc_in_flight: Gauge for current active requests
-//   - gotron_rpc_errors_total: Counter with labels method, error_type
+//   - gotron_rpc_retries_total: Counter with labels blockchain, method
+//   - gotron_rpc_pool_total: Gauge with label blockchain
+//   - gotron_rpc_pool_healthy: Gauge with label blockchain
+//   - gotron_rpc_pool_disabled: Gauge with label blockchain
 //
-// Error types: timeout, connection, canceled, unavailable, other
+// Custom MetricsCollector:
+//
+//	type myMetrics struct{}
+//	func (m *myMetrics) RecordRequest(blockchain, method, status string, duration time.Duration) { ... }
+//	func (m *myMetrics) RecordRetry(blockchain, method string) { ... }
+//	func (m *myMetrics) SetPoolHealth(blockchain string, total, healthy, disabled int) { ... }
+//
+//	cfg := client.Config{
+//	    Nodes:      nodes,
+//	    Blockchain: "tron",
+//	    Metrics:    &myMetrics{},
+//	}
 //
 // # Advanced Usage
 //

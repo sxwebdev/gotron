@@ -1,16 +1,41 @@
 package client
 
 import (
+	"time"
+
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// Metrics contains Prometheus metrics for RPC monitoring.
-type Metrics struct {
-	requestsTotal   *prometheus.CounterVec
-	requestDuration *prometheus.HistogramVec
-	requestsInFlight prometheus.Gauge
-	errorsTotal     *prometheus.CounterVec
+// MetricsCollector defines the interface for collecting RPC metrics.
+// Implementations can use their own Prometheus metrics with custom labels.
+type MetricsCollector interface {
+	// RecordRequest records an RPC request with result.
+	// blockchain - the blockchain identifier (e.g., "tron")
+	// method - RPC method name
+	// status - "success" or "error"
+	// duration - request duration
+	RecordRequest(blockchain, method, status string, duration time.Duration)
+
+	// RecordRetry records a retry attempt.
+	RecordRetry(blockchain, method string)
+
+	// SetPoolHealth updates node pool health metrics.
+	SetPoolHealth(blockchain string, total, healthy, disabled int)
 }
+
+// Metrics contains built-in Prometheus metrics for RPC monitoring.
+// It implements MetricsCollector.
+type Metrics struct {
+	requestsTotal    *prometheus.CounterVec
+	requestDuration  *prometheus.HistogramVec
+	requestsInFlight prometheus.Gauge
+	retriesTotal     *prometheus.CounterVec
+	poolTotal        *prometheus.GaugeVec
+	poolHealthy      *prometheus.GaugeVec
+	poolDisabled     *prometheus.GaugeVec
+}
+
+var _ MetricsCollector = (*Metrics)(nil)
 
 // NewMetrics creates and registers Prometheus metrics.
 func NewMetrics(reg prometheus.Registerer) *Metrics {
@@ -20,7 +45,7 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 				Name: "gotron_rpc_requests_total",
 				Help: "Total number of RPC requests",
 			},
-			[]string{"method", "status"},
+			[]string{"blockchain", "method", "status"},
 		),
 		requestDuration: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
@@ -28,7 +53,7 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 				Help:    "RPC request duration in seconds",
 				Buckets: prometheus.DefBuckets,
 			},
-			[]string{"method"},
+			[]string{"blockchain", "method"},
 		),
 		requestsInFlight: prometheus.NewGauge(
 			prometheus.GaugeOpts{
@@ -36,16 +61,45 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 				Help: "Number of RPC requests currently in progress",
 			},
 		),
-		errorsTotal: prometheus.NewCounterVec(
+		retriesTotal: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Name: "gotron_rpc_errors_total",
-				Help: "Total number of RPC errors by type",
+				Name: "gotron_rpc_retries_total",
+				Help: "Total number of RPC retries",
 			},
-			[]string{"method", "error_type"},
+			[]string{"blockchain", "method"},
+		),
+		poolTotal: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "gotron_rpc_pool_total",
+				Help: "Total number of nodes in the pool",
+			},
+			[]string{"blockchain"},
+		),
+		poolHealthy: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "gotron_rpc_pool_healthy",
+				Help: "Number of healthy nodes in the pool",
+			},
+			[]string{"blockchain"},
+		),
+		poolDisabled: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "gotron_rpc_pool_disabled",
+				Help: "Number of disabled nodes in the pool",
+			},
+			[]string{"blockchain"},
 		),
 	}
 
-	reg.MustRegister(m.requestsTotal, m.requestDuration, m.requestsInFlight, m.errorsTotal)
+	reg.MustRegister(
+		m.requestsTotal,
+		m.requestDuration,
+		m.requestsInFlight,
+		m.retriesTotal,
+		m.poolTotal,
+		m.poolHealthy,
+		m.poolDisabled,
+	)
 	return m
 }
 
@@ -60,53 +114,19 @@ func (m *Metrics) DecInFlight() {
 }
 
 // RecordRequest records metrics for an RPC request.
-func (m *Metrics) RecordRequest(method string, duration float64, err error) {
-	status := "success"
-	if err != nil {
-		status = "error"
-		m.recordError(method, err)
-	}
-	m.requestsTotal.WithLabelValues(method, status).Inc()
-	m.requestDuration.WithLabelValues(method).Observe(duration)
+func (m *Metrics) RecordRequest(blockchain, method, status string, duration time.Duration) {
+	m.requestsTotal.WithLabelValues(blockchain, method, status).Inc()
+	m.requestDuration.WithLabelValues(blockchain, method).Observe(duration.Seconds())
 }
 
-// recordError categorizes and records error metrics.
-func (m *Metrics) recordError(method string, err error) {
-	errorType := classifyError(err)
-	m.errorsTotal.WithLabelValues(method, errorType).Inc()
+// RecordRetry records a retry attempt.
+func (m *Metrics) RecordRetry(blockchain, method string) {
+	m.retriesTotal.WithLabelValues(blockchain, method).Inc()
 }
 
-// classifyError determines the error type for metrics.
-func classifyError(err error) string {
-	if err == nil {
-		return "none"
-	}
-
-	errStr := err.Error()
-
-	switch {
-	case contains(errStr, "context deadline exceeded", "timeout"):
-		return "timeout"
-	case contains(errStr, "connection refused", "connection reset", "no route to host", "network is unreachable"):
-		return "connection"
-	case contains(errStr, "context canceled"):
-		return "canceled"
-	case contains(errStr, "unavailable", "service unavailable"):
-		return "unavailable"
-	default:
-		return "other"
-	}
-}
-
-func contains(s string, substrs ...string) bool {
-	for _, substr := range substrs {
-		if len(s) >= len(substr) {
-			for i := 0; i <= len(s)-len(substr); i++ {
-				if s[i:i+len(substr)] == substr {
-					return true
-				}
-			}
-		}
-	}
-	return false
+// SetPoolHealth updates node pool health metrics.
+func (m *Metrics) SetPoolHealth(blockchain string, total, healthy, disabled int) {
+	m.poolTotal.WithLabelValues(blockchain).Set(float64(total))
+	m.poolHealthy.WithLabelValues(blockchain).Set(float64(healthy))
+	m.poolDisabled.WithLabelValues(blockchain).Set(float64(disabled))
 }
