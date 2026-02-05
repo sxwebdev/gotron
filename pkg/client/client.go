@@ -30,9 +30,16 @@ func New(cfg Config) (*Client, error) {
 		transports = append(transports, transport)
 	}
 
+	var transport Transport = NewRoundRobinTransport(transports)
+
+	// Wrap with metrics transport if metrics are configured
+	if cfg.Metrics != nil {
+		transport = NewMetricsTransport(transport, cfg.Metrics)
+	}
+
 	return &Client{
 		config:    cfg,
-		transport: NewRoundRobinTransport(transports),
+		transport: transport,
 	}, nil
 }
 

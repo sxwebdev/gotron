@@ -49,6 +49,10 @@ type Config struct {
 
 	// Network specifies the Tron network type (informational only)
 	Network Network
+
+	// Metrics is optional Prometheus metrics collector.
+	// If nil, no metrics are collected.
+	Metrics *Metrics
 }
 
 // Validate validates the client configuration
