@@ -390,6 +390,73 @@ cfg := client.Config{
 tron, err := client.New(cfg)
 ```
 
+## Prometheus Metrics
+
+The SDK supports optional Prometheus metrics for monitoring RPC performance.
+
+### Enable Metrics
+
+```go
+import (
+    "github.com/prometheus/client_golang/prometheus"
+    "github.com/sxwebdev/gotron/pkg/client"
+)
+
+// Create metrics collector
+metrics := client.NewMetrics(prometheus.DefaultRegisterer)
+
+// Create client with metrics
+cfg := client.Config{
+    Nodes: []client.NodeConfig{
+        {
+            Address: "grpc.trongrid.io:50051",
+            UseTLS:  true,
+        },
+    },
+    Metrics: metrics,
+}
+
+tron, err := client.New(cfg)
+```
+
+### Available Metrics
+
+| Metric                        | Type      | Labels                 | Description                              |
+| ----------------------------- | --------- | ---------------------- | ---------------------------------------- |
+| `gotron_rpc_requests_total`   | Counter   | `method`, `status`     | Total number of RPC requests             |
+| `gotron_rpc_duration_seconds` | Histogram | `method`               | RPC request duration in seconds          |
+| `gotron_rpc_in_flight`        | Gauge     | -                      | Number of requests currently in progress |
+| `gotron_rpc_errors_total`     | Counter   | `method`, `error_type` | Total number of errors by type           |
+
+### Error Types
+
+The `error_type` label categorizes errors:
+
+- `timeout` - Request timeout or deadline exceeded
+- `connection` - Connection refused, reset, or network unreachable
+- `canceled` - Request canceled by context
+- `unavailable` - Service unavailable
+- `other` - Other errors
+
+### Example Prometheus Queries
+
+```promql
+# Request rate per method
+rate(gotron_rpc_requests_total[5m])
+
+# Error rate
+rate(gotron_rpc_requests_total{status="error"}[5m])
+
+# P99 latency
+histogram_quantile(0.99, rate(gotron_rpc_duration_seconds_bucket[5m]))
+
+# Current in-flight requests
+gotron_rpc_in_flight
+
+# Errors by type
+rate(gotron_rpc_errors_total[5m])
+```
+
 ## Package Structure
 
 ```text

@@ -266,6 +266,35 @@
 //   - client.ErrTransactionNotFound
 //   - client.ErrInvalidConfig
 //
+// # Prometheus Metrics
+//
+// The SDK supports optional Prometheus metrics for monitoring RPC performance.
+// Create metrics and pass them to the client configuration:
+//
+//	import (
+//	    "github.com/prometheus/client_golang/prometheus"
+//	    "github.com/sxwebdev/gotron/pkg/client"
+//	)
+//
+//	metrics := client.NewMetrics(prometheus.DefaultRegisterer)
+//
+//	cfg := client.Config{
+//	    Nodes: []client.NodeConfig{
+//	        {Address: "grpc.trongrid.io:50051", UseTLS: true},
+//	    },
+//	    Metrics: metrics,
+//	}
+//
+//	tron, err := client.New(cfg)
+//
+// Available metrics:
+//   - gotron_rpc_requests_total: Counter with labels method, status
+//   - gotron_rpc_duration_seconds: Histogram with label method
+//   - gotron_rpc_in_flight: Gauge for current active requests
+//   - gotron_rpc_errors_total: Counter with labels method, error_type
+//
+// Error types: timeout, connection, canceled, unavailable, other
+//
 // # Advanced Usage
 //
 // Generate multiple addresses from a single mnemonic:
