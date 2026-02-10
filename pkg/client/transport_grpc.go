@@ -38,10 +38,18 @@ func NewGRPCTransport(cfg NodeConfig) (*GRPCTransport, error) {
 		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	}
 
+	// Build interceptor chain
+	var interceptors []grpc.UnaryClientInterceptor
+
 	// Add interceptor to inject headers as gRPC metadata
 	if len(cfg.Headers) > 0 {
-		opts = append(opts, grpc.WithUnaryInterceptor(headersInterceptor(cfg.Headers)))
+		interceptors = append(interceptors, headersInterceptor(cfg.Headers))
 	}
+
+	// Add interceptor to wrap errors with transport context
+	interceptors = append(interceptors, transportErrorInterceptor(cfg.Address))
+
+	opts = append(opts, grpc.WithChainUnaryInterceptor(interceptors...))
 
 	conn, err := grpc.NewClient(cfg.Address, opts...)
 	if err != nil {
@@ -60,6 +68,22 @@ func headersInterceptor(headers map[string]string) grpc.UnaryClientInterceptor {
 		md := metadata.New(headers)
 		ctx = metadata.NewOutgoingContext(ctx, md)
 		return invoker(ctx, method, req, reply, cc, opts...)
+	}
+}
+
+// transportErrorInterceptor returns a gRPC unary interceptor that wraps errors with TransportError
+func transportErrorInterceptor(address string) grpc.UnaryClientInterceptor {
+	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		err := invoker(ctx, method, req, reply, cc, opts...)
+		if err != nil {
+			return &TransportError{
+				Host:     address,
+				Protocol: "grpc",
+				Method:   method,
+				Err:      err,
+			}
+		}
+		return nil
 	}
 }
 

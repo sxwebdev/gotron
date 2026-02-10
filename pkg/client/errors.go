@@ -1,6 +1,30 @@
 package client
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
+
+// TransportError represents an error from a transport-level RPC call.
+// Use errors.As to extract it and access Host, Protocol, Method fields.
+type TransportError struct {
+	// Host is the address of the server (e.g. "grpc.trongrid.io:50051" or "https://api.trongrid.io")
+	Host string
+	// Protocol is the transport protocol ("grpc" or "http")
+	Protocol string
+	// Method is the RPC method or HTTP endpoint (e.g. "/protocol.Wallet/GetAccount" or "/wallet/getaccount")
+	Method string
+	// Err is the original error
+	Err error
+}
+
+func (e *TransportError) Error() string {
+	return fmt.Sprintf("%s %s (%s): %s", e.Protocol, e.Method, e.Host, e.Err)
+}
+
+func (e *TransportError) Unwrap() error {
+	return e.Err
+}
 
 var (
 	// Common errors

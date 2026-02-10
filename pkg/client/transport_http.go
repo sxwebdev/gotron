@@ -319,7 +319,7 @@ func (t *HTTPTransport) doRequestRaw(ctx context.Context, endpoint string, body 
 	if body != nil {
 		jsonBody, err := json.Marshal(body)
 		if err != nil {
-			return nil, fmt.Errorf("marshal request body: %w", err)
+			return nil, t.wrapErr(endpoint, fmt.Errorf("marshal request body: %w", err))
 		}
 		bodyReader = bytes.NewReader(jsonBody)
 	} else {
@@ -328,7 +328,7 @@ func (t *HTTPTransport) doRequestRaw(ctx context.Context, endpoint string, body 
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.baseURL+endpoint, bodyReader)
 	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
+		return nil, t.wrapErr(endpoint, fmt.Errorf("create request: %w", err))
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -340,20 +340,29 @@ func (t *HTTPTransport) doRequestRaw(ctx context.Context, endpoint string, body 
 
 	resp, err := t.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("http request: %w", err)
+		return nil, t.wrapErr(endpoint, fmt.Errorf("http request: %w", err))
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("read response: %w", err)
+		return nil, t.wrapErr(endpoint, fmt.Errorf("read response: %w", err))
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("http status %d: %s", resp.StatusCode, string(respBody))
+		return nil, t.wrapErr(endpoint, fmt.Errorf("http status %d: %s", resp.StatusCode, string(respBody)))
 	}
 
 	return respBody, nil
+}
+
+func (t *HTTPTransport) wrapErr(method string, err error) error {
+	return &TransportError{
+		Host:     t.baseURL,
+		Protocol: "http",
+		Method:   method,
+		Err:      err,
+	}
 }
 
 // doRequest performs an HTTP POST request to the Tron API
