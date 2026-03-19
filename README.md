@@ -22,10 +22,20 @@ A comprehensive Go SDK for the Tron blockchain. This library provides a complete
 - **Type Safety** - Full type definitions with validation
 - **Native Implementation** - Built on official Tron protocol buffers
 
+## AI Agent Skills
+
+This repository includes [AI agent skills](https://github.com/sxwebdev/skills) with documentation and usage examples for all packages. Install them with the [skills](https://github.com/sxwebdev/skills) CLI:
+
+```bash
+go install github.com/sxwebdev/skills/cmd/skills@latest
+skills init
+skills repo add sxwebdev/gotron
+```
+
 ## Installation
 
 ```bash
-go get github.com/sxwebdev/gotron
+go get github.com/sxwebdev/gotron@latest
 ```
 
 ## Quick Start
