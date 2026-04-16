@@ -7,7 +7,7 @@ description: >
   HTTP, round-robin), TRC20 token operations, address generation (BIP39/BIP44), resource delegation
   (bandwidth/energy), Prometheus metrics (MetricsCollector), or any file importing gotron packages.
   Also triggers when the user mentions Tron blockchain, TRX, SUN, TRC20, USDT on Tron, or TronGrid.
-user-invocable: false
+user-invocable: true
 ---
 
 # Gotron SDK
