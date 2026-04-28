@@ -10,19 +10,13 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-type ActivationResources struct {
-	Energy    decimal.Decimal `json:"energy"`
-	Bandwidth decimal.Decimal `json:"bandwidth"`
-	Trx       decimal.Decimal `json:"trx"`
-}
-
 // EstimateActivationFee estimates the activation fee for a Tron address.
 // It checks the available bandwidth and adds the activation fee accordingly.
 // The fee is returned in TRX (1 TRX = 1_000_000 SUN).
 // We assume that fromAddress is ALWAYS activated, being it processing address.
 // Simple swap of arg to BlackHoleAddress on fakeTx creation will always return valid tx.
-func (t *Client) EstimateActivationFee(ctx context.Context, fromAddress, toAddress string) (*ActivationResources, error) {
-	estimate := &ActivationResources{}
+func (t *Client) EstimateActivationFee(ctx context.Context, fromAddress, toAddress string) (*EstimateResult, error) {
+	estimate := &EstimateResult{}
 
 	isActivated, err := t.IsAccountActivated(ctx, toAddress)
 	if err != nil {
@@ -77,8 +71,8 @@ func (t *Client) EstimateActivationFee(ctx context.Context, fromAddress, toAddre
 // by building a real CreateAccount transaction via the node API (instead of the
 // local fake transaction used by EstimateActivationFee).
 // The fee is returned in TRX (1 TRX = 1_000_000 SUN).
-func (t *Client) EstimateSystemContractActivation(ctx context.Context, caller string, receiver string) (*ActivationResources, error) {
-	estimate := &ActivationResources{}
+func (t *Client) EstimateSystemContractActivation(ctx context.Context, caller string, receiver string) (*EstimateResult, error) {
+	estimate := &EstimateResult{}
 
 	isActivated, err := t.IsAccountActivated(ctx, receiver)
 	if err != nil {
@@ -107,7 +101,7 @@ func (t *Client) EstimateSystemContractActivation(ctx context.Context, caller st
 		// Receiver became activated between IsAccountActivated and CreateAccount,
 		// or any other case where the node refuses on already-existing account.
 		if strings.Contains(err.Error(), "Account has existed") {
-			return &ActivationResources{}, nil
+			return &EstimateResult{}, nil
 		}
 		return nil, fmt.Errorf("create account: %w", err)
 	}
@@ -118,7 +112,7 @@ func (t *Client) EstimateSystemContractActivation(ctx context.Context, caller st
 
 	if tx.GetResult().GetCode() != 0 {
 		if strings.Contains(string(tx.GetResult().GetMessage()), "Account has existed") {
-			return &ActivationResources{}, nil
+			return &EstimateResult{}, nil
 		}
 		return nil, fmt.Errorf("%s", tx.GetResult().GetMessage())
 	}

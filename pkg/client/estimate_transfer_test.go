@@ -95,13 +95,13 @@ func TestEstimateTransferResources_TRX(t *testing.T) {
 	require.NoError(t, err)
 
 	cases := []struct {
-		name    string
-		to      string
-		wantErr error
+		name              string
+		to                string
+		wantActivationGT0 bool
 	}{
 		{name: "to activated with USDT", to: activatedAddressWithUSDT},
 		{name: "to activated without USDT", to: estimateToActivatedWithoutUSDT},
-		{name: "to not activated", to: emptyNotActivatedAddress, wantErr: client.ErrAccountNotActivated},
+		{name: "to not activated", to: emptyNotActivatedAddress, wantActivationGT0: true},
 	}
 
 	for _, tc := range cases {
@@ -115,19 +115,37 @@ func TestEstimateTransferResources_TRX(t *testing.T) {
 				client.TrxDecimals,
 			)
 
-			if tc.wantErr != nil {
-				require.ErrorIs(t, err, tc.wantErr)
-				require.Nil(t, res)
-				return
-			}
-
 			require.NoError(t, err)
 			require.NotNil(t, res)
-			require.True(t, res.Bandwidth.IsPositive(), "bandwidth must be > 0, got %s", res.Bandwidth.String())
-			require.True(t, res.Energy.Equal(decimal.Zero), "energy must be 0 for TRX transfer, got %s", res.Energy.String())
-			require.True(t, res.Trx.GreaterThanOrEqual(decimal.Zero), "trx must be >= 0, got %s", res.Trx.String())
+			require.True(t, res.Transfer.Bandwidth.IsPositive(), "transfer bandwidth must be > 0, got %s", res.Transfer.Bandwidth.String())
+			require.True(t, res.Transfer.Energy.Equal(decimal.Zero), "transfer energy must be 0 for TRX, got %s", res.Transfer.Energy.String())
+			require.True(t, res.Transfer.Trx.GreaterThanOrEqual(decimal.Zero), "transfer trx must be >= 0, got %s", res.Transfer.Trx.String())
 
-			t.Logf("TRX → %s: bandwidth=%s energy=%s trx=%s", tc.to, res.Bandwidth, res.Energy, res.Trx)
+			if tc.wantActivationGT0 {
+				require.True(t, res.Activation.Trx.GreaterThanOrEqual(decimal.NewFromInt(1)),
+					"activation trx must be >= 1 for unactivated address, got %s", res.Activation.Trx.String())
+			} else {
+				require.True(t, res.Activation.Trx.Equal(decimal.Zero),
+					"activation trx must be 0 for activated address, got %s", res.Activation.Trx.String())
+				require.True(t, res.Activation.Bandwidth.Equal(decimal.Zero),
+					"activation bandwidth must be 0 for activated address, got %s", res.Activation.Bandwidth.String())
+				require.True(t, res.Activation.Energy.Equal(decimal.Zero),
+					"activation energy must be 0 for activated address, got %s", res.Activation.Energy.String())
+			}
+
+			require.True(t, res.Total.Bandwidth.Equal(res.Transfer.Bandwidth.Add(res.Activation.Bandwidth)),
+				"total bandwidth must equal transfer + activation, got total=%s", res.Total.Bandwidth.String())
+			require.True(t, res.Total.Energy.Equal(res.Transfer.Energy.Add(res.Activation.Energy)),
+				"total energy must equal transfer + activation, got total=%s", res.Total.Energy.String())
+			require.True(t, res.Total.Trx.Equal(res.Transfer.Trx.Add(res.Activation.Trx)),
+				"total trx must equal transfer + activation, got total=%s", res.Total.Trx.String())
+
+			t.Logf("TRX → %s: total=(b=%s e=%s trx=%s) transfer=(b=%s e=%s trx=%s) activation=(b=%s e=%s trx=%s)",
+				tc.to,
+				res.Total.Bandwidth, res.Total.Energy, res.Total.Trx,
+				res.Transfer.Bandwidth, res.Transfer.Energy, res.Transfer.Trx,
+				res.Activation.Bandwidth, res.Activation.Energy, res.Activation.Trx,
+			)
 		})
 	}
 }
@@ -137,13 +155,13 @@ func TestEstimateTransferResources_TRC20(t *testing.T) {
 	require.NoError(t, err)
 
 	cases := []struct {
-		name    string
-		to      string
-		wantErr error
+		name              string
+		to                string
+		wantActivationGT0 bool
 	}{
 		{name: "to activated with USDT", to: activatedAddressWithUSDT},
 		{name: "to activated without USDT", to: estimateToActivatedWithoutUSDT},
-		{name: "to not activated", to: emptyNotActivatedAddress, wantErr: client.ErrAccountNotActivated},
+		{name: "to not activated", to: emptyNotActivatedAddress, wantActivationGT0: true},
 	}
 
 	for _, tc := range cases {
@@ -157,19 +175,37 @@ func TestEstimateTransferResources_TRC20(t *testing.T) {
 				usdtDecimals,
 			)
 
-			if tc.wantErr != nil {
-				require.ErrorIs(t, err, tc.wantErr)
-				require.Nil(t, res)
-				return
-			}
-
 			require.NoError(t, err)
 			require.NotNil(t, res)
-			require.True(t, res.Bandwidth.IsPositive(), "bandwidth must be > 0, got %s", res.Bandwidth.String())
-			require.True(t, res.Energy.IsPositive(), "energy must be > 0 for TRC20 transfer, got %s", res.Energy.String())
-			require.True(t, res.Trx.IsPositive(), "trx must be > 0, got %s", res.Trx.String())
+			require.True(t, res.Transfer.Bandwidth.IsPositive(), "transfer bandwidth must be > 0, got %s", res.Transfer.Bandwidth.String())
+			require.True(t, res.Transfer.Energy.IsPositive(), "transfer energy must be > 0 for TRC20, got %s", res.Transfer.Energy.String())
+			require.True(t, res.Transfer.Trx.IsPositive(), "transfer trx must be > 0, got %s", res.Transfer.Trx.String())
 
-			t.Logf("TRC20 → %s: bandwidth=%s energy=%s trx=%s", tc.to, res.Bandwidth, res.Energy, res.Trx)
+			if tc.wantActivationGT0 {
+				require.True(t, res.Activation.Trx.GreaterThanOrEqual(decimal.NewFromInt(1)),
+					"activation trx must be >= 1 for unactivated address, got %s", res.Activation.Trx.String())
+			} else {
+				require.True(t, res.Activation.Trx.Equal(decimal.Zero),
+					"activation trx must be 0 for activated address, got %s", res.Activation.Trx.String())
+				require.True(t, res.Activation.Bandwidth.Equal(decimal.Zero),
+					"activation bandwidth must be 0 for activated address, got %s", res.Activation.Bandwidth.String())
+				require.True(t, res.Activation.Energy.Equal(decimal.Zero),
+					"activation energy must be 0 for activated address, got %s", res.Activation.Energy.String())
+			}
+
+			require.True(t, res.Total.Bandwidth.Equal(res.Transfer.Bandwidth.Add(res.Activation.Bandwidth)),
+				"total bandwidth must equal transfer + activation, got total=%s", res.Total.Bandwidth.String())
+			require.True(t, res.Total.Energy.Equal(res.Transfer.Energy.Add(res.Activation.Energy)),
+				"total energy must equal transfer + activation, got total=%s", res.Total.Energy.String())
+			require.True(t, res.Total.Trx.Equal(res.Transfer.Trx.Add(res.Activation.Trx)),
+				"total trx must equal transfer + activation, got total=%s", res.Total.Trx.String())
+
+			t.Logf("TRC20 → %s: total=(b=%s e=%s trx=%s) transfer=(b=%s e=%s trx=%s) activation=(b=%s e=%s trx=%s)",
+				tc.to,
+				res.Total.Bandwidth, res.Total.Energy, res.Total.Trx,
+				res.Transfer.Bandwidth, res.Transfer.Energy, res.Transfer.Trx,
+				res.Activation.Bandwidth, res.Activation.Energy, res.Activation.Trx,
+			)
 		})
 	}
 }

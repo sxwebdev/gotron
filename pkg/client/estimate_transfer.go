@@ -11,10 +11,21 @@ import (
 	"github.com/sxwebdev/gotron/schema/pb/core"
 )
 
+// EstimateTransferResourcesResult contains the estimated cost of a TRX/TRC20
+// transfer broken down into the transfer itself and the recipient activation
+// (when toAddress is not yet activated). Total is the sum of Transfer and
+// Activation per resource.
+//
+// For activated recipients Activation is zero-valued and Total equals Transfer.
+//
+// Note: in Tron, when sending to an unactivated address the activation fee is
+// consumed by the transfer transaction itself rather than a separate
+// CreateAccount call. Total is therefore a conservative upper bound — the
+// real on-chain cost is typically slightly lower than Total.
 type EstimateTransferResourcesResult struct {
-	Energy    decimal.Decimal `json:"energy"`
-	Bandwidth decimal.Decimal `json:"bandwidth"`
-	Trx       decimal.Decimal `json:"trx"`
+	Total      EstimateResult `json:"total"`
+	Transfer   EstimateResult `json:"transfer"`
+	Activation EstimateResult `json:"activation"`
 }
 
 func (c *Client) EstimateTransferResources(
@@ -39,15 +50,8 @@ func (c *Client) EstimateTransferResources(
 		return nil, fmt.Errorf("amount must be greater than 0")
 	}
 
-	isActivated, err := c.IsAccountActivated(ctx, toAddress)
-	if err != nil {
-		return nil, fmt.Errorf("check to address activation: %w", err)
-	}
-	if !isActivated {
-		return nil, fmt.Errorf("%w: %s", ErrAccountNotActivated, toAddress)
-	}
-
-	var res EstimateTransferResourcesResult
+	var transfer EstimateResult
+	var err error
 
 	var tx *core.Transaction
 	var data *api.TransactionExtention
@@ -69,7 +73,7 @@ func (c *Client) EstimateTransferResources(
 		tx = data.GetTransaction()
 	}
 
-	res.Bandwidth, err = c.EstimateBandwidth(tx)
+	transfer.Bandwidth, err = c.EstimateBandwidth(tx)
 	if err != nil {
 		return nil, err
 	}
@@ -80,26 +84,38 @@ func (c *Client) EstimateTransferResources(
 	}
 
 	if contractAddress == TrxAssetIdentifier {
-		res.Trx = units.NewBandwidth(res.Bandwidth).ToTRX(chainParams.TransactionFee).ToDecimal()
+		transfer.Trx = units.NewBandwidth(transfer.Bandwidth).ToTRX(chainParams.TransactionFee).ToDecimal()
 	} else {
 		jsonString := fmt.Sprintf(`[{"address":"%s"},{"uint256":"%s"}]`, toAddress, amount.BigInt())
 
-		var err error
 		data, err = c.TriggerConstantContractCustom(ctx, fromAddress, contractAddress, "transfer(address,uint256)", jsonString)
 		if err != nil && !strings.Contains(err.Error(), "reset by peer") {
 			return nil, fmt.Errorf("cannot trigger contract: %w", err)
 		}
 
-		res.Energy = decimal.NewFromInt(data.EnergyUsed)
-		res.Trx = units.NewEnergy(res.Energy).
+		transfer.Energy = decimal.NewFromInt(data.EnergyUsed)
+		transfer.Trx = units.NewEnergy(transfer.Energy).
 			ToTRX(chainParams.EnergyFee).
 			ToDecimal().
 			Add(
-				units.NewBandwidth(res.Bandwidth).
+				units.NewBandwidth(transfer.Bandwidth).
 					ToTRX(chainParams.TransactionFee).
 					ToDecimal(),
 			)
 	}
 
-	return &res, nil
+	activation, err := c.EstimateSystemContractActivation(ctx, fromAddress, toAddress)
+	if err != nil {
+		return nil, fmt.Errorf("estimate activation: %w", err)
+	}
+
+	return &EstimateTransferResourcesResult{
+		Transfer:   transfer,
+		Activation: *activation,
+		Total: EstimateResult{
+			Energy:    transfer.Energy.Add(activation.Energy),
+			Bandwidth: transfer.Bandwidth.Add(activation.Bandwidth),
+			Trx:       transfer.Trx.Add(activation.Trx),
+		},
+	}, nil
 }

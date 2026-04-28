@@ -76,8 +76,14 @@ func (r ResourceType) ToProto() core.ResourceCode {
 	}
 }
 
-// Resources represents the resources of an account
-type Resources struct {
+type EstimateResult struct {
+	Energy    decimal.Decimal `json:"energy"`
+	Bandwidth decimal.Decimal `json:"bandwidth"`
+	Trx       decimal.Decimal `json:"trx"`
+}
+
+// AvailableResources represents the resources of an account
+type AvailableResources struct {
 	Energy         decimal.Decimal `json:"energy"`
 	Bandwidth      decimal.Decimal `json:"bandwidth"`
 	TotalEnergy    decimal.Decimal `json:"total_energy"`
