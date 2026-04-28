@@ -70,10 +70,12 @@ func (c *Client) IsAccountActivated(ctx context.Context, address string) (bool, 
 }
 
 // CreateAccount creates a new account on the blockchain.
-func (c *Client) CreateAccount(ctx context.Context, from, addr string) (*api.TransactionExtention, error) {
+func (c *Client) CreateAccount(ctx context.Context, from, addr string, accountType core.AccountType) (*api.TransactionExtention, error) {
 	var err error
 
-	contract := &core.AccountCreateContract{}
+	contract := &core.AccountCreateContract{
+		Type: accountType,
+	}
 	if contract.OwnerAddress, err = tronutils.DecodeCheck(from); err != nil {
 		return nil, err
 	}
