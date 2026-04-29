@@ -177,63 +177,6 @@ func (c *Client) triggerContract(ctx context.Context, ct *core.TriggerSmartContr
 	return tx, err
 }
 
-// EstimateEnergy returns enery required
-func (c *Client) EstimateEnergy(ctx context.Context, from, contractAddress, method, jsonString string,
-	tAmount int64, tTokenID string, tTokenAmount int64,
-) (*api.EstimateEnergyMessage, error) {
-	fromDesc, err := tronutils.DecodeCheck(from)
-	if err != nil {
-		return nil, err
-	}
-
-	contractDesc, err := tronutils.DecodeCheck(contractAddress)
-	if err != nil {
-		return nil, err
-	}
-
-	param, err := abi.LoadFromJSON(jsonString)
-	if err != nil {
-		return nil, err
-	}
-
-	dataBytes, err := abi.Pack(method, param)
-	if err != nil {
-		return nil, err
-	}
-
-	ct := &core.TriggerSmartContract{
-		OwnerAddress:    fromDesc,
-		ContractAddress: contractDesc,
-		Data:            dataBytes,
-	}
-	if tAmount > 0 {
-		ct.CallValue = tAmount
-	}
-	if len(tTokenID) > 0 && tTokenAmount > 0 {
-		ct.CallTokenValue = tTokenAmount
-		ct.TokenId, err = strconv.ParseInt(tTokenID, 10, 64)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return c.estimateEnergy(ctx, ct)
-}
-
-// estimateEnergy and return tx result
-func (c *Client) estimateEnergy(ctx context.Context, ct *core.TriggerSmartContract) (*api.EstimateEnergyMessage, error) {
-	tx, err := c.transport.EstimateEnergy(ctx, ct)
-	if err != nil {
-		return nil, err
-	}
-
-	if tx.Result.Code > 0 {
-		return nil, fmt.Errorf("%s", string(tx.Result.Message))
-	}
-
-	return tx, err
-}
-
 // DeployContract and return tx result
 func (c *Client) DeployContract(ctx context.Context, from, contractName string,
 	abi *core.SmartContract_ABI, codeStr string,

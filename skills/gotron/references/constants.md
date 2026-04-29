@@ -14,6 +14,7 @@ ErrNilResponse              = errors.New("nil response from server")
 // Address
 ErrInvalidAddress           = errors.New("invalid address")
 ErrEmptyAddress             = errors.New("address is empty")
+ErrAccountNotActivated      = errors.New("account is not activated")
 
 // Transaction
 ErrInvalidAmount            = errors.New("invalid amount")

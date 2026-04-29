@@ -6,13 +6,16 @@
 - [Package pkg/client](#package-pkgclient)
   - [Client construction](#client-construction)
   - [Account operations](#account-operations)
+  - [Activation operations](#activation-operations)
   - [Block operations](#block-operations)
   - [Transaction operations](#transaction-operations)
   - [TRC20 token operations](#trc20-token-operations)
   - [Resource operations](#resource-operations)
+  - [Estimate operations](#estimate-operations)
   - [Contract operations](#contract-operations)
   - [Network operations](#network-operations)
   - [Chain parameters](#chain-parameters)
+  - [Common types](#common-types)
 - [Package pkg/address](#package-pkgaddress)
 - [Package pkg/tronutils](#package-pkgtronutils)
 
@@ -87,17 +90,43 @@ func (n NodeConfig) GetProtocol() Protocol
 func (c *Client) GetAccount(ctx context.Context, addr string) (*core.Account, error)
 func (c *Client) GetAccountBalance(ctx context.Context, address string) (decimal.Decimal, error)
 func (c *Client) IsAccountActivated(ctx context.Context, address string) (bool, error)
-func (c *Client) CreateAccount(ctx context.Context, from, addr string) (*api.TransactionExtention, error)
+func (c *Client) CreateAccount(ctx context.Context, from, addr string, accountType core.AccountType) (*api.TransactionExtention, error)
 func (c *Client) EstimateActivateAccount(ctx context.Context, fromAddress, toAddress string) (*EstimateActivateAccountResult, error)
 ```
 
 ```go
+// Legacy result type, kept for backwards compatibility with EstimateActivateAccount.
+// New code should use EstimateResult (see Common types).
 type EstimateActivateAccountResult struct {
     Energy    decimal.Decimal `json:"energy"`
     Bandwidth decimal.Decimal `json:"bandwidth"`
     Trx       decimal.Decimal `json:"trx"`
 }
 ```
+
+### Activation operations
+
+**File:** `activate.go`
+
+Two estimators for the cost of activating a Tron address. Both return `*EstimateResult` and return zeros if the recipient is already activated.
+
+```go
+// EstimateActivationFee builds a local fake CreateAccount tx to size the bandwidth.
+// fromAddress is assumed to be activated (typical processing-wallet case).
+func (c *Client) EstimateActivationFee(ctx context.Context, fromAddress, toAddress string) (*EstimateResult, error)
+
+// EstimateSystemContractActivation builds a real CreateAccount tx via the node
+// (more accurate, one extra RPC). Returns zero result for already-activated receivers
+// — including the race where the address gets activated between the IsAccountActivated
+// check and CreateAccount ("Account has existed" is treated as zero, not error).
+func (c *Client) EstimateSystemContractActivation(ctx context.Context, caller, receiver string) (*EstimateResult, error)
+```
+
+The activation fee in TRX is computed from chain params:
+
+- Constant fee: `chainParams.CreateNewAccountFeeInSystemContract` (typically 1 TRX) — always added.
+- If caller has enough **own staked** bandwidth: that bandwidth is consumed (`Bandwidth` field set).
+- Otherwise: extra `chainParams.CreateAccountFee` (typically 0.1 TRX) is burned. Free daily quota and bandwidth received via delegation do **not** count.
 
 ### Block operations
 
@@ -160,22 +189,75 @@ func (c *Client) GetDelegatedResourcesV2(ctx context.Context, address string) ([
 func (c *Client) GetCanDelegatedMaxSize(ctx context.Context, address string, resource int32) (*api.CanDelegatedMaxSizeResponseMessage, error)
 func (c *Client) DelegateResource(ctx context.Context, owner, receiver string, resource ResourceType, delegateBalance int64, lock bool, lockPeriod int64) (*api.TransactionExtention, error)
 func (c *Client) ReclaimResource(ctx context.Context, owner, receiver string, resource ResourceType, delegateBalance int64) (*api.TransactionExtention, error)
-func (c *Client) AvailableForDelegateResources(ctx context.Context, addr string) (*Resources, error)
-func (c *Client) TotalAvailableResources(ctx context.Context, addr string) (*Resources, error)
+func (c *Client) AvailableForDelegateResources(ctx context.Context, addr string) (*AvailableResources, error)
+func (c *Client) TotalAvailableResources(ctx context.Context, addr string) (*AvailableResources, error)
 func (c *Client) AvailableEnergy(res *api.AccountResourceMessage) decimal.Decimal
 func (c *Client) AvailableBandwidth(res *api.AccountResourceMessage) decimal.Decimal
 func (c *Client) AvailableBandwidthWithoutFree(res *api.AccountResourceMessage) decimal.Decimal
 func (c *Client) TotalEnergyLimit(res *api.AccountResourceMessage) decimal.Decimal
 func (c *Client) TotalBandwidthLimit(res *api.AccountResourceMessage) decimal.Decimal
-func (c *Client) EstimateBandwidth(tx *core.Transaction) (decimal.Decimal, error)
 ```
 
 ```go
-type Resources struct {
+// Renamed from "Resources" — represents an account's currently usable resources
+// plus its hard limits. Used as return type by AvailableForDelegateResources
+// and TotalAvailableResources.
+type AvailableResources struct {
     Energy         decimal.Decimal `json:"energy"`
     Bandwidth      decimal.Decimal `json:"bandwidth"`
     TotalEnergy    decimal.Decimal `json:"total_energy"`
     TotalBandwidth decimal.Decimal `json:"total_bandwidth"`
+}
+```
+
+### Estimate operations
+
+Cost estimators for transactions and transfers. Use these to compute fees before broadcasting.
+
+**File:** `estimate_resources.go`
+
+```go
+// EstimateBandwidth fills required signature bytes into a fake transaction
+// and returns proto.Size(tx) + 64 (Tron protocol overhead) as bandwidth points.
+func (c *Client) EstimateBandwidth(tx *core.Transaction) (decimal.Decimal, error)
+
+// EstimateEnergy queries the node's /wallet/estimateenergy or gRPC EstimateEnergy
+// for a contract call. Used internally by EstimateTransferResources for TRC20 paths.
+func (c *Client) EstimateEnergy(
+    ctx context.Context,
+    from, contractAddress, method, jsonString string,
+    tAmount int64, tTokenID string, tTokenAmount int64,
+) (*api.EstimateEnergyMessage, error)
+```
+
+**File:** `estimate_transfer.go`
+
+```go
+// EstimateTransferResources estimates the full cost of a TRX or TRC20 transfer,
+// broken down into:
+//   - Transfer:   the cost of the transfer transaction itself
+//   - Activation: the cost of activating toAddress (zero if already activated)
+//   - Total:      Transfer + Activation per resource (conservative upper bound)
+//
+// For TRX transfers pass contractAddress = TrxAssetIdentifier and decimals = TrxDecimals.
+// For TRC20 pass the token contract address and the token's decimals.
+//
+// Note: when sending to an unactivated address Tron consumes the activation fee
+// inside the transfer tx itself — Total slightly overestimates. Choose your own
+// merge policy if you need a single number (e.g. max(Transfer.Trx, Activation.Trx)).
+func (c *Client) EstimateTransferResources(
+    ctx context.Context,
+    fromAddress, toAddress, contractAddress string,
+    amount decimal.Decimal,
+    decimals int64,
+) (*EstimateTransferResourcesResult, error)
+```
+
+```go
+type EstimateTransferResourcesResult struct {
+    Total      EstimateResult `json:"total"`
+    Transfer   EstimateResult `json:"transfer"`
+    Activation EstimateResult `json:"activation"`
 }
 ```
 
@@ -185,7 +267,7 @@ type Resources struct {
 
 ```go
 func (c *Client) TriggerConstantContract(ctx context.Context, ct *core.TriggerSmartContract) (*api.TransactionExtention, error)
-func (c *Client) EstimateEnergy(ctx context.Context, ct *core.TriggerSmartContract) (*api.EstimateEnergyMessage, error)
+func (c *Client) TriggerConstantContractCustom(ctx context.Context, from, contractAddress, method, jsonString string) (*api.TransactionExtention, error)
 func (c *Client) DeployContract(ctx context.Context, ct *core.CreateSmartContract) (*api.TransactionExtention, error)
 func (c *Client) GetContract(ctx context.Context, address string) (*core.SmartContract, error)
 ```
@@ -207,6 +289,24 @@ func (c *Client) TotalTransaction(ctx context.Context) (*api.NumberMessage, erro
 ```go
 func (c *Client) ChainParams(ctx context.Context) (*ChainParams, error)
 func (c *Client) ChainParam(ctx context.Context, paramKey string) (*core.ChainParameters_ChainParameter, error)
+```
+
+### Common types
+
+**File:** `types.go`
+
+Generic resource cost type used across activation and transfer estimators.
+
+```go
+// EstimateResult is the canonical result shape for any "how much does this cost"
+// query — Energy and Bandwidth in raw points, Trx in TRX units (not SUN).
+// Reused by EstimateActivationFee, EstimateSystemContractActivation, and as the
+// value type for fields of EstimateTransferResourcesResult (Total/Transfer/Activation).
+type EstimateResult struct {
+    Energy    decimal.Decimal `json:"energy"`
+    Bandwidth decimal.Decimal `json:"bandwidth"`
+    Trx       decimal.Decimal `json:"trx"`
+}
 ```
 
 ---

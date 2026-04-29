@@ -9,7 +9,6 @@ import (
 	"github.com/sxwebdev/gotron/pkg/tronutils"
 	"github.com/sxwebdev/gotron/schema/pb/api"
 	"github.com/sxwebdev/gotron/schema/pb/core"
-	"google.golang.org/protobuf/proto"
 )
 
 // GetAccountResource retrieves resource information for the specified account address
@@ -186,7 +185,7 @@ func (c *Client) ReclaimResource(ctx context.Context, owner, receiver string, re
 	return response, nil
 }
 
-func (c *Client) AvailableForDelegateResources(ctx context.Context, addr string) (*Resources, error) {
+func (c *Client) AvailableForDelegateResources(ctx context.Context, addr string) (*AvailableResources, error) {
 	chainParams, err := c.ChainParams(ctx)
 	if err != nil {
 		return nil, err
@@ -212,7 +211,7 @@ func (c *Client) AvailableForDelegateResources(ctx context.Context, addr string)
 		}
 	}
 
-	resources := &Resources{
+	resources := &AvailableResources{
 		Energy:         c.AvailableEnergy(accountResources),
 		TotalEnergy:    c.TotalEnergyLimit(accountResources),
 		Bandwidth:      c.AvailableBandwidth(accountResources),
@@ -253,13 +252,13 @@ func (c *Client) TotalBandwidthLimit(res *api.AccountResourceMessage) decimal.De
 }
 
 // TotalAvailableResources calculates the total available resources for the account.
-func (c *Client) TotalAvailableResources(ctx context.Context, addr string) (*Resources, error) {
+func (c *Client) TotalAvailableResources(ctx context.Context, addr string) (*AvailableResources, error) {
 	accountResources, err := c.GetAccountResource(ctx, addr)
 	if err != nil {
 		return nil, err
 	}
 
-	resources := &Resources{
+	resources := &AvailableResources{
 		Energy:         c.AvailableEnergy(accountResources),
 		Bandwidth:      c.AvailableBandwidth(accountResources),
 		TotalEnergy:    c.TotalEnergyLimit(accountResources),
@@ -267,13 +266,4 @@ func (c *Client) TotalAvailableResources(ctx context.Context, addr string) (*Res
 	}
 
 	return resources, nil
-}
-
-// EstimateBandwidth calculates the estimated bandwidth.
-func (c *Client) EstimateBandwidth(tx *core.Transaction) (decimal.Decimal, error) {
-	if err := fillFakeTX(tx); err != nil {
-		return decimal.Decimal{}, err
-	}
-
-	return decimal.NewFromInt(int64(proto.Size(tx))).Add(decimal.NewFromInt(64)), nil
 }
