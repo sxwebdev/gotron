@@ -11,7 +11,7 @@ import (
 	"github.com/sxwebdev/gotron/schema/pb/core"
 )
 
-// EstimateTransferResourcesResult contains the estimated cost of a TRX/TRC20
+// EstimateTransferResult contains the estimated cost of a TRX/TRC20
 // transfer broken down into the transfer itself and the recipient activation
 // (when toAddress is not yet activated). Total is the sum of Transfer and
 // Activation per resource.
@@ -22,18 +22,18 @@ import (
 // consumed by the transfer transaction itself rather than a separate
 // CreateAccount call. Total is therefore a conservative upper bound — the
 // real on-chain cost is typically slightly lower than Total.
-type EstimateTransferResourcesResult struct {
+type EstimateTransferResult struct {
 	Total      EstimateResult `json:"total"`
 	Transfer   EstimateResult `json:"transfer"`
 	Activation EstimateResult `json:"activation"`
 }
 
-func (c *Client) EstimateTransferResources(
+func (c *Client) EstimateTransfer(
 	ctx context.Context,
 	fromAddress, toAddress, contractAddress string,
 	amount decimal.Decimal,
 	decimals int64,
-) (*EstimateTransferResourcesResult, error) {
+) (*EstimateTransferResult, error) {
 	if fromAddress == "" {
 		return nil, fmt.Errorf("from address is required")
 	}
@@ -109,7 +109,7 @@ func (c *Client) EstimateTransferResources(
 		return nil, fmt.Errorf("estimate activation: %w", err)
 	}
 
-	return &EstimateTransferResourcesResult{
+	return &EstimateTransferResult{
 		Transfer:   transfer,
 		Activation: *activation,
 		Total: EstimateResult{

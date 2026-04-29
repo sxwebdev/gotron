@@ -222,7 +222,7 @@ Cost estimators for transactions and transfers. Use these to compute fees before
 func (c *Client) EstimateBandwidth(tx *core.Transaction) (decimal.Decimal, error)
 
 // EstimateEnergy queries the node's /wallet/estimateenergy or gRPC EstimateEnergy
-// for a contract call. Used internally by EstimateTransferResources for TRC20 paths.
+// for a contract call. Used internally by EstimateTransfer for TRC20 paths.
 func (c *Client) EstimateEnergy(
     ctx context.Context,
     from, contractAddress, method, jsonString string,
@@ -233,7 +233,7 @@ func (c *Client) EstimateEnergy(
 **File:** `estimate_transfer.go`
 
 ```go
-// EstimateTransferResources estimates the full cost of a TRX or TRC20 transfer,
+// EstimateTransfer estimates the full cost of a TRX or TRC20 transfer,
 // broken down into:
 //   - Transfer:   the cost of the transfer transaction itself
 //   - Activation: the cost of activating toAddress (zero if already activated)
@@ -245,16 +245,16 @@ func (c *Client) EstimateEnergy(
 // Note: when sending to an unactivated address Tron consumes the activation fee
 // inside the transfer tx itself — Total slightly overestimates. Choose your own
 // merge policy if you need a single number (e.g. max(Transfer.Trx, Activation.Trx)).
-func (c *Client) EstimateTransferResources(
+func (c *Client) EstimateTransfer(
     ctx context.Context,
     fromAddress, toAddress, contractAddress string,
     amount decimal.Decimal,
     decimals int64,
-) (*EstimateTransferResourcesResult, error)
+) (*EstimateTransferResult, error)
 ```
 
 ```go
-type EstimateTransferResourcesResult struct {
+type EstimateTransferResult struct {
     Total      EstimateResult `json:"total"`
     Transfer   EstimateResult `json:"transfer"`
     Activation EstimateResult `json:"activation"`
@@ -301,7 +301,7 @@ Generic resource cost type used across activation and transfer estimators.
 // EstimateResult is the canonical result shape for any "how much does this cost"
 // query — Energy and Bandwidth in raw points, Trx in TRX units (not SUN).
 // Reused by EstimateActivationFee, EstimateSystemContractActivation, and as the
-// value type for fields of EstimateTransferResourcesResult (Total/Transfer/Activation).
+// value type for fields of EstimateTransferResult (Total/Transfer/Activation).
 type EstimateResult struct {
     Energy    decimal.Decimal `json:"energy"`
     Bandwidth decimal.Decimal `json:"bandwidth"`

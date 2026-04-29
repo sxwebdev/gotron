@@ -20,7 +20,7 @@ const (
 	usdtDecimals      = 6
 )
 
-func TestEstimateTransferResources_Validation(t *testing.T) {
+func TestEstimateTransfer_Validation(t *testing.T) {
 	c, err := initClient()
 	require.NoError(t, err)
 
@@ -82,7 +82,7 @@ func TestEstimateTransferResources_Validation(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			res, err := c.EstimateTransferResources(context.Background(), tc.from, tc.to, tc.contract, tc.amount, tc.decimals)
+			res, err := c.EstimateTransfer(context.Background(), tc.from, tc.to, tc.contract, tc.amount, tc.decimals)
 			require.Error(t, err)
 			require.ErrorContains(t, err, tc.expectMsg)
 			require.Nil(t, res)
@@ -90,7 +90,7 @@ func TestEstimateTransferResources_Validation(t *testing.T) {
 	}
 }
 
-func TestEstimateTransferResources_TRX(t *testing.T) {
+func TestEstimateTransfer_TRX(t *testing.T) {
 	c, err := initClient()
 	require.NoError(t, err)
 
@@ -106,7 +106,7 @@ func TestEstimateTransferResources_TRX(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			res, err := c.EstimateTransferResources(
+			res, err := c.EstimateTransfer(
 				context.Background(),
 				estimateFromAddress,
 				tc.to,
@@ -150,7 +150,7 @@ func TestEstimateTransferResources_TRX(t *testing.T) {
 	}
 }
 
-func TestEstimateTransferResources_TRC20(t *testing.T) {
+func TestEstimateTransfer_TRC20(t *testing.T) {
 	c, err := initClient()
 	require.NoError(t, err)
 
@@ -166,7 +166,7 @@ func TestEstimateTransferResources_TRC20(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			res, err := c.EstimateTransferResources(
+			res, err := c.EstimateTransfer(
 				context.Background(),
 				estimateFromAddress,
 				tc.to,
