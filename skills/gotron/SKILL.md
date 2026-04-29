@@ -114,6 +114,16 @@ All TRC20 methods are in `pkg/client/trc20.go`. The low-level `TRC20Call` method
 - `TRC20Send` — transfer tokens (requires signing + broadcast)
 - `TRC20Approve`, `TRC20TransferFrom` — approval flow
 
+### Estimating fees
+
+Cost estimators all return `*EstimateResult { Energy, Bandwidth, Trx }` (TRX in actual TRX, not SUN).
+
+- **Per transaction:** `EstimateBandwidth(tx)` for bandwidth points, `EstimateEnergy(...)` for contract energy.
+  Both live in `pkg/client/estimate_resources.go`.
+- **Activation only:** `EstimateActivationFee(ctx, from, to)` (local fake tx, fast) or `EstimateSystemContractActivation(ctx, caller, receiver)` (real CreateAccount RPC, more accurate). Both return zeros for already-activated receivers and are in `pkg/client/activate.go`.
+- **Full transfer (TRX or TRC20):** `EstimateTransferResources(ctx, from, to, contract, amount, decimals)` returns `EstimateTransferResourcesResult` with `Total / Transfer / Activation` breakdown. `Activation` is zero for activated recipients; `Total = Transfer + Activation` (conservative upper bound — Tron consumes the activation fee inside the transfer tx itself, so real cost may be slightly lower).
+- **Unactivated recipients are valid.** Sending TRX or TRC20 to an unactivated address activates it; do not gate transfers on `IsAccountActivated`. The sentinel `ErrAccountNotActivated` exists for callers that explicitly require an activated address.
+
 ### Prometheus metrics
 
 Enable by passing `cfg.Metrics = client.NewMetrics(prometheus.DefaultRegisterer)`. Recorded metrics:
