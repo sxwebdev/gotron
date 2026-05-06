@@ -13,7 +13,7 @@ import (
 
 func TestTRC20GetName_GRPC(t *testing.T) {
 	c := newGRPCClient(t)
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -27,7 +27,7 @@ func TestTRC20GetName_GRPC(t *testing.T) {
 
 func TestTRC20GetName_HTTP(t *testing.T) {
 	c := newHTTPClient(t)
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -41,7 +41,7 @@ func TestTRC20GetName_HTTP(t *testing.T) {
 
 func TestTRC20GetSymbol_GRPC(t *testing.T) {
 	c := newGRPCClient(t)
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -55,7 +55,7 @@ func TestTRC20GetSymbol_GRPC(t *testing.T) {
 
 func TestTRC20GetSymbol_HTTP(t *testing.T) {
 	c := newHTTPClient(t)
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -69,7 +69,7 @@ func TestTRC20GetSymbol_HTTP(t *testing.T) {
 
 func TestTRC20GetDecimals_GRPC(t *testing.T) {
 	c := newGRPCClient(t)
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -83,7 +83,7 @@ func TestTRC20GetDecimals_GRPC(t *testing.T) {
 
 func TestTRC20GetDecimals_HTTP(t *testing.T) {
 	c := newHTTPClient(t)
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -99,7 +99,7 @@ func TestTRC20GetDecimals_HTTP(t *testing.T) {
 
 func TestGetContract_GRPC(t *testing.T) {
 	c := newGRPCClient(t)
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -114,7 +114,7 @@ func TestGetContract_GRPC(t *testing.T) {
 
 func TestGetContract_HTTP(t *testing.T) {
 	c := newHTTPClient(t)
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -129,7 +129,7 @@ func TestGetContract_HTTP(t *testing.T) {
 
 func TestGetContractABI_GRPC(t *testing.T) {
 	c := newGRPCClient(t)
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -143,7 +143,7 @@ func TestGetContractABI_GRPC(t *testing.T) {
 
 func TestGetContractABI_HTTP(t *testing.T) {
 	c := newHTTPClient(t)
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

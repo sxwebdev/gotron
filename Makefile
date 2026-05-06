@@ -10,3 +10,9 @@ install-dev-tools:
 
 make test:
 	go test ./tests/... -v
+
+fmt:
+	gofumpt -l -w .
+
+lint:
+	golangci-lint run

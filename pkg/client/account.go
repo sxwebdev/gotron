@@ -10,18 +10,17 @@ import (
 	"github.com/sxwebdev/gotron/pkg/tronutils"
 	"github.com/sxwebdev/gotron/schema/pb/api"
 	"github.com/sxwebdev/gotron/schema/pb/core"
-	pbtron "github.com/sxwebdev/gotron/schema/pb/core"
 	"google.golang.org/protobuf/proto"
 )
 
 var ErrAccountNotFound = errors.New("account not found")
 
-func (c *Client) GetAccount(ctx context.Context, addr string) (*pbtron.Account, error) {
+func (c *Client) GetAccount(ctx context.Context, addr string) (*core.Account, error) {
 	if addr == "" {
 		return nil, ErrEmptyAddress
 	}
 
-	account := new(pbtron.Account)
+	account := new(core.Account)
 	var err error
 
 	account.Address, err = tronutils.DecodeCheck(addr)

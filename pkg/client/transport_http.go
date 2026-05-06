@@ -135,7 +135,7 @@ func isHexString(s string) bool {
 		return false
 	}
 	for _, c := range s {
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F') {
 			return false
 		}
 	}
@@ -342,7 +342,7 @@ func (t *HTTPTransport) doRequestRaw(ctx context.Context, endpoint string, body 
 	if err != nil {
 		return nil, t.wrapErr(endpoint, fmt.Errorf("http request: %w", err))
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -350,7 +350,7 @@ func (t *HTTPTransport) doRequestRaw(ctx context.Context, endpoint string, body 
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, t.wrapErr(endpoint, fmt.Errorf("http status %d: %s", resp.StatusCode, string(respBody)))
+		return nil, t.wrapErr(endpoint, &HTTPStatusError{Code: resp.StatusCode, Body: string(respBody)})
 	}
 
 	return respBody, nil
@@ -487,28 +487,28 @@ func (t *HTTPTransport) doBlockListRequest(ctx context.Context, endpoint string,
 
 // httpAccount is a helper struct for parsing HTTP API account response
 type httpAccount struct {
-	Address                       string `json:"address"`
-	Balance                       int64  `json:"balance"`
-	CreateTime                    int64  `json:"create_time"`
-	LatestOprationTime            int64  `json:"latest_opration_time"`
-	LatestConsumeTime             int64  `json:"latest_consume_time"`
-	LatestConsumeFreeTime         int64  `json:"latest_consume_free_time"`
-	NetWindowSize                 int64  `json:"net_window_size"`
-	NetWindowOptimized            bool   `json:"net_window_optimized"`
-	AccountResource               *httpAccountResource `json:"account_resource"`
-	OwnerPermission               json.RawMessage `json:"owner_permission"`
-	ActivePermission              json.RawMessage `json:"active_permission"`
-	FrozenV2                      json.RawMessage `json:"frozenV2"`
-	AssetV2                       json.RawMessage `json:"assetV2"`
-	FreeAssetNetUsageV2           json.RawMessage `json:"free_asset_net_usageV2"`
-	AssetOptimized                bool   `json:"asset_optimized"`
+	Address               string               `json:"address"`
+	Balance               int64                `json:"balance"`
+	CreateTime            int64                `json:"create_time"`
+	LatestOprationTime    int64                `json:"latest_opration_time"`
+	LatestConsumeTime     int64                `json:"latest_consume_time"`
+	LatestConsumeFreeTime int64                `json:"latest_consume_free_time"`
+	NetWindowSize         int64                `json:"net_window_size"`
+	NetWindowOptimized    bool                 `json:"net_window_optimized"`
+	AccountResource       *httpAccountResource `json:"account_resource"`
+	OwnerPermission       json.RawMessage      `json:"owner_permission"`
+	ActivePermission      json.RawMessage      `json:"active_permission"`
+	FrozenV2              json.RawMessage      `json:"frozenV2"`
+	AssetV2               json.RawMessage      `json:"assetV2"`
+	FreeAssetNetUsageV2   json.RawMessage      `json:"free_asset_net_usageV2"`
+	AssetOptimized        bool                 `json:"asset_optimized"`
 }
 
 type httpAccountResource struct {
-	LatestConsumeTimeForEnergy                   int64 `json:"latest_consume_time_for_energy"`
-	EnergyWindowSize                             int64 `json:"energy_window_size"`
-	AcquiredDelegatedFrozenV2BalanceForEnergy    int64 `json:"acquired_delegated_frozenV2_balance_for_energy"`
-	EnergyWindowOptimized                        bool  `json:"energy_window_optimized"`
+	LatestConsumeTimeForEnergy                int64 `json:"latest_consume_time_for_energy"`
+	EnergyWindowSize                          int64 `json:"energy_window_size"`
+	AcquiredDelegatedFrozenV2BalanceForEnergy int64 `json:"acquired_delegated_frozenV2_balance_for_energy"`
+	EnergyWindowOptimized                     bool  `json:"energy_window_optimized"`
 }
 
 // Account operations
@@ -551,16 +551,16 @@ func (t *HTTPTransport) GetAccount(ctx context.Context, account *core.Account) (
 
 // httpAccountResourceMessage is a helper struct for parsing HTTP API account resource response
 type httpAccountResourceMessage struct {
-	FreeNetLimit      int64 `json:"freeNetLimit"`
-	FreeNetUsed       int64 `json:"freeNetUsed"`
-	NetLimit          int64 `json:"NetLimit"`
-	NetUsed           int64 `json:"NetUsed"`
-	TotalNetLimit     int64 `json:"TotalNetLimit"`
-	TotalNetWeight    int64 `json:"TotalNetWeight"`
-	EnergyLimit       int64 `json:"EnergyLimit"`
-	EnergyUsed        int64 `json:"EnergyUsed"`
-	TotalEnergyLimit  int64 `json:"TotalEnergyLimit"`
-	TotalEnergyWeight int64 `json:"TotalEnergyWeight"`
+	FreeNetLimit      int64           `json:"freeNetLimit"`
+	FreeNetUsed       int64           `json:"freeNetUsed"`
+	NetLimit          int64           `json:"NetLimit"`
+	NetUsed           int64           `json:"NetUsed"`
+	TotalNetLimit     int64           `json:"TotalNetLimit"`
+	TotalNetWeight    int64           `json:"TotalNetWeight"`
+	EnergyLimit       int64           `json:"EnergyLimit"`
+	EnergyUsed        int64           `json:"EnergyUsed"`
+	TotalEnergyLimit  int64           `json:"TotalEnergyLimit"`
+	TotalEnergyWeight int64           `json:"TotalEnergyWeight"`
 	AssetNetUsed      json.RawMessage `json:"assetNetUsed"`
 	AssetNetLimit     json.RawMessage `json:"assetNetLimit"`
 }
@@ -820,10 +820,10 @@ type httpTriggerConstantContractResponse struct {
 		Code    string `json:"code"`
 		Message string `json:"message"`
 	} `json:"result"`
-	ConstantResult  []string `json:"constant_result"`
-	EnergyUsed      int64    `json:"energy_used"`
-	EnergyPenalty   int64    `json:"energy_penalty"`
-	Transaction     json.RawMessage `json:"transaction"`
+	ConstantResult []string        `json:"constant_result"`
+	EnergyUsed     int64           `json:"energy_used"`
+	EnergyPenalty  int64           `json:"energy_penalty"`
+	Transaction    json.RawMessage `json:"transaction"`
 }
 
 func (t *HTTPTransport) TriggerConstantContract(ctx context.Context, contract *core.TriggerSmartContract) (*api.TransactionExtention, error) {
@@ -892,12 +892,12 @@ func (t *HTTPTransport) EstimateEnergy(ctx context.Context, contract *core.Trigg
 
 func (t *HTTPTransport) DeployContract(ctx context.Context, contract *core.CreateSmartContract) (*api.TransactionExtention, error) {
 	reqBody := map[string]interface{}{
-		"owner_address":                  tronutils.EncodeCheck(contract.OwnerAddress),
-		"name":                           contract.NewContract.Name,
-		"bytecode":                       hex.EncodeToString(contract.NewContract.Bytecode),
-		"consume_user_resource_percent":  contract.NewContract.ConsumeUserResourcePercent,
-		"origin_energy_limit":            contract.NewContract.OriginEnergyLimit,
-		"visible":                        true,
+		"owner_address":                 tronutils.EncodeCheck(contract.OwnerAddress),
+		"name":                          contract.NewContract.Name,
+		"bytecode":                      hex.EncodeToString(contract.NewContract.Bytecode),
+		"consume_user_resource_percent": contract.NewContract.ConsumeUserResourcePercent,
+		"origin_energy_limit":           contract.NewContract.OriginEnergyLimit,
+		"visible":                       true,
 	}
 
 	if contract.NewContract.Abi != nil {
@@ -934,10 +934,10 @@ func (t *HTTPTransport) GetContract(ctx context.Context, address []byte) (*core.
 
 func (t *HTTPTransport) UpdateSetting(ctx context.Context, contract *core.UpdateSettingContract) (*api.TransactionExtention, error) {
 	reqBody := map[string]interface{}{
-		"owner_address":                  tronutils.EncodeCheck(contract.OwnerAddress),
-		"contract_address":               tronutils.EncodeCheck(contract.ContractAddress),
-		"consume_user_resource_percent":  contract.ConsumeUserResourcePercent,
-		"visible":                        true,
+		"owner_address":                 tronutils.EncodeCheck(contract.OwnerAddress),
+		"contract_address":              tronutils.EncodeCheck(contract.ContractAddress),
+		"consume_user_resource_percent": contract.ConsumeUserResourcePercent,
+		"visible":                       true,
 	}
 
 	result := &api.TransactionExtention{}
@@ -950,10 +950,10 @@ func (t *HTTPTransport) UpdateSetting(ctx context.Context, contract *core.Update
 
 func (t *HTTPTransport) UpdateEnergyLimit(ctx context.Context, contract *core.UpdateEnergyLimitContract) (*api.TransactionExtention, error) {
 	reqBody := map[string]interface{}{
-		"owner_address":        tronutils.EncodeCheck(contract.OwnerAddress),
-		"contract_address":     tronutils.EncodeCheck(contract.ContractAddress),
-		"origin_energy_limit":  contract.OriginEnergyLimit,
-		"visible":              true,
+		"owner_address":       tronutils.EncodeCheck(contract.OwnerAddress),
+		"contract_address":    tronutils.EncodeCheck(contract.ContractAddress),
+		"origin_energy_limit": contract.OriginEnergyLimit,
+		"visible":             true,
 	}
 
 	result := &api.TransactionExtention{}

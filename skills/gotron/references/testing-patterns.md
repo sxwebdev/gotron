@@ -2,7 +2,10 @@
 
 ## Test Location and Package
 
-Tests live in `tests/` as a separate package (`package tests`), not alongside the source code. This keeps integration tests isolated from the library code.
+Two test layers:
+
+- **Integration tests** live in `tests/` as `package tests` and hit real public Tron nodes.
+- **Unit tests** for transport-layer components (the health-checker, classifier) live alongside the source in `pkg/client/` as `package client` and use `testing/synctest` for deterministic virtual-time tests with no network.
 
 ## Test Helpers
 
@@ -89,6 +92,14 @@ func TestGetAccount_HTTP(t *testing.T) {
 | `large_blocks_test.go` | Large block range retrieval (tests MaxCallRecvMsgSize)                             |
 | `common_test.go`       | Shared helpers and test constants                                                  |
 
+Unit tests in `pkg/client/`:
+
+| File                       | What it tests                                                                  |
+| -------------------------- | ------------------------------------------------------------------------------ |
+| `metrics_test.go`          | `MetricsTransport`, built-in Prometheus metrics, mock helpers                  |
+| `health_test.go`           | `HealthAwareTransport` behaviour with `synctest`: tier fallback, recovery, etc.|
+| `health_helpers_test.go`   | `controllableTransport` mock + `newHarness` for health tests                   |
+
 ## Running Tests
 
 ```bash
@@ -98,9 +109,69 @@ go test ./tests/ -v -timeout 60s
 # Specific test
 go test ./tests/ -v -run TestGetAccount_GRPC -timeout 30s
 
-# Unit tests (pkg/client)
-go test ./pkg/client/ -v
+# Unit tests (pkg/client) — include health-checker synctest tests
+go test -race ./pkg/client/ -v
+
+# Health tests only, stress-run for goroutine leaks
+go test -race -count=10 -run TestHealthAware_CloseStopsGoroutines ./pkg/client/
 ```
+
+## Unit Tests with synctest (HealthAwareTransport)
+
+The default transport stack relies on background goroutines + timers, so it's
+tested with Go 1.26's `testing/synctest` for deterministic virtual-time tests.
+No network, no real time, no `time.Sleep` flakiness.
+
+**Helpers (`pkg/client/health_helpers_test.go`):**
+
+- `controllableTransport` — programmable Transport mock. Live calls increment
+  `liveCallCount` and read `nextErr`; probes (routed via a custom
+  `HealthConfig.Probe`) increment `probeCount` and read `probeErr`. The split
+  keeps live and probe paths from racing the same counter.
+- `newHarness(t, tiers []int, cfg HealthConfig) *testHarness` — builds a
+  `HealthAwareTransport` with one node per entry in `tiers` (the int is the
+  node's `Tier`), wires up a mock `MetricsCollector`, and registers a
+  `t.Cleanup` to call `Close()`.
+
+**Pattern:**
+
+```go
+func TestHealthAware_PrimaryFails_FailoverToTier1(t *testing.T) {
+    synctest.Test(t, func(t *testing.T) {
+        h := newHarness(t, []int{0, 0, 1}, HealthConfig{
+            FailureThreshold:     2,
+            HealthyInterval:      time.Hour, // suppress probes for clarity
+            UnhealthyInterval:    time.Hour,
+            InactiveTierInterval: time.Hour,
+        })
+        h.nodes[0].setNextErr(grpcErr(codes.Unavailable))
+        h.nodes[1].setNextErr(grpcErr(codes.Unavailable))
+
+        for i := 0; i < 4; i++ {
+            _, _ = h.transport.GetAccount(context.Background(), &core.Account{})
+        }
+        require.False(t, h.nodeHealthy(0))
+        require.False(t, h.nodeHealthy(1))
+        require.Equal(t, int64(1), h.activeTier())
+
+        h.nodes[2].setNextErr(nil)
+        _, err := h.transport.GetAccount(context.Background(), &core.Account{})
+        require.NoError(t, err)
+        require.Equal(t, int64(1), h.nodes[2].liveCallCount.Load())
+    })
+}
+```
+
+**Key idioms:**
+
+- After advancing virtual time with `time.Sleep(...)`, call `synctest.Wait()`
+  to let all goroutines reach a durably-blocked state before assertions.
+- Set unrelated intervals to `time.Hour` so the test focuses on one timing
+  axis (probe vs live, primary vs fallback).
+- Use `grpcErr(codes.Unavailable)` from `health_test.go` for network-level
+  errors; use `&HTTPStatusError{Code: 503}` (wrapped in `&TransportError{...}`)
+  for HTTP failures.
+- `synctest.Test` requires Go 1.26+ (the project uses 1.26.1).
 
 ## Writing a New Test
 

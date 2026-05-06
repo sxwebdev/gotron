@@ -62,9 +62,10 @@ func (c *Client) GetNetwork() Network
 ```go
 type Config struct {
     Nodes      []NodeConfig
-    Network    Network         // informational only
-    Blockchain string          // metrics label, default "tron"
+    Network    Network          // informational only
+    Blockchain string           // metrics label, default "tron"
     Metrics    MetricsCollector // nil = no metrics
+    Health     HealthConfig     // zero value = sane defaults; .Disabled=true → legacy round-robin
 }
 func (c Config) Validate() error
 ```
@@ -77,9 +78,32 @@ type NodeConfig struct {
     DialOptions []grpc.DialOption     // gRPC only
     HTTPClient  *http.Client          // HTTP only
     Headers     map[string]string     // API keys, custom metadata
+    Tier        int                   // 0 = primary, 1 = fallback, 2+ = next; default 0
 }
 func (n NodeConfig) Validate() error
 func (n NodeConfig) GetProtocol() Protocol
+```
+
+```go
+type HealthConfig struct {
+    Disabled             bool          // true → legacy plain RoundRobinTransport
+    FailureThreshold     int           // default 2
+    SuccessThreshold     int           // default 2
+    HealthyInterval      time.Duration // default 30s — healthy nodes in active tier
+    UnhealthyInterval    time.Duration // default 5s  — any unhealthy node
+    InactiveTierInterval time.Duration // default 5m  — healthy nodes in inactive tier (fallbacks)
+    ProbeTimeout         time.Duration // default 5s
+    Probe                func(ctx context.Context, t Transport) error // default = GetNowBlock
+    ClassifyErr          func(err error) bool                         // default = isNetworkError
+    Logger               Logger                                       // nil = no-op (silent)
+}
+
+// Logger is the minimal interface used by HealthAwareTransport. Implement
+// Infof to bridge to slog, log, zap, etc.; the zero value of HealthConfig
+// uses a no-op logger.
+type Logger interface {
+    Infof(format string, args ...any)
+}
 ```
 
 ### Account operations
@@ -290,6 +314,33 @@ func (c *Client) TotalTransaction(ctx context.Context) (*api.NumberMessage, erro
 func (c *Client) ChainParams(ctx context.Context) (*ChainParams, error)
 func (c *Client) ChainParam(ctx context.Context, paramKey string) (*core.ChainParameters_ChainParameter, error)
 ```
+
+### Transport stack (low-level)
+
+The `Transport` interface (`pkg/client/transport.go`) is the abstraction
+implemented by every per-node and wrapping transport. The wrappers callers
+typically interact with from outside `pkg/client`:
+
+```go
+// Default in production: tier-based fallback + per-node health checking.
+func NewHealthAwareTransport(
+    nodes []NodeConfig,
+    factory func(NodeConfig) (Transport, error),
+    cfg HealthConfig,
+    metrics MetricsCollector,
+    blockchain string,
+) (*HealthAwareTransport, error)
+
+// Legacy: plain round-robin, no health. Used when cfg.Health.Disabled = true.
+func NewRoundRobinTransport(transports []Transport) *RoundRobinTransport
+
+// Wraps any Transport to record latency/status via MetricsCollector.
+func NewMetricsTransport(transport Transport, metrics MetricsCollector, blockchain string) *MetricsTransport
+```
+
+`client.New(cfg)` builds the stack automatically — direct use of the
+constructors is only needed for advanced cases (custom transport graphs in
+tests, embedding gotron in a higher-level multi-chain harness, etc.).
 
 ### Common types
 

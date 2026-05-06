@@ -8,6 +8,8 @@
 //
 //   - Dual transport support: gRPC and HTTP REST API
 //   - Round-robin load balancing across multiple nodes
+//   - Tier-based fallback: primary/fallback node groups via NodeConfig.Tier
+//   - Background health checking with automatic node recovery
 //   - Full client for Tron Wallet API
 //   - BIP39/BIP44 mnemonic and address generation
 //   - Transaction creation, signing, and broadcasting
@@ -110,8 +112,46 @@
 //	    },
 //	}
 //
-// Each request uses the next node in round-robin fashion.
-// Errors are returned as-is without retries.
+// Each request uses the next node in round-robin fashion. By default a
+// background health-checker probes every node and excludes unhealthy ones
+// from selection; failed live requests count toward the per-node failure
+// threshold. The error of the failed call is still returned to the caller —
+// there is no automatic retry on the same request, the next request just
+// goes to the next healthy node.
+//
+// # Tier-based Fallback with Health Checking
+//
+// Nodes can be partitioned into priority tiers via NodeConfig.Tier (0 = primary,
+// 1 = fallback, 2+ = next). Requests are routed to the lowest-numbered tier
+// that still has at least one healthy node; a higher tier is used only when
+// every node of every lower tier is currently unhealthy. As soon as one
+// primary recovers, traffic returns to it.
+//
+//	cfg := client.Config{
+//	    Nodes: []client.NodeConfig{
+//	        // Primary group
+//	        {Protocol: client.ProtocolGRPC, Address: "grpc.trongrid.io:50051", UseTLS: true, Tier: 0},
+//	        {Protocol: client.ProtocolHTTP, Address: "https://api.trongrid.io",  Tier: 0},
+//	        // Fallback group — only used when every primary is unhealthy
+//	        {Protocol: client.ProtocolHTTP, Address: "https://tron-rpc.publicnode.com", Tier: 1},
+//	    },
+//	    Health: client.HealthConfig{
+//	        FailureThreshold:     2,
+//	        SuccessThreshold:     2,
+//	        HealthyInterval:      30 * time.Second, // active tier
+//	        UnhealthyInterval:    5 * time.Second,  // any unhealthy node
+//	        InactiveTierInterval: 5 * time.Minute,  // healthy fallbacks
+//	        ProbeTimeout:         5 * time.Second,
+//	    },
+//	}
+//
+// When every node of every tier is unhealthy, calls return ErrNoHealthyNodes —
+// detect with errors.Is(err, client.ErrNoHealthyNodes). The health-checker
+// keeps probing all nodes (at UnhealthyInterval) and they re-enter the pool
+// the moment they recover.
+//
+// To disable the health-checker entirely (legacy round-robin without health),
+// set Health.Disabled = true. NodeConfig.Tier is then ignored.
 //
 // # Using TronGrid with API Key
 //
@@ -245,8 +285,10 @@
 //   - pkg/tronutils: Utility functions for encoding, formatting, etc.
 //   - schema/pb: Protocol buffer definitions from Tron protocol
 //
-// The client package uses a Transport interface pattern with round-robin
-// load balancing across all configured nodes.
+// The client package uses a Transport interface pattern. The default
+// transport stack is HealthAwareTransport (tier-based fallback + per-node
+// health checking) wrapped by an optional MetricsTransport. Setting
+// Config.Health.Disabled = true falls back to a plain RoundRobinTransport.
 //
 // # Error Handling
 //
@@ -265,6 +307,7 @@
 //   - client.ErrInvalidAmount
 //   - client.ErrTransactionNotFound
 //   - client.ErrInvalidConfig
+//   - client.ErrNoHealthyNodes
 //
 // # Prometheus Metrics
 //
@@ -293,6 +336,9 @@
 //   - gotron_rpc_pool_total: Gauge with label blockchain
 //   - gotron_rpc_pool_healthy: Gauge with label blockchain
 //   - gotron_rpc_pool_disabled: Gauge with label blockchain
+//
+// The pool_* gauges are kept up to date by HealthAwareTransport on every
+// node state transition (and once at construction).
 //
 // Custom MetricsCollector:
 //

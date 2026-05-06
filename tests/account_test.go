@@ -12,7 +12,7 @@ import (
 
 func TestGetAccount_GRPC(t *testing.T) {
 	c := newGRPCClient(t)
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -26,7 +26,7 @@ func TestGetAccount_GRPC(t *testing.T) {
 
 func TestGetAccount_HTTP(t *testing.T) {
 	c := newHTTPClient(t)
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -40,7 +40,7 @@ func TestGetAccount_HTTP(t *testing.T) {
 
 func TestGetAccountBalance_GRPC(t *testing.T) {
 	c := newGRPCClient(t)
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -54,7 +54,7 @@ func TestGetAccountBalance_GRPC(t *testing.T) {
 
 func TestGetAccountBalance_HTTP(t *testing.T) {
 	c := newHTTPClient(t)
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -68,7 +68,7 @@ func TestGetAccountBalance_HTTP(t *testing.T) {
 
 func TestGetAccountResource_GRPC(t *testing.T) {
 	c := newGRPCClient(t)
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -82,7 +82,7 @@ func TestGetAccountResource_GRPC(t *testing.T) {
 
 func TestGetAccountResource_HTTP(t *testing.T) {
 	c := newHTTPClient(t)
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -96,7 +96,7 @@ func TestGetAccountResource_HTTP(t *testing.T) {
 
 func TestIsAccountActivated_GRPC(t *testing.T) {
 	c := newGRPCClient(t)
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -110,7 +110,7 @@ func TestIsAccountActivated_GRPC(t *testing.T) {
 
 func TestIsAccountActivated_HTTP(t *testing.T) {
 	c := newHTTPClient(t)
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -124,7 +124,7 @@ func TestIsAccountActivated_HTTP(t *testing.T) {
 
 func TestGetChainParameters_GRPC(t *testing.T) {
 	c := newGRPCClient(t)
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -139,7 +139,7 @@ func TestGetChainParameters_GRPC(t *testing.T) {
 
 func TestGetChainParameters_HTTP(t *testing.T) {
 	c := newHTTPClient(t)
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
