@@ -15,10 +15,10 @@ import (
 
 func TestCompare_BlockHeight(t *testing.T) {
 	grpcClient := newGRPCClient(t)
-	defer grpcClient.Close()
+	defer func() { _ = grpcClient.Close() }()
 
 	httpClient := newHTTPClient(t)
-	defer httpClient.Close()
+	defer func() { _ = httpClient.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -41,10 +41,10 @@ func TestCompare_BlockHeight(t *testing.T) {
 
 func TestCompare_ChainParams(t *testing.T) {
 	grpcClient := newGRPCClient(t)
-	defer grpcClient.Close()
+	defer func() { _ = grpcClient.Close() }()
 
 	httpClient := newHTTPClient(t)
-	defer httpClient.Close()
+	defer func() { _ = httpClient.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -64,10 +64,10 @@ func TestCompare_ChainParams(t *testing.T) {
 
 func TestCompare_AccountBalance(t *testing.T) {
 	grpcClient := newGRPCClient(t)
-	defer grpcClient.Close()
+	defer func() { _ = grpcClient.Close() }()
 
 	httpClient := newHTTPClient(t)
-	defer httpClient.Close()
+	defer func() { _ = httpClient.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -87,10 +87,10 @@ func TestCompare_AccountBalance(t *testing.T) {
 
 func TestCompare_BlockByNum(t *testing.T) {
 	grpcClient := newGRPCClient(t)
-	defer grpcClient.Close()
+	defer func() { _ = grpcClient.Close() }()
 
 	httpClient := newHTTPClient(t)
-	defer httpClient.Close()
+	defer func() { _ = httpClient.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -145,10 +145,10 @@ func TestCompare_BlockByNum(t *testing.T) {
 
 func TestCompare_BlockTransactionDetails(t *testing.T) {
 	grpcClient := newGRPCClient(t)
-	defer grpcClient.Close()
+	defer func() { _ = grpcClient.Close() }()
 
 	httpClient := newHTTPClient(t)
-	defer httpClient.Close()
+	defer func() { _ = httpClient.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -201,10 +201,10 @@ func TestCompare_BlockTransactionDetails(t *testing.T) {
 
 func TestCompare_TransactionInfoByBlockNum(t *testing.T) {
 	grpcClient := newGRPCClient(t)
-	defer grpcClient.Close()
+	defer func() { _ = grpcClient.Close() }()
 
 	httpClient := newHTTPClient(t)
-	defer httpClient.Close()
+	defer func() { _ = httpClient.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -253,10 +253,10 @@ func TestCompare_TransactionInfoByBlockNum(t *testing.T) {
 
 func TestCompare_Contract(t *testing.T) {
 	grpcClient := newGRPCClient(t)
-	defer grpcClient.Close()
+	defer func() { _ = grpcClient.Close() }()
 
 	httpClient := newHTTPClient(t)
-	defer httpClient.Close()
+	defer func() { _ = httpClient.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -278,10 +278,10 @@ func TestCompare_Contract(t *testing.T) {
 
 func TestCompare_ContractABI(t *testing.T) {
 	grpcClient := newGRPCClient(t)
-	defer grpcClient.Close()
+	defer func() { _ = grpcClient.Close() }()
 
 	httpClient := newHTTPClient(t)
-	defer httpClient.Close()
+	defer func() { _ = httpClient.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -309,10 +309,10 @@ func TestCompare_ContractABI(t *testing.T) {
 
 func TestCompare_AssetIssue(t *testing.T) {
 	grpcClient := newGRPCClient(t)
-	defer grpcClient.Close()
+	defer func() { _ = grpcClient.Close() }()
 
 	httpClient := newHTTPClient(t)
-	defer httpClient.Close()
+	defer func() { _ = httpClient.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

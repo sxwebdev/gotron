@@ -13,7 +13,7 @@ import (
 
 func TestMultiNode_RoundRobin(t *testing.T) {
 	c := newMultiNodeClient(t)
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -32,7 +32,7 @@ func TestMultiNode_RoundRobin(t *testing.T) {
 
 func TestMultiNode_GetAccount(t *testing.T) {
 	c := newMultiNodeClient(t)
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -49,7 +49,7 @@ func TestMultiNode_GetAccount(t *testing.T) {
 
 func TestMultiNode_GetAccountBalance(t *testing.T) {
 	c := newMultiNodeClient(t)
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -66,7 +66,7 @@ func TestMultiNode_GetAccountBalance(t *testing.T) {
 
 func TestMultiNode_TRC20GetName(t *testing.T) {
 	c := newMultiNodeClient(t)
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -83,7 +83,7 @@ func TestMultiNode_TRC20GetName(t *testing.T) {
 
 func TestMultiNode_ChainParams(t *testing.T) {
 	c := newMultiNodeClient(t)
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -115,7 +115,7 @@ func TestMultiNode_SameProtocol(t *testing.T) {
 	}
 	c, err := client.New(cfg)
 	require.NoError(t, err)
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

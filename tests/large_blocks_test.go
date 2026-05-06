@@ -23,7 +23,7 @@ func TestGetBlockRange_LargeResponse_GRPC(t *testing.T) {
 	}
 	c, err := client.New(cfg)
 	require.NoError(t, err)
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -51,7 +51,7 @@ func TestGetBlockRange_LargeResponse_HTTP(t *testing.T) {
 	}
 	c, err := client.New(cfg)
 	require.NoError(t, err)
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()

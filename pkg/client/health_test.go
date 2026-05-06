@@ -452,7 +452,7 @@ func TestHealthAware_DisabledFallsBackToRoundRobin(t *testing.T) {
 	}
 	c, err := New(cfg)
 	require.NoError(t, err)
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	// The transport stack should be RoundRobinTransport (no Metrics → no wrapping).
 	_, ok := c.transport.(*RoundRobinTransport)

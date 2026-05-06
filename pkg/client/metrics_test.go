@@ -60,12 +60,15 @@ func (m *mockTransport) GetNowBlock(ctx context.Context) (*api.BlockExtention, e
 func (m *mockTransport) GetAccount(context.Context, *core.Account) (*core.Account, error) {
 	return nil, m.err
 }
+
 func (m *mockTransport) GetAccountResource(context.Context, *core.Account) (*api.AccountResourceMessage, error) {
 	return nil, m.err
 }
+
 func (m *mockTransport) CreateAccount(context.Context, *core.AccountCreateContract) (*api.TransactionExtention, error) {
 	return nil, m.err
 }
+
 func (m *mockTransport) GetBlockByNum(context.Context, int64) (*api.BlockExtention, error) {
 	return nil, m.err
 }
@@ -73,72 +76,95 @@ func (m *mockTransport) GetBlockById(context.Context, []byte) (*core.Block, erro
 func (m *mockTransport) GetBlockByLimitNext(context.Context, int64, int64) (*api.BlockListExtention, error) {
 	return nil, m.err
 }
+
 func (m *mockTransport) GetBlockByLatestNum(context.Context, int64) (*api.BlockListExtention, error) {
 	return nil, m.err
 }
+
 func (m *mockTransport) GetTransactionInfoByBlockNum(context.Context, int64) (*api.TransactionInfoList, error) {
 	return nil, m.err
 }
+
 func (m *mockTransport) GetTransactionById(context.Context, []byte) (*core.Transaction, error) {
 	return nil, m.err
 }
+
 func (m *mockTransport) GetTransactionInfoById(context.Context, []byte) (*core.TransactionInfo, error) {
 	return nil, m.err
 }
+
 func (m *mockTransport) BroadcastTransaction(context.Context, *core.Transaction) (*api.Return, error) {
 	return nil, m.err
 }
+
 func (m *mockTransport) CreateTransaction(context.Context, *core.TransferContract) (*api.TransactionExtention, error) {
 	return nil, m.err
 }
+
 func (m *mockTransport) TriggerContract(context.Context, *core.TriggerSmartContract) (*api.TransactionExtention, error) {
 	return nil, m.err
 }
+
 func (m *mockTransport) TriggerConstantContract(context.Context, *core.TriggerSmartContract) (*api.TransactionExtention, error) {
 	return nil, m.err
 }
+
 func (m *mockTransport) EstimateEnergy(context.Context, *core.TriggerSmartContract) (*api.EstimateEnergyMessage, error) {
 	return nil, m.err
 }
+
 func (m *mockTransport) DeployContract(context.Context, *core.CreateSmartContract) (*api.TransactionExtention, error) {
 	return nil, m.err
 }
+
 func (m *mockTransport) GetContract(context.Context, []byte) (*core.SmartContract, error) {
 	return nil, m.err
 }
+
 func (m *mockTransport) UpdateSetting(context.Context, *core.UpdateSettingContract) (*api.TransactionExtention, error) {
 	return nil, m.err
 }
+
 func (m *mockTransport) UpdateEnergyLimit(context.Context, *core.UpdateEnergyLimitContract) (*api.TransactionExtention, error) {
 	return nil, m.err
 }
+
 func (m *mockTransport) GetAccountResourceMessage(context.Context, *core.Account) (*api.AccountResourceMessage, error) {
 	return nil, m.err
 }
+
 func (m *mockTransport) GetDelegatedResource(context.Context, *api.DelegatedResourceMessage) (*api.DelegatedResourceList, error) {
 	return nil, m.err
 }
+
 func (m *mockTransport) GetDelegatedResourceV2(context.Context, *api.DelegatedResourceMessage) (*api.DelegatedResourceList, error) {
 	return nil, m.err
 }
+
 func (m *mockTransport) GetDelegatedResourceAccountIndex(context.Context, []byte) (*core.DelegatedResourceAccountIndex, error) {
 	return nil, m.err
 }
+
 func (m *mockTransport) GetDelegatedResourceAccountIndexV2(context.Context, []byte) (*core.DelegatedResourceAccountIndex, error) {
 	return nil, m.err
 }
+
 func (m *mockTransport) GetCanDelegatedMaxSize(context.Context, *api.CanDelegatedMaxSizeRequestMessage) (*api.CanDelegatedMaxSizeResponseMessage, error) {
 	return nil, m.err
 }
+
 func (m *mockTransport) DelegateResource(context.Context, *core.DelegateResourceContract) (*api.TransactionExtention, error) {
 	return nil, m.err
 }
+
 func (m *mockTransport) UnDelegateResource(context.Context, *core.UnDelegateResourceContract) (*api.TransactionExtention, error) {
 	return nil, m.err
 }
+
 func (m *mockTransport) GetAssetIssueById(context.Context, []byte) (*core.AssetIssueContract, error) {
 	return nil, m.err
 }
+
 func (m *mockTransport) GetAssetIssueListByName(context.Context, []byte) (*api.AssetIssueList, error) {
 	return nil, m.err
 }
@@ -146,9 +172,11 @@ func (m *mockTransport) ListNodes(context.Context) (*api.NodeList, error) { retu
 func (m *mockTransport) GetChainParameters(context.Context) (*core.ChainParameters, error) {
 	return nil, m.err
 }
+
 func (m *mockTransport) GetNextMaintenanceTime(context.Context) (*api.NumberMessage, error) {
 	return nil, m.err
 }
+
 func (m *mockTransport) TotalTransaction(context.Context) (*api.NumberMessage, error) {
 	return nil, m.err
 }

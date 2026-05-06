@@ -135,7 +135,7 @@ func isHexString(s string) bool {
 		return false
 	}
 	for _, c := range s {
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F') {
 			return false
 		}
 	}
@@ -342,7 +342,7 @@ func (t *HTTPTransport) doRequestRaw(ctx context.Context, endpoint string, body 
 	if err != nil {
 		return nil, t.wrapErr(endpoint, fmt.Errorf("http request: %w", err))
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
