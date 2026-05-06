@@ -52,7 +52,6 @@ func TestABIParamArrayUint256(t *testing.T) {
 }
 
 func TestABIParamArrayBytes(t *testing.T) {
-
 	param, err := LoadFromJSON(`
 	[
 		{"bytes32": "0001020001020001020001020001020001020001020001020001020001020001"}

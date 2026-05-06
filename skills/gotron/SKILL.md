@@ -4,9 +4,11 @@ description: >
   Gotron is a Go SDK for the Tron blockchain (github.com/sxwebdev/gotron). Use this skill whenever
   working in the gotron codebase — editing pkg/client, pkg/address, pkg/tronutils, or tests/,
   adding new RPC methods, writing integration tests, working with the Transport interface (gRPC,
-  HTTP, round-robin), TRC20 token operations, address generation (BIP39/BIP44), resource delegation
-  (bandwidth/energy), Prometheus metrics (MetricsCollector), or any file importing gotron packages.
-  Also triggers when the user mentions Tron blockchain, TRX, SUN, TRC20, USDT on Tron, or TronGrid.
+  HTTP, round-robin), tier-based fallback, health checking, HealthAwareTransport, HealthConfig,
+  ErrNoHealthyNodes, NodeConfig.Tier, TRC20 token operations, address generation (BIP39/BIP44),
+  resource delegation (bandwidth/energy), Prometheus metrics (MetricsCollector), or any file
+  importing gotron packages. Also triggers when the user mentions Tron blockchain, TRX, SUN, TRC20,
+  USDT on Tron, or TronGrid.
 user-invocable: true
 ---
 
@@ -28,35 +30,47 @@ The SDK follows a layered architecture:
 
 ### Transport chain
 
+Default chain (health-checking enabled):
+
 ```
 Client.transport
   -> MetricsTransport (optional, wraps next)
-    -> RoundRobinTransport (distributes via atomic counter)
+    -> HealthAwareTransport (default; tier-based fallback + per-node health)
       -> GRPCTransport | HTTPTransport (per node)
 ```
 
-`client.New(cfg)` builds this chain automatically:
+Legacy chain (`cfg.Health.Disabled = true`):
 
-- Creates one GRPCTransport or HTTPTransport per `NodeConfig`
-- Wraps all in `RoundRobinTransport`
+```
+Client.transport
+  -> MetricsTransport (optional)
+    -> RoundRobinTransport (atomic counter, no health)
+      -> GRPCTransport | HTTPTransport (per node)
+```
+
+`client.New(cfg)` builds the chain automatically:
+
+- Creates one `GRPCTransport` or `HTTPTransport` per `NodeConfig`
+- Wraps all in `HealthAwareTransport` (default) or `RoundRobinTransport` (when `cfg.Health.Disabled`)
 - If `cfg.Metrics != nil`, wraps in `MetricsTransport`
 
 ### Transport interface
 
-Defined in `pkg/client/transport.go`. Every new RPC method must be added to:
+Defined in `pkg/client/transport.go`. Every new RPC method must be added to **all 6 transport files**:
 
-1. `Transport` interface
+1. `Transport` interface (`transport.go`)
 2. `GRPCTransport` (`transport_grpc.go`)
 3. `HTTPTransport` (`transport_http.go`)
-4. `RoundRobinTransport` (`transport_roundrobin.go`)
-5. `MetricsTransport` (`transport_metrics.go`)
+4. `RoundRobinTransport` (`transport_roundrobin.go`) — kept as a public helper for legacy usage
+5. `HealthAwareTransport` (`health.go`) — default in the production stack
+6. `MetricsTransport` (`transport_metrics.go`)
 
 See `references/transport-guide.md` for the full interface and implementation patterns.
 
 ### Error handling
 
 - Sentinel errors in `pkg/client/errors.go`: `ErrInvalidConfig`, `ErrNotConnected`, `ErrInvalidAddress`, `ErrTransactionNotFound`, etc.
-- `TransportError` struct wraps RPC errors with `Host`, `Protocol`, `Method` fields. Extract with `errors.As(err, &transportErr)`.
+- `TransportError` struct wraps RPC errors with `Host`, `Protocol`, `Method` fields. Extract with `errors.AsType[*TransportError](err)` (Go 1.26+).
 - gRPC errors are wrapped via `transportErrorInterceptor`; HTTP errors via `HTTPTransport.wrapErr`.
 
 ### Key conventions
@@ -66,7 +80,8 @@ See `references/transport-guide.md` for the full interface and implementation pa
 - All operations are stateless and context-driven
 - Addresses are base58-encoded strings at the Client API level, decoded to `[]byte` before passing to Transport
 - Config struct (not functional options) for client construction
-- No built-in retry logic — fails fast, errors propagated as-is
+- No automatic retry on a single request — but failed network-level calls count toward the per-node failure threshold; the next request goes to the next healthy node automatically
+- `HealthAwareTransport` is the default; it manages per-node health, tier-based fallback, and a background probe loop. Set `cfg.Health.Disabled = true` to fall back to the legacy plain `RoundRobinTransport`
 
 ## Instructions
 
@@ -80,9 +95,10 @@ See `references/transport-guide.md` for the full interface and implementation pa
    - `doBlockRequest` — block responses where transactions need wrapping into `TransactionExtention`
    - `doRequestRaw` — when you need custom parsing (e.g., `GetAccount`, `TriggerConstantContract`)
 4. Implement in `RoundRobinTransport` — delegate to `t.next().MethodName(ctx, ...)`
-5. Implement in `MetricsTransport` — wrap with timing: `start := time.Now()` ... `t.after("MethodName", start, err)`
-6. Add the high-level client method in the appropriate file under `pkg/client/` (e.g., `account.go`, `block.go`, `trc20.go`)
-7. Write integration tests in `tests/` with both `_GRPC` and `_HTTP` suffixed test functions
+5. Implement in `HealthAwareTransport` — pick a node via `h.next()`, call its method, then `h.recordOutcome(n, callErr)`
+6. Implement in `MetricsTransport` — wrap with timing: `start := time.Now()` ... `t.after("MethodName", start, err)`
+7. Add the high-level client method in the appropriate file under `pkg/client/` (e.g., `account.go`, `block.go`, `trc20.go`)
+8. Write integration tests in `tests/` with both `_GRPC` and `_HTTP` suffixed test functions
 
 ### Writing tests
 
@@ -123,6 +139,29 @@ Cost estimators all return `*EstimateResult { Energy, Bandwidth, Trx }` (TRX in 
 - **Activation only:** `EstimateActivationFee(ctx, from, to)` (local fake tx, fast) or `EstimateSystemContractActivation(ctx, caller, receiver)` (real CreateAccount RPC, more accurate). Both return zeros for already-activated receivers and are in `pkg/client/activate.go`.
 - **Full transfer (TRX or TRC20):** `EstimateTransfer(ctx, from, to, contract, amount, decimals)` returns `EstimateTransferResult` with `Total / Transfer / Activation` breakdown. `Activation` is zero for activated recipients; `Total = Transfer + Activation` (conservative upper bound — Tron consumes the activation fee inside the transfer tx itself, so real cost may be slightly lower).
 - **Unactivated recipients are valid.** Sending TRX or TRC20 to an unactivated address activates it; do not gate transfers on `IsAccountActivated`. The sentinel `ErrAccountNotActivated` exists for callers that explicitly require an activated address.
+
+### Health checking and tier-based fallback
+
+`HealthAwareTransport` (default) groups nodes by `NodeConfig.Tier` (0 = primary,
+1 = fallback, 2+ = next). Requests go to the lowest-numbered tier that has at
+least one healthy node; a higher tier is only used when every node of every
+lower tier is unhealthy. As soon as a primary recovers, traffic returns to it.
+
+Tunables live in `Config.Health` (`HealthConfig`):
+
+- `FailureThreshold` / `SuccessThreshold` — how many consecutive failures/successes flip a node
+- `HealthyInterval` / `UnhealthyInterval` / `InactiveTierInterval` / `ProbeTimeout` — probe cadence
+- `Probe` — defaults to `GetNowBlock`; pass a custom function to override
+- `ClassifyErr` — distinguishes network failures (count toward unhealthy) from logical errors; default = `isNetworkError` in `health_classify.go`
+- `Logger` — optional `client.Logger` interface (one method: `Infof(format string, args ...any)`); defaults to a no-op logger so events are silent unless you bridge it to slog/log/zap/etc.
+- `Disabled` — fall back to the legacy plain `RoundRobinTransport`
+
+When every node of every tier is unhealthy, calls return `ErrNoHealthyNodes`.
+The background probe loop keeps trying every node so they re-enter the pool
+the moment they recover.
+
+For full implementation patterns and unit-testing strategy (synctest), see
+`references/transport-guide.md` and `references/testing-patterns.md`.
 
 ### Prometheus metrics
 
@@ -175,7 +214,21 @@ func (t *RoundRobinTransport) GetNodeInfo(ctx context.Context) (*core.NodeInfo, 
 }
 ```
 
-5. Implement in `transport_metrics.go`:
+5. Implement in `health.go`:
+
+```go
+func (h *HealthAwareTransport) GetNodeInfo(ctx context.Context) (*core.NodeInfo, error) {
+    n, err := h.next()
+    if err != nil {
+        return nil, err
+    }
+    res, callErr := n.transport.GetNodeInfo(ctx)
+    h.recordOutcome(n, callErr)
+    return res, callErr
+}
+```
+
+6. Implement in `transport_metrics.go`:
 
 ```go
 func (t *MetricsTransport) GetNodeInfo(ctx context.Context) (*core.NodeInfo, error) {
@@ -186,7 +239,7 @@ func (t *MetricsTransport) GetNodeInfo(ctx context.Context) (*core.NodeInfo, err
 }
 ```
 
-6. Add client method in `pkg/client/network.go`:
+7. Add client method in `pkg/client/network.go`:
 
 ```go
 func (c *Client) GetNodeInfo(ctx context.Context) (*core.NodeInfo, error) {
@@ -194,7 +247,7 @@ func (c *Client) GetNodeInfo(ctx context.Context) (*core.NodeInfo, error) {
 }
 ```
 
-7. Add tests in `tests/network_test.go`:
+8. Add tests in `tests/network_test.go`:
 
 ```go
 func TestGetNodeInfo_GRPC(t *testing.T) {
@@ -217,7 +270,7 @@ func TestGetNodeInfo_GRPC(t *testing.T) {
 
 ## Key principles
 
-- **Both transports must stay in sync.** Every Transport interface method must have implementations in all 4 transport files. The compiler enforces the interface, but forgetting RoundRobin or Metrics will cause runtime issues.
+- **All transports must stay in sync.** Every `Transport` interface method must have implementations in **all 6 transport files** (`transport_grpc.go`, `transport_http.go`, `transport_roundrobin.go`, `health.go`, `transport_metrics.go`, plus the interface declaration in `transport.go`). The compiler enforces the interface, but forgetting one of the wrappers — especially `HealthAwareTransport` (default in production) — will surface only at runtime.
 - **HTTP transport needs JSON transformation.** Tron's HTTP API returns non-standard JSON (hex strings instead of base64, `type_url`/`value` instead of `@type`). Use the appropriate `doRequest*` variant.
 - **Addresses are strings at the Client boundary.** Convert to `[]byte` with `tronutils.DecodeCheck(addr)` before passing to transport. This keeps the public API ergonomic while the transport layer works with raw bytes.
 - **Decimal precision matters.** Never use `float64` for token amounts. Use `decimal.Decimal` for TRX and `*big.Int` for TRC20 token amounts.

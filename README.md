@@ -10,6 +10,8 @@ A comprehensive Go SDK for the Tron blockchain. This library provides a complete
 
 - **Dual Transport Support** - gRPC and HTTP REST API
 - **Round-Robin Load Balancing** - Automatic load balancing across multiple nodes
+- **Tier-Based Fallback** - Primary/fallback node groups with automatic failover
+- **Health Checking** - Background probes with auto-recovery before traffic resumes
 - **Complete API Client** - Full implementation of Tron Wallet API
 - **Address Management** - BIP39/BIP44 mnemonic support, address generation and validation
 - **Transaction Handling** - Create, sign, and broadcast transactions
@@ -348,7 +350,62 @@ cfg := client.Config{
 tron, err := client.New(cfg)
 ```
 
-Each request uses the next node in round-robin fashion. Errors are returned as-is without retries.
+Each request uses the next node in round-robin fashion. By default a background
+health-checker probes every node and excludes unhealthy ones from selection;
+failed live requests count toward the per-node failure threshold. The error of
+a failed call is still returned to the caller — there is no automatic retry on
+the same request, the next request just goes to the next healthy node.
+
+### Tier-based Fallback (Primary + Fallback Groups)
+
+Nodes can be partitioned into priority tiers via `NodeConfig.Tier`
+(`0` = primary, `1` = fallback, `2+` = next). Requests are routed to the
+lowest-numbered tier that still has at least one healthy node; a higher tier
+is only used when every node of every lower tier is unhealthy. As soon as one
+primary recovers, traffic returns to it.
+
+```go
+import (
+    "time"
+    "github.com/sxwebdev/gotron/pkg/client"
+)
+
+cfg := client.Config{
+    Nodes: []client.NodeConfig{
+        // Primary group (Tier defaults to 0 if omitted)
+        {Protocol: client.ProtocolGRPC, Address: "grpc.trongrid.io:50051", UseTLS: true, Tier: 0},
+        {Protocol: client.ProtocolHTTP, Address: "https://api.trongrid.io",  Tier: 0},
+        // Fallback group — only used when every primary is unhealthy
+        {Protocol: client.ProtocolHTTP, Address: "https://tron-rpc.publicnode.com", Tier: 1},
+    },
+    Health: client.HealthConfig{
+        FailureThreshold:     2,
+        SuccessThreshold:     2,
+        HealthyInterval:      30 * time.Second, // active tier
+        UnhealthyInterval:    5 * time.Second,  // any unhealthy node
+        InactiveTierInterval: 5 * time.Minute,  // healthy fallbacks (rate-limit/billing friendly)
+        ProbeTimeout:         5 * time.Second,
+    },
+}
+
+tron, err := client.New(cfg)
+```
+
+When every node of every tier is unhealthy, calls return `client.ErrNoHealthyNodes` —
+detect with `errors.Is(err, client.ErrNoHealthyNodes)`. The health-checker keeps
+probing all nodes and they re-enter the pool the moment they recover.
+
+### Disabling Health Checks
+
+To restore the legacy plain round-robin behaviour (no health-checker, no tiers,
+errors returned as-is):
+
+```go
+cfg := client.Config{
+    Nodes:  nodes,
+    Health: client.HealthConfig{Disabled: true},
+}
+```
 
 ### TronGrid with API Key (gRPC)
 
@@ -464,6 +521,9 @@ cfg := client.Config{
 | `gotron_rpc_pool_healthy`     | Gauge     | `blockchain`                     | Number of healthy nodes in the pool      |
 | `gotron_rpc_pool_disabled`    | Gauge     | `blockchain`                     | Number of disabled nodes in the pool     |
 
+The `pool_*` gauges are kept up to date by `HealthAwareTransport` on every node
+state transition (and once at construction).
+
 ### Example Prometheus Queries
 
 ```promql
@@ -493,7 +553,10 @@ gotron/
 │   │   ├── transport.go     # Transport interface
 │   │   ├── transport_grpc.go # gRPC transport implementation
 │   │   ├── transport_http.go # HTTP transport implementation
-│   │   ├── transport_roundrobin.go # Round-robin load balancer
+│   │   ├── transport_roundrobin.go # Round-robin load balancer (legacy)
+│   │   ├── transport_metrics.go    # Metrics-recording wrapper
+│   │   ├── health.go               # HealthAwareTransport (default: tier-based fallback + health)
+│   │   ├── health_classify.go      # Network vs logical error classifier
 │   │   ├── account.go       # Account operations
 │   │   ├── transfer.go      # TRX transfers
 │   │   ├── trc20.go         # TRC20 token operations
@@ -539,6 +602,7 @@ if errors.Is(err, client.ErrAccountNotFound) {
 // - client.ErrInvalidConfig
 // - client.ErrTransactionNotFound
 // - client.ErrInvalidResourceType
+// - client.ErrNoHealthyNodes — every node of every tier is currently unhealthy
 ```
 
 ## Advanced Usage

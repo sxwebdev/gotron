@@ -6,6 +6,7 @@
 - [GRPCTransport](#grpctransport)
 - [HTTPTransport](#httptransport)
 - [RoundRobinTransport](#roundrobintransport)
+- [HealthAwareTransport](#healthawaretransport)
 - [MetricsTransport](#metricstransport)
 - [Adding a new transport method](#adding-a-new-transport-method)
 
@@ -186,7 +187,78 @@ func (t *RoundRobinTransport) MethodName(ctx context.Context, param *SomeProto) 
 }
 ```
 
-No retry logic, no health checking. Errors propagated as-is.
+No retry logic, no health checking. Errors propagated as-is. Kept as a public
+helper for users who explicitly opt out of health checking via
+`cfg.Health.Disabled = true`.
+
+---
+
+## HealthAwareTransport
+
+**File:** `pkg/client/health.go`
+
+The default transport in the production stack. Groups nodes by `NodeConfig.Tier`
+(0 = primary, 1 = fallback, 2+ = next), tracks per-node health, and runs one
+background probe goroutine per node. Selection rule: pick a node from the
+lowest-numbered tier that still has at least one healthy node; round-robin
+within that tier; return `ErrNoHealthyNodes` when every tier is empty.
+
+**Key types:**
+
+```go
+type HealthConfig struct {
+    Disabled             bool
+    FailureThreshold     int           // default 2
+    SuccessThreshold     int           // default 2
+    HealthyInterval      time.Duration // default 30s — active tier
+    UnhealthyInterval    time.Duration // default 5s  — any unhealthy node
+    InactiveTierInterval time.Duration // default 5m  — healthy fallbacks
+    ProbeTimeout         time.Duration // default 5s
+    Probe                func(ctx context.Context, t Transport) error // default = GetNowBlock
+    ClassifyErr          func(err error) bool                         // default = isNetworkError
+    Logger               Logger // interface { Infof(format string, args ...any) }; nil = no-op
+}
+
+type HealthAwareTransport struct { /* ... */ }
+
+func NewHealthAwareTransport(
+    nodes []NodeConfig,
+    factory func(NodeConfig) (Transport, error),
+    cfg HealthConfig,
+    metrics MetricsCollector,
+    blockchain string,
+) (*HealthAwareTransport, error)
+```
+
+**Pattern for every method:**
+
+```go
+func (h *HealthAwareTransport) MethodName(ctx context.Context, p *In) (*Out, error) {
+    n, err := h.next()
+    if err != nil {
+        return nil, err
+    }
+    res, callErr := n.transport.MethodName(ctx, p)
+    h.recordOutcome(n, callErr)
+    return res, callErr
+}
+```
+
+`recordOutcome` runs the configured `ClassifyErr` (default `isNetworkError` —
+gRPC `Unavailable`/`DeadlineExceeded`/`Aborted`/`ResourceExhausted`/`Internal`/`Unknown`,
+HTTP 5xx/408/429, `context.DeadlineExceeded`, `net.Error` timeouts, `io.EOF`,
+`net.ErrClosed`). Only network-level errors count toward the failure
+threshold; logical errors (e.g. `InvalidArgument`, HTTP 4xx) leave node health
+untouched. Successful live calls also feed the success counter, so traffic
+itself contributes to recovery.
+
+When the active tier shifts (last primary down, or first primary back up),
+all per-node loops are pinged via `notifyCh` to recompute their probe
+interval — fallbacks promoted to active flip from `InactiveTierInterval` to
+`HealthyInterval` immediately, and back when the primary recovers.
+
+`Close()` closes `stopCh` (under a `sync.Once`), waits for every health-loop
+to exit, then closes every underlying transport.
 
 ---
 
@@ -253,7 +325,21 @@ func (t *RoundRobinTransport) NewMethod(ctx context.Context, input *InputProto) 
 }
 ```
 
-### 5. MetricsTransport (`transport_metrics.go`)
+### 5. HealthAwareTransport (`health.go`)
+
+```go
+func (h *HealthAwareTransport) NewMethod(ctx context.Context, input *InputProto) (*OutputProto, error) {
+    n, err := h.next()
+    if err != nil {
+        return nil, err
+    }
+    res, callErr := n.transport.NewMethod(ctx, input)
+    h.recordOutcome(n, callErr)
+    return res, callErr
+}
+```
+
+### 6. MetricsTransport (`transport_metrics.go`)
 
 ```go
 func (t *MetricsTransport) NewMethod(ctx context.Context, input *InputProto) (*OutputProto, error) {
@@ -264,7 +350,7 @@ func (t *MetricsTransport) NewMethod(ctx context.Context, input *InputProto) (*O
 }
 ```
 
-### 6. Client method (`pkg/client/<domain>.go`)
+### 7. Client method (`pkg/client/<domain>.go`)
 
 ```go
 func (c *Client) NewMethod(ctx context.Context, humanFriendlyParam string) (*OutputProto, error) {

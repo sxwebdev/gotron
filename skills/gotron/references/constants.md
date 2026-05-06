@@ -28,7 +28,15 @@ ErrInvalidResourceType      = errors.New("invalid resource type")
 
 // Account (file: account.go)
 ErrAccountNotFound          = errors.New("account not found")
+
+// Health-checker / tier fallback
+ErrNoHealthyNodes           = errors.New("no healthy nodes available in any tier")
 ```
+
+`ErrNoHealthyNodes` is returned by `HealthAwareTransport.next()` when every
+node of every tier is currently marked unhealthy. The background probe loop
+keeps retrying — callers should retry with backoff. Detect with
+`errors.Is(err, client.ErrNoHealthyNodes)`.
 
 **Address package errors** (`pkg/address/address.go`):
 
@@ -49,7 +57,23 @@ type TransportError struct {
 }
 ```
 
-Usage: `errors.As(err, &transportErr)` to inspect which node failed.
+Usage: `errors.AsType[*TransportError](err)` (Go 1.26+) to inspect which node failed.
+
+## HTTPStatusError
+
+```go
+type HTTPStatusError struct {
+    Code int    // HTTP status (e.g. 503)
+    Body string // raw response body
+}
+```
+
+Returned by `HTTPTransport` when the remote responds with a non-2xx status,
+wrapped inside a `TransportError`. The default classifier
+(`isNetworkError` in `health_classify.go`) treats 5xx, 408 and 429 as
+network-level failures (count toward unhealthy threshold) and other 4xx
+codes as logical errors (do not affect node health). Inspect with
+`errors.AsType[*HTTPStatusError](err)` (Go 1.26+).
 
 ## Network Types
 
