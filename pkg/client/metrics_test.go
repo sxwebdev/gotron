@@ -169,6 +169,9 @@ func (m *mockTransport) GetAssetIssueListByName(context.Context, []byte) (*api.A
 	return nil, m.err
 }
 func (m *mockTransport) ListNodes(context.Context) (*api.NodeList, error) { return nil, m.err }
+func (m *mockTransport) GetNodeInfo(context.Context) (*core.NodeInfo, error) {
+	return nil, m.err
+}
 func (m *mockTransport) GetChainParameters(context.Context) (*core.ChainParameters, error) {
 	return nil, m.err
 }

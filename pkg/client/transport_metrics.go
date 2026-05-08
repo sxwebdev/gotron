@@ -271,6 +271,13 @@ func (t *MetricsTransport) ListNodes(ctx context.Context) (*api.NodeList, error)
 	return result, err
 }
 
+func (t *MetricsTransport) GetNodeInfo(ctx context.Context) (*core.NodeInfo, error) {
+	start := time.Now()
+	result, err := t.transport.GetNodeInfo(ctx)
+	t.after("GetNodeInfo", start, err)
+	return result, err
+}
+
 func (t *MetricsTransport) GetChainParameters(ctx context.Context) (*core.ChainParameters, error) {
 	start := time.Now()
 	result, err := t.transport.GetChainParameters(ctx)

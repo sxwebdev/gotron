@@ -54,6 +54,7 @@ type Transport interface {
 
 	// Network operations
 	ListNodes(ctx context.Context) (*api.NodeList, error)
+	GetNodeInfo(ctx context.Context) (*core.NodeInfo, error)
 	GetChainParameters(ctx context.Context) (*core.ChainParameters, error)
 	GetNextMaintenanceTime(ctx context.Context) (*api.NumberMessage, error)
 	TotalTransaction(ctx context.Context) (*api.NumberMessage, error)

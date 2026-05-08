@@ -747,6 +747,16 @@ func (h *HealthAwareTransport) ListNodes(ctx context.Context) (*api.NodeList, er
 	return res, callErr
 }
 
+func (h *HealthAwareTransport) GetNodeInfo(ctx context.Context) (*core.NodeInfo, error) {
+	n, err := h.next()
+	if err != nil {
+		return nil, err
+	}
+	res, callErr := n.transport.GetNodeInfo(ctx)
+	h.recordOutcome(n, callErr)
+	return res, callErr
+}
+
 func (h *HealthAwareTransport) GetChainParameters(ctx context.Context) (*core.ChainParameters, error) {
 	n, err := h.next()
 	if err != nil {

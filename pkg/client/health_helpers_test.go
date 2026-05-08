@@ -190,6 +190,10 @@ func (c *controllableTransport) ListNodes(ctx context.Context) (*api.NodeList, e
 	return &api.NodeList{}, c.live()
 }
 
+func (c *controllableTransport) GetNodeInfo(ctx context.Context) (*core.NodeInfo, error) {
+	return &core.NodeInfo{}, c.live()
+}
+
 func (c *controllableTransport) GetChainParameters(ctx context.Context) (*core.ChainParameters, error) {
 	return &core.ChainParameters{}, c.live()
 }

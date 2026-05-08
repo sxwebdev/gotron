@@ -4,11 +4,17 @@ import (
 	"context"
 
 	"github.com/sxwebdev/gotron/schema/pb/api"
+	"github.com/sxwebdev/gotron/schema/pb/core"
 )
 
 // ListNodes provides list of network nodes
 func (c *Client) ListNodes(ctx context.Context) (*api.NodeList, error) {
 	return c.transport.ListNodes(ctx)
+}
+
+// GetNodeInfo returns information about the connected Tron node.
+func (c *Client) GetNodeInfo(ctx context.Context) (*core.NodeInfo, error) {
+	return c.transport.GetNodeInfo(ctx)
 }
 
 // GetNextMaintenanceTime get next epoch timestamp

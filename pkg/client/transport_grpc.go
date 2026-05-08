@@ -250,6 +250,10 @@ func (t *GRPCTransport) ListNodes(ctx context.Context) (*api.NodeList, error) {
 	return t.walletClient.ListNodes(ctx, new(api.EmptyMessage))
 }
 
+func (t *GRPCTransport) GetNodeInfo(ctx context.Context) (*core.NodeInfo, error) {
+	return t.walletClient.GetNodeInfo(ctx, new(api.EmptyMessage))
+}
+
 func (t *GRPCTransport) GetChainParameters(ctx context.Context) (*core.ChainParameters, error) {
 	return t.walletClient.GetChainParameters(ctx, new(api.EmptyMessage))
 }

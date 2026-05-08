@@ -177,6 +177,10 @@ func (t *RoundRobinTransport) ListNodes(ctx context.Context) (*api.NodeList, err
 	return t.next().ListNodes(ctx)
 }
 
+func (t *RoundRobinTransport) GetNodeInfo(ctx context.Context) (*core.NodeInfo, error) {
+	return t.next().GetNodeInfo(ctx)
+}
+
 func (t *RoundRobinTransport) GetChainParameters(ctx context.Context) (*core.ChainParameters, error) {
 	return t.next().GetChainParameters(ctx)
 }

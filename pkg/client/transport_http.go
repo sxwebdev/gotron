@@ -1121,6 +1121,15 @@ func (t *HTTPTransport) ListNodes(ctx context.Context) (*api.NodeList, error) {
 	return result, nil
 }
 
+func (t *HTTPTransport) GetNodeInfo(ctx context.Context) (*core.NodeInfo, error) {
+	result := &core.NodeInfo{}
+	if err := t.doRequest(ctx, "/wallet/getnodeinfo", nil, result); err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
 func (t *HTTPTransport) GetChainParameters(ctx context.Context) (*core.ChainParameters, error) {
 	result := &core.ChainParameters{}
 	if err := t.doRequest(ctx, "/wallet/getchainparameters", nil, result); err != nil {
