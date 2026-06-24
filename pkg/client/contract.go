@@ -34,8 +34,8 @@ func (c *Client) UpdateEnergyLimitContract(ctx context.Context, from, contractAd
 		return nil, err
 	}
 
-	if tx.Result.Code > 0 {
-		return nil, fmt.Errorf("%s", string(tx.Result.Message))
+	if tx.GetResult().GetCode() > 0 {
+		return nil, fmt.Errorf("%s", string(tx.GetResult().GetMessage()))
 	}
 
 	return tx, err
@@ -64,8 +64,8 @@ func (c *Client) UpdateSettingContract(ctx context.Context, from, contractAddres
 		return nil, err
 	}
 
-	if tx.Result.Code > 0 {
-		return nil, fmt.Errorf("%s", string(tx.Result.Message))
+	if tx.GetResult().GetCode() > 0 {
+		return nil, fmt.Errorf("%s", string(tx.GetResult().GetMessage()))
 	}
 
 	return tx, err
@@ -164,11 +164,14 @@ func (c *Client) triggerContract(ctx context.Context, ct *core.TriggerSmartContr
 		return nil, err
 	}
 
-	if tx.Result.Code > 0 {
-		return nil, fmt.Errorf("%s", string(tx.Result.Message))
+	if tx.GetResult().GetCode() > 0 {
+		return nil, fmt.Errorf("%s", string(tx.GetResult().GetMessage()))
 	}
 
 	if feeLimit > 0 {
+		if tx.GetTransaction().GetRawData() == nil {
+			return nil, ErrInvalidTransaction
+		}
 		tx.Transaction.RawData.FeeLimit = feeLimit
 		// update hash
 		err = c.UpdateHash(tx)
@@ -219,6 +222,9 @@ func (c *Client) DeployContract(ctx context.Context, from, contractName string,
 	}
 
 	if feeLimit > 0 {
+		if tx.GetTransaction().GetRawData() == nil {
+			return nil, ErrInvalidTransaction
+		}
 		tx.Transaction.RawData.FeeLimit = feeLimit
 		// update hash
 		err = c.UpdateHash(tx)

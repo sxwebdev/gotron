@@ -67,8 +67,8 @@ func (c *Client) EstimateEnergy(ctx context.Context, from, contractAddress, meth
 		return nil, err
 	}
 
-	if tx.Result.Code > 0 {
-		return nil, fmt.Errorf("%s", string(tx.Result.Message))
+	if tx.GetResult().GetCode() > 0 {
+		return nil, fmt.Errorf("%s", string(tx.GetResult().GetMessage()))
 	}
 
 	return tx, err

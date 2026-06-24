@@ -33,7 +33,7 @@ func (c *Client) GetAccount(ctx context.Context, addr string) (*core.Account, er
 		return nil, err
 	}
 
-	if !bytes.Equal(acc.Address, account.Address) {
+	if acc == nil || !bytes.Equal(acc.Address, account.Address) {
 		return nil, ErrAccountNotFound
 	}
 

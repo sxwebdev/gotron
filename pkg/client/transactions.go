@@ -42,7 +42,7 @@ func (c *Client) GetTransactionInfoByHash(ctx context.Context, hash string) (*co
 	if err != nil {
 		return nil, err
 	}
-	if bytes.Equal(txi.Id, hashBytes) {
+	if bytes.Equal(txi.GetId(), hashBytes) {
 		return txi, nil
 	}
 	return nil, ErrTransactionInfoNotFound
