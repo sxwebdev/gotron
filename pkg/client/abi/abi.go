@@ -18,7 +18,7 @@ import (
 )
 
 // Param list
-type Param map[string]interface{}
+type Param map[string]any
 
 // LoadFromJSON string into ABI data
 func LoadFromJSON(jString string) ([]Param, error) {
@@ -42,7 +42,7 @@ func Signature(method string) []byte {
 	return b[:4]
 }
 
-func convetToAddress(v interface{}) (common.Address, error) {
+func convetToAddress(v any) (common.Address, error) {
 	switch v := v.(type) {
 	case string:
 		addr, err := tronutils.DecodeCheck(v)
@@ -54,9 +54,16 @@ func convetToAddress(v interface{}) (common.Address, error) {
 	return common.Address{}, fmt.Errorf("invalid address %v", v)
 }
 
-func convertToInt(ty eABI.Type, v interface{}) interface{} {
+func convertToInt(ty eABI.Type, v any) (any, error) {
+	s, ok := v.(string)
+	if !ok {
+		return nil, fmt.Errorf("invalid integer %v", v)
+	}
 	if ty.T == eABI.IntTy && ty.Size <= 64 {
-		tmp, _ := strconv.ParseInt(v.(string), 10, ty.Size)
+		tmp, err := strconv.ParseInt(s, 10, ty.Size)
+		if err != nil {
+			return nil, fmt.Errorf("invalid int%d %q: %w", ty.Size, s, err)
+		}
 		switch ty.Size {
 		case 8:
 			v = int8(tmp)
@@ -68,7 +75,10 @@ func convertToInt(ty eABI.Type, v interface{}) interface{} {
 			v = int64(tmp)
 		}
 	} else if ty.T == eABI.UintTy && ty.Size <= 64 {
-		tmp, _ := strconv.ParseUint(v.(string), 10, ty.Size)
+		tmp, err := strconv.ParseUint(s, 10, ty.Size)
+		if err != nil {
+			return nil, fmt.Errorf("invalid uint%d %q: %w", ty.Size, s, err)
+		}
 		switch ty.Size {
 		case 8:
 			v = uint8(tmp)
@@ -80,20 +90,23 @@ func convertToInt(ty eABI.Type, v interface{}) interface{} {
 			v = uint64(tmp)
 		}
 	} else {
-		s := v.(string)
+		var set bool
 		// check for hex char
 		if strings.HasPrefix(s, "0x") {
-			v, _ = new(big.Int).SetString(s[2:], 16)
+			v, set = new(big.Int).SetString(s[2:], 16)
 		} else {
-			v, _ = new(big.Int).SetString(s, 10)
+			v, set = new(big.Int).SetString(s, 10)
+		}
+		if !set {
+			return nil, fmt.Errorf("invalid integer %q", s)
 		}
 	}
-	return v
+	return v, nil
 }
 
 // GetPaddedParam from struct
 func GetPaddedParam(param []Param) ([]byte, error) {
-	values := make([]interface{}, 0)
+	values := make([]any, 0)
 	arguments := eABI.Arguments{}
 
 	for _, p := range param {
@@ -105,7 +118,8 @@ func GetPaddedParam(param []Param) ([]byte, error) {
 			if err != nil {
 				return nil, fmt.Errorf("invalid param %+v: %+v", p, err)
 			}
-			arguments = append(arguments,
+			arguments = append(
+				arguments,
 				eABI.Argument{
 					Name:    "",
 					Type:    ty,
@@ -115,7 +129,7 @@ func GetPaddedParam(param []Param) ([]byte, error) {
 
 			if ty.T == eABI.SliceTy || ty.T == eABI.ArrayTy {
 				if ty.Elem.T == eABI.AddressTy {
-					tmp, ok := v.([]interface{})
+					tmp, ok := v.([]any)
 					if !ok {
 						return nil, fmt.Errorf("unable to convert array of addresses %+v", p)
 					}
@@ -131,18 +145,35 @@ func GetPaddedParam(param []Param) ([]byte, error) {
 
 				if (ty.Elem.T == eABI.IntTy || ty.Elem.T == eABI.UintTy) &&
 					ty.Elem.Size > 64 {
-					tmp := make([]*big.Int, 0)
-					tmpSlice, ok := v.([]string)
-					if !ok {
-						return nil, fmt.Errorf("unable to convert array of unints %+v", p)
+					// Accept both []string and the []interface{} that JSON
+					// decoding (LoadFromJSON) produces.
+					var tmpSlice []string
+					switch arr := v.(type) {
+					case []string:
+						tmpSlice = arr
+					case []any:
+						for _, e := range arr {
+							s, ok := e.(string)
+							if !ok {
+								return nil, fmt.Errorf("unable to convert array of uints %+v", p)
+							}
+							tmpSlice = append(tmpSlice, s)
+						}
+					default:
+						return nil, fmt.Errorf("unable to convert array of uints %+v", p)
 					}
+					tmp := make([]*big.Int, 0, len(tmpSlice))
 					for i := range tmpSlice {
 						var value *big.Int
+						var ok bool
 						// check for hex char
 						if strings.HasPrefix(tmpSlice[i], "0x") {
-							value, _ = new(big.Int).SetString(tmpSlice[i][2:], 16)
+							value, ok = new(big.Int).SetString(tmpSlice[i][2:], 16)
 						} else {
-							value, _ = new(big.Int).SetString(tmpSlice[i], 10)
+							value, ok = new(big.Int).SetString(tmpSlice[i], 10)
+						}
+						if !ok {
+							return nil, fmt.Errorf("invalid integer %q", tmpSlice[i])
 						}
 						tmp = append(tmp, value)
 					}
@@ -155,7 +186,9 @@ func GetPaddedParam(param []Param) ([]byte, error) {
 				}
 			}
 			if (ty.T == eABI.IntTy || ty.T == eABI.UintTy) && reflect.TypeOf(v).Kind() == reflect.String {
-				v = convertToInt(ty, v)
+				if v, err = convertToInt(ty, v); err != nil {
+					return nil, err
+				}
 			}
 
 			if ty.T == eABI.BytesTy || ty.T == eABI.FixedBytesTy {
@@ -172,7 +205,7 @@ func GetPaddedParam(param []Param) ([]byte, error) {
 	return arguments.PackValues(values)
 }
 
-func convertToBytes(ty eABI.Type, v interface{}) (interface{}, error) {
+func convertToBytes(ty eABI.Type, v any) (any, error) {
 	// if string
 	if data, ok := v.(string); ok {
 		// convert from hex string
@@ -191,28 +224,11 @@ func convertToBytes(ty eABI.Type, v interface{}) (interface{}, error) {
 		if len(dataBytes) != ty.Size {
 			return nil, fmt.Errorf("invalid size: %d/%d", ty.Size, len(dataBytes))
 		}
-		switch ty.Size {
-		case 1:
-			value := [1]byte{}
-			copy(value[:], dataBytes[:1])
-			return value, nil
-		case 2:
-			value := [2]byte{}
-			copy(value[:], dataBytes[:2])
-			return value, nil
-		case 8:
-			value := [8]byte{}
-			copy(value[:], dataBytes[:8])
-			return value, nil
-		case 16:
-			value := [16]byte{}
-			copy(value[:], dataBytes[:16])
-			return value, nil
-		case 32:
-			value := [32]byte{}
-			copy(value[:], dataBytes[:32])
-			return value, nil
-		}
+		// Build a [ty.Size]byte array for any fixed-bytes size (bytes1..bytes32),
+		// which is the value type go-ethereum's PackValues expects.
+		arr := reflect.New(reflect.ArrayOf(ty.Size, reflect.TypeFor[byte]())).Elem()
+		reflect.Copy(arr, reflect.ValueOf(dataBytes))
+		return arr.Interface(), nil
 	}
 	return v, nil
 }

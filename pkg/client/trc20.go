@@ -62,8 +62,8 @@ func (c *Client) TRC20Call(ctx context.Context, from, contractAddress, data stri
 	if err != nil {
 		return nil, err
 	}
-	if result.Result.Code > 0 {
-		return result, fmt.Errorf("%s", string(result.Result.Message))
+	if result.GetResult().GetCode() > 0 {
+		return result, fmt.Errorf("%s", string(result.GetResult().GetMessage()))
 	}
 	return result, nil
 }
@@ -154,7 +154,7 @@ func (c *Client) ParseTRC20StringProperty(data string) (string, error) {
 func (c *Client) TRC20ContractBalance(ctx context.Context, addr, contractAddress string) (*big.Int, error) {
 	addrB, err := tronutils.DecodeCheck(addr)
 	if err != nil {
-		return nil, fmt.Errorf("invalid address %s: %v", addr, addr)
+		return nil, fmt.Errorf("invalid address %s: %w", addr, err)
 	}
 	req := trc20BalanceOf + "0000000000000000000000000000000000000000000000000000000000000000"[len(tronutils.BytesToHexString(addrB[:]))-2:] + tronutils.BytesToHexString(addrB[:])[2:]
 	result, err := c.TRC20Call(ctx, "", contractAddress, req, true, 0)

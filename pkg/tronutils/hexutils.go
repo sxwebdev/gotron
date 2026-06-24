@@ -2,7 +2,6 @@ package tronutils
 
 import (
 	"encoding/hex"
-	"strings"
 )
 
 var EmptyString = &hexError{"empty hex string"}
@@ -28,7 +27,13 @@ func HexStringToBytes(input string) ([]byte, error) {
 		return nil, EmptyString
 	}
 
-	return hex.DecodeString(strings.ReplaceAll(input, "0x", ""))
+	// Strip only a leading 0x/0X prefix; a mid-string "0x" must remain so that
+	// malformed input fails to decode instead of being silently "repaired".
+	if Has0xPrefix(input) {
+		input = input[2:]
+	}
+
+	return hex.DecodeString(input)
 }
 
 // ToHex returns the hex representation of b, prefixed with '0x'.

@@ -140,7 +140,8 @@ func TestEstimateTransfer_TRX(t *testing.T) {
 			require.True(t, res.Total.Trx.Equal(res.Transfer.Trx.Add(res.Activation.Trx)),
 				"total trx must equal transfer + activation, got total=%s", res.Total.Trx.String())
 
-			t.Logf("TRX → %s: total=(b=%s e=%s trx=%s) transfer=(b=%s e=%s trx=%s) activation=(b=%s e=%s trx=%s)",
+			t.Logf(
+				"TRX → %s: total=(b=%s e=%s trx=%s) transfer=(b=%s e=%s trx=%s) activation=(b=%s e=%s trx=%s)",
 				tc.to,
 				res.Total.Bandwidth, res.Total.Energy, res.Total.Trx,
 				res.Transfer.Bandwidth, res.Transfer.Energy, res.Transfer.Trx,
@@ -200,7 +201,8 @@ func TestEstimateTransfer_TRC20(t *testing.T) {
 			require.True(t, res.Total.Trx.Equal(res.Transfer.Trx.Add(res.Activation.Trx)),
 				"total trx must equal transfer + activation, got total=%s", res.Total.Trx.String())
 
-			t.Logf("TRC20 → %s: total=(b=%s e=%s trx=%s) transfer=(b=%s e=%s trx=%s) activation=(b=%s e=%s trx=%s)",
+			t.Logf(
+				"TRC20 → %s: total=(b=%s e=%s trx=%s) transfer=(b=%s e=%s trx=%s) activation=(b=%s e=%s trx=%s)",
 				tc.to,
 				res.Total.Bandwidth, res.Total.Energy, res.Total.Trx,
 				res.Transfer.Bandwidth, res.Transfer.Energy, res.Transfer.Trx,

@@ -22,6 +22,9 @@ func (t TRX) ToSUN() decimal.Decimal {
 
 // ToEnergy converts TRX to Energy.
 func (t TRX) ToEnergy(energyFee int64) decimal.Decimal {
+	if energyFee == 0 {
+		return decimal.Zero
+	}
 	return t.value.Div(decimal.NewFromInt(energyFee)).Mul(decimal.NewFromInt(1e6))
 }
 
@@ -63,5 +66,8 @@ func (b Bandwidth) ToDecimal() decimal.Decimal { return b.value }
 
 // ToTRX converts Bandwidth to TRX.
 func (b Bandwidth) ToTRX(transactionFee int64) TRX {
+	if transactionFee == 0 {
+		return NewTRX(decimal.Zero)
+	}
 	return NewTRX(b.value.Div(decimal.NewFromInt(transactionFee)))
 }

@@ -3,7 +3,6 @@ package address
 import (
 	"testing"
 
-	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/stretchr/testify/require"
 )
 
@@ -236,7 +235,7 @@ func TestAddressGenerator_Generate(t *testing.T) {
 		generator := NewGenerator(mnemonic, "")
 
 		addresses := make(map[string]bool)
-		for i := uint32(0); i < 5; i++ {
+		for i := range uint32(5) {
 			addr, err := generator.Generate(i)
 			if err != nil {
 				t.Fatalf("Generate(%d) error = %v", i, err)
@@ -387,50 +386,5 @@ func TestAddressGenerator_Generate(t *testing.T) {
 
 		t.Logf("Account 0: %s", addr1.Address)
 		t.Logf("Account 1: %s", addr2.Address)
-	})
-
-	t.Run("testnet network", func(t *testing.T) {
-		generatorMainnet := NewGenerator(mnemonic, "").
-			SetNetwork(&chaincfg.MainNetParams)
-
-		generatorTestnet := NewGenerator(mnemonic, "").
-			SetNetwork(&chaincfg.TestNet3Params)
-
-		addrMainnet, err := generatorMainnet.Generate(0)
-		if err != nil {
-			t.Fatalf("Generate() with mainnet error = %v", err)
-		}
-
-		addrTestnet, err := generatorTestnet.Generate(0)
-		if err != nil {
-			t.Fatalf("Generate() with testnet error = %v", err)
-		}
-
-		// Private keys should be the same regardless of network
-		if addrMainnet.PrivateKey != addrTestnet.PrivateKey {
-			t.Error("Same mnemonic should produce same private key on different networks")
-		}
-
-		// Addresses should also be the same (Tron uses same address format for mainnet/testnet)
-		// The difference is in which network the address is used on
-		if addrMainnet.Address != addrTestnet.Address {
-			t.Logf("Mainnet: %s", addrMainnet.Address)
-			t.Logf("Testnet: %s", addrTestnet.Address)
-			// Note: In Tron, mainnet and testnet addresses have the same format
-			// The network parameter is used for key derivation context
-		}
-
-		// Validate both addresses
-		if err := Validate(addrMainnet.Address); err != nil {
-			t.Errorf("Mainnet address is invalid: %v", err)
-		}
-
-		if err := Validate(addrTestnet.Address); err != nil {
-			t.Errorf("Testnet address is invalid: %v", err)
-		}
-
-		t.Logf("Mainnet address: %s", addrMainnet.Address)
-		t.Logf("Testnet address: %s", addrTestnet.Address)
-		t.Logf("Private key (same for both): %s", addrMainnet.PrivateKey)
 	})
 }

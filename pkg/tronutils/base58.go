@@ -4,7 +4,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 
-	"github.com/shengdoushi/base58"
+	"github.com/decred/base58"
 )
 
 const (
@@ -12,7 +12,7 @@ const (
 )
 
 func Encode(input []byte) string {
-	return base58.Encode(input, base58.BitcoinAlphabet)
+	return base58.Encode(input)
 }
 
 func EncodeCheck(input []byte) string {
@@ -24,14 +24,21 @@ func EncodeCheck(input []byte) string {
 	h256h1.Write(h0)
 	h1 := h256h1.Sum(nil)
 
-	inputCheck := input
-	inputCheck = append(inputCheck, h1[:4]...)
+	// Copy into a fresh slice: appending to input would write the checksum
+	// into the caller's backing array when it has spare capacity.
+	inputCheck := make([]byte, len(input)+4)
+	copy(inputCheck, input)
+	copy(inputCheck[len(input):], h1[:4])
 
 	return Encode(inputCheck)
 }
 
 func Decode(input string) ([]byte, error) {
-	return base58.Decode(input, base58.BitcoinAlphabet)
+	decoded := base58.Decode(input)
+	if len(input) != 0 && len(decoded) == 0 {
+		return nil, fmt.Errorf("invalid base58 string")
+	}
+	return decoded, nil
 }
 
 func DecodeCheck(input string) ([]byte, error) {

@@ -54,20 +54,20 @@ func (t *HTTPTransport) Close() error {
 // 1. Any types: {"type_url": "...", "value": {...}} -> {"@type": "...", ...fields...}
 // 2. Field name normalization (e.g., blockID -> blockid, txID -> txid)
 // 3. Hex to base64 conversion for bytes fields
-func transformTronJSON(data interface{}) interface{} {
+func transformTronJSON(data any) any {
 	return transformTronJSONWithKey(data, "")
 }
 
-func transformTronJSONWithKey(data interface{}, fieldName string) interface{} {
+func transformTronJSONWithKey(data any, fieldName string) any {
 	switch v := data.(type) {
-	case map[string]interface{}:
+	case map[string]any:
 		// Check if this is a Tron-style Any type (has type_url and value)
 		typeURL, hasTypeURL := v["type_url"].(string)
-		valueObj, hasValue := v["value"].(map[string]interface{})
+		valueObj, hasValue := v["value"].(map[string]any)
 
 		if hasTypeURL && hasValue && len(v) == 2 {
 			// Transform to standard protojson Any format
-			result := map[string]interface{}{
+			result := map[string]any{
 				"@type": typeURL,
 			}
 			// Merge value fields into result
@@ -78,7 +78,7 @@ func transformTronJSONWithKey(data interface{}, fieldName string) interface{} {
 		}
 
 		// Recursively transform all values with field name normalization
-		result := make(map[string]interface{}, len(v))
+		result := make(map[string]any, len(v))
 		for k, val := range v {
 			// Normalize field names
 			normalizedKey := normalizeFieldName(k)
@@ -86,9 +86,9 @@ func transformTronJSONWithKey(data interface{}, fieldName string) interface{} {
 		}
 		return result
 
-	case []interface{}:
+	case []any:
 		// Recursively transform array elements
-		result := make([]interface{}, len(v))
+		result := make([]any, len(v))
 		for i, val := range v {
 			result[i] = transformTronJSONWithKey(val, fieldName)
 		}
@@ -208,22 +208,22 @@ var bytesFields = map[string]bool{
 // transformBlockJSON transforms block response to match BlockExtention proto structure.
 // The HTTP API returns transactions as plain Transaction objects, but BlockExtention
 // expects TransactionExtention objects with nested transaction field.
-func transformBlockJSON(data interface{}) interface{} {
-	blockMap, ok := data.(map[string]interface{})
+func transformBlockJSON(data any) any {
+	blockMap, ok := data.(map[string]any)
 	if !ok {
 		return transformTronJSON(data)
 	}
 
-	result := make(map[string]interface{})
+	result := make(map[string]any)
 
 	for k, v := range blockMap {
 		normalizedKey := normalizeFieldName(k)
 
 		if normalizedKey == "transactions" {
 			// Transform transactions array: wrap each Transaction in TransactionExtention
-			txs, ok := v.([]interface{})
+			txs, ok := v.([]any)
 			if ok {
-				transformedTxs := make([]interface{}, len(txs))
+				transformedTxs := make([]any, len(txs))
 				for i, tx := range txs {
 					transformedTxs[i] = wrapTransactionExtention(tx)
 				}
@@ -240,14 +240,14 @@ func transformBlockJSON(data interface{}) interface{} {
 }
 
 // wrapTransactionExtention wraps a Transaction JSON into TransactionExtention structure
-func wrapTransactionExtention(tx interface{}) interface{} {
-	txMap, ok := tx.(map[string]interface{})
+func wrapTransactionExtention(tx any) any {
+	txMap, ok := tx.(map[string]any)
 	if !ok {
 		return transformTronJSON(tx)
 	}
 
 	// Extract txID for the txid field and convert hex to base64
-	var txid interface{}
+	var txid any
 	if txID, ok := txMap["txID"].(string); ok {
 		if isHexString(txID) {
 			txid = hexToBase64(txID)
@@ -257,7 +257,7 @@ func wrapTransactionExtention(tx interface{}) interface{} {
 	}
 
 	// The rest of the fields belong to the nested transaction object
-	transactionFields := make(map[string]interface{})
+	transactionFields := make(map[string]any)
 	for k, v := range txMap {
 		if k == "txID" {
 			continue // txID goes to txid at TransactionExtention level
@@ -266,7 +266,7 @@ func wrapTransactionExtention(tx interface{}) interface{} {
 	}
 
 	// Build TransactionExtention structure
-	result := map[string]interface{}{
+	result := map[string]any{
 		"transaction": transformTronJSON(transactionFields),
 	}
 	if txid != nil {
@@ -277,27 +277,27 @@ func wrapTransactionExtention(tx interface{}) interface{} {
 }
 
 // transformBlockListJSON transforms block list response to match BlockListExtention proto structure.
-func transformBlockListJSON(data interface{}) interface{} {
+func transformBlockListJSON(data any) any {
 	// The HTTP API returns an array of blocks directly, but BlockListExtention
 	// expects an object with "block" field
-	if blocks, ok := data.([]interface{}); ok {
-		transformedBlocks := make([]interface{}, len(blocks))
+	if blocks, ok := data.([]any); ok {
+		transformedBlocks := make([]any, len(blocks))
 		for i, block := range blocks {
 			transformedBlocks[i] = transformBlockJSON(block)
 		}
-		return map[string]interface{}{
+		return map[string]any{
 			"block": transformedBlocks,
 		}
 	}
 
 	// If it's already an object, check for "block" field
-	if obj, ok := data.(map[string]interface{}); ok {
-		if blocks, ok := obj["block"].([]interface{}); ok {
-			transformedBlocks := make([]interface{}, len(blocks))
+	if obj, ok := data.(map[string]any); ok {
+		if blocks, ok := obj["block"].([]any); ok {
+			transformedBlocks := make([]any, len(blocks))
 			for i, block := range blocks {
 				transformedBlocks[i] = transformBlockJSON(block)
 			}
-			result := make(map[string]interface{})
+			result := make(map[string]any)
 			for k, v := range obj {
 				if k == "block" {
 					result[k] = transformedBlocks
@@ -313,7 +313,7 @@ func transformBlockListJSON(data interface{}) interface{} {
 }
 
 // doRequestRaw performs an HTTP POST request and returns raw JSON response
-func (t *HTTPTransport) doRequestRaw(ctx context.Context, endpoint string, body interface{}) ([]byte, error) {
+func (t *HTTPTransport) doRequestRaw(ctx context.Context, endpoint string, body any) ([]byte, error) {
 	var bodyReader io.Reader
 
 	if body != nil {
@@ -366,7 +366,7 @@ func (t *HTTPTransport) wrapErr(method string, err error) error {
 }
 
 // doRequest performs an HTTP POST request to the Tron API
-func (t *HTTPTransport) doRequest(ctx context.Context, endpoint string, body interface{}, result proto.Message) error {
+func (t *HTTPTransport) doRequest(ctx context.Context, endpoint string, body any, result proto.Message) error {
 	respBody, err := t.doRequestRaw(ctx, endpoint, body)
 	if err != nil {
 		return err
@@ -385,7 +385,7 @@ func (t *HTTPTransport) doRequest(ctx context.Context, endpoint string, body int
 // doRequestTransformed performs an HTTP POST request and transforms Tron's
 // non-standard JSON format to standard protobuf JSON before unmarshaling.
 // This is needed for endpoints that return protobuf Any types.
-func (t *HTTPTransport) doRequestTransformed(ctx context.Context, endpoint string, body interface{}, result proto.Message) error {
+func (t *HTTPTransport) doRequestTransformed(ctx context.Context, endpoint string, body any, result proto.Message) error {
 	respBody, err := t.doRequestRaw(ctx, endpoint, body)
 	if err != nil {
 		return err
@@ -393,7 +393,7 @@ func (t *HTTPTransport) doRequestTransformed(ctx context.Context, endpoint strin
 
 	if result != nil {
 		// Parse JSON into generic structure
-		var data interface{}
+		var data any
 		if err := json.Unmarshal(respBody, &data); err != nil {
 			return fmt.Errorf("parse json: %w (body: %s)", err, string(respBody))
 		}
@@ -419,7 +419,7 @@ func (t *HTTPTransport) doRequestTransformed(ctx context.Context, endpoint strin
 
 // doBlockRequest performs an HTTP POST request for block endpoints and transforms
 // the response to match BlockExtention proto structure.
-func (t *HTTPTransport) doBlockRequest(ctx context.Context, endpoint string, body interface{}, result proto.Message) error {
+func (t *HTTPTransport) doBlockRequest(ctx context.Context, endpoint string, body any, result proto.Message) error {
 	respBody, err := t.doRequestRaw(ctx, endpoint, body)
 	if err != nil {
 		return err
@@ -427,7 +427,7 @@ func (t *HTTPTransport) doBlockRequest(ctx context.Context, endpoint string, bod
 
 	if result != nil {
 		// Parse JSON into generic structure
-		var data interface{}
+		var data any
 		if err := json.Unmarshal(respBody, &data); err != nil {
 			return fmt.Errorf("parse json: %w (body: %s)", err, string(respBody))
 		}
@@ -453,7 +453,7 @@ func (t *HTTPTransport) doBlockRequest(ctx context.Context, endpoint string, bod
 
 // doBlockListRequest performs an HTTP POST request for block list endpoints and transforms
 // the response to match BlockListExtention proto structure.
-func (t *HTTPTransport) doBlockListRequest(ctx context.Context, endpoint string, body interface{}, result proto.Message) error {
+func (t *HTTPTransport) doBlockListRequest(ctx context.Context, endpoint string, body any, result proto.Message) error {
 	respBody, err := t.doRequestRaw(ctx, endpoint, body)
 	if err != nil {
 		return err
@@ -461,7 +461,7 @@ func (t *HTTPTransport) doBlockListRequest(ctx context.Context, endpoint string,
 
 	if result != nil {
 		// Parse JSON into generic structure
-		var data interface{}
+		var data any
 		if err := json.Unmarshal(respBody, &data); err != nil {
 			return fmt.Errorf("parse json: %w (body: %s)", err, string(respBody))
 		}
@@ -514,7 +514,7 @@ type httpAccountResource struct {
 // Account operations
 
 func (t *HTTPTransport) GetAccount(ctx context.Context, account *core.Account) (*core.Account, error) {
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"address": tronutils.EncodeCheck(account.Address),
 		"visible": true,
 	}
@@ -566,7 +566,7 @@ type httpAccountResourceMessage struct {
 }
 
 func (t *HTTPTransport) GetAccountResource(ctx context.Context, account *core.Account) (*api.AccountResourceMessage, error) {
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"address": tronutils.EncodeCheck(account.Address),
 		"visible": true,
 	}
@@ -600,7 +600,7 @@ func (t *HTTPTransport) GetAccountResource(ctx context.Context, account *core.Ac
 }
 
 func (t *HTTPTransport) CreateAccount(ctx context.Context, contract *core.AccountCreateContract) (*api.TransactionExtention, error) {
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"owner_address":   tronutils.EncodeCheck(contract.OwnerAddress),
 		"account_address": tronutils.EncodeCheck(contract.AccountAddress),
 		"visible":         true,
@@ -626,7 +626,7 @@ func (t *HTTPTransport) GetNowBlock(ctx context.Context) (*api.BlockExtention, e
 }
 
 func (t *HTTPTransport) GetBlockByNum(ctx context.Context, num int64) (*api.BlockExtention, error) {
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"num": num,
 	}
 
@@ -639,7 +639,7 @@ func (t *HTTPTransport) GetBlockByNum(ctx context.Context, num int64) (*api.Bloc
 }
 
 func (t *HTTPTransport) GetBlockById(ctx context.Context, id []byte) (*core.Block, error) {
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"value": hex.EncodeToString(id),
 	}
 
@@ -654,7 +654,7 @@ func (t *HTTPTransport) GetBlockById(ctx context.Context, id []byte) (*core.Bloc
 }
 
 func (t *HTTPTransport) GetBlockByLimitNext(ctx context.Context, start, end int64) (*api.BlockListExtention, error) {
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"startNum": start,
 		"endNum":   end,
 	}
@@ -668,7 +668,7 @@ func (t *HTTPTransport) GetBlockByLimitNext(ctx context.Context, start, end int6
 }
 
 func (t *HTTPTransport) GetBlockByLatestNum(ctx context.Context, num int64) (*api.BlockListExtention, error) {
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"num": num,
 	}
 
@@ -681,7 +681,7 @@ func (t *HTTPTransport) GetBlockByLatestNum(ctx context.Context, num int64) (*ap
 }
 
 func (t *HTTPTransport) GetTransactionInfoByBlockNum(ctx context.Context, num int64) (*api.TransactionInfoList, error) {
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"num": num,
 	}
 
@@ -692,19 +692,19 @@ func (t *HTTPTransport) GetTransactionInfoByBlockNum(ctx context.Context, num in
 
 	// HTTP API returns a JSON array directly, but TransactionInfoList expects an object
 	// with "transactionInfo" field. Parse, transform (hex->base64), and wrap.
-	var data []interface{}
+	var data []any
 	if err := json.Unmarshal(respBody, &data); err != nil {
 		return nil, fmt.Errorf("parse json: %w (body: %s)", err, string(respBody))
 	}
 
 	// Transform each TransactionInfo to convert hex fields to base64
-	transformedData := make([]interface{}, len(data))
+	transformedData := make([]any, len(data))
 	for i, item := range data {
 		transformedData[i] = transformTronJSON(item)
 	}
 
 	// Wrap in expected format
-	wrapped := map[string]interface{}{
+	wrapped := map[string]any{
 		"transactionInfo": transformedData,
 	}
 
@@ -725,7 +725,7 @@ func (t *HTTPTransport) GetTransactionInfoByBlockNum(ctx context.Context, num in
 // Transaction operations
 
 func (t *HTTPTransport) GetTransactionById(ctx context.Context, id []byte) (*core.Transaction, error) {
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"value": hex.EncodeToString(id),
 	}
 
@@ -738,7 +738,7 @@ func (t *HTTPTransport) GetTransactionById(ctx context.Context, id []byte) (*cor
 }
 
 func (t *HTTPTransport) GetTransactionInfoById(ctx context.Context, id []byte) (*core.TransactionInfo, error) {
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"value": hex.EncodeToString(id),
 	}
 
@@ -757,7 +757,7 @@ func (t *HTTPTransport) BroadcastTransaction(ctx context.Context, tx *core.Trans
 		return nil, fmt.Errorf("marshal transaction: %w", err)
 	}
 
-	var reqBody map[string]interface{}
+	var reqBody map[string]any
 	if err := json.Unmarshal(txJSON, &reqBody); err != nil {
 		return nil, fmt.Errorf("unmarshal transaction json: %w", err)
 	}
@@ -772,7 +772,7 @@ func (t *HTTPTransport) BroadcastTransaction(ctx context.Context, tx *core.Trans
 }
 
 func (t *HTTPTransport) CreateTransaction(ctx context.Context, contract *core.TransferContract) (*api.TransactionExtention, error) {
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"owner_address": tronutils.EncodeCheck(contract.OwnerAddress),
 		"to_address":    tronutils.EncodeCheck(contract.ToAddress),
 		"amount":        contract.Amount,
@@ -790,7 +790,7 @@ func (t *HTTPTransport) CreateTransaction(ctx context.Context, contract *core.Tr
 // Contract operations
 
 func (t *HTTPTransport) TriggerContract(ctx context.Context, contract *core.TriggerSmartContract) (*api.TransactionExtention, error) {
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"owner_address":    tronutils.EncodeCheck(contract.OwnerAddress),
 		"contract_address": tronutils.EncodeCheck(contract.ContractAddress),
 		"data":             hex.EncodeToString(contract.Data),
@@ -827,7 +827,7 @@ type httpTriggerConstantContractResponse struct {
 }
 
 func (t *HTTPTransport) TriggerConstantContract(ctx context.Context, contract *core.TriggerSmartContract) (*api.TransactionExtention, error) {
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"owner_address":    tronutils.EncodeCheck(contract.OwnerAddress),
 		"contract_address": tronutils.EncodeCheck(contract.ContractAddress),
 		"data":             hex.EncodeToString(contract.Data),
@@ -871,7 +871,7 @@ func (t *HTTPTransport) TriggerConstantContract(ctx context.Context, contract *c
 }
 
 func (t *HTTPTransport) EstimateEnergy(ctx context.Context, contract *core.TriggerSmartContract) (*api.EstimateEnergyMessage, error) {
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"owner_address":    tronutils.EncodeCheck(contract.OwnerAddress),
 		"contract_address": tronutils.EncodeCheck(contract.ContractAddress),
 		"data":             hex.EncodeToString(contract.Data),
@@ -891,7 +891,7 @@ func (t *HTTPTransport) EstimateEnergy(ctx context.Context, contract *core.Trigg
 }
 
 func (t *HTTPTransport) DeployContract(ctx context.Context, contract *core.CreateSmartContract) (*api.TransactionExtention, error) {
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"owner_address":                 tronutils.EncodeCheck(contract.OwnerAddress),
 		"name":                          contract.NewContract.Name,
 		"bytecode":                      hex.EncodeToString(contract.NewContract.Bytecode),
@@ -903,7 +903,7 @@ func (t *HTTPTransport) DeployContract(ctx context.Context, contract *core.Creat
 	if contract.NewContract.Abi != nil {
 		abiJSON, err := protojson.Marshal(contract.NewContract.Abi)
 		if err == nil {
-			var abiMap interface{}
+			var abiMap any
 			if json.Unmarshal(abiJSON, &abiMap) == nil {
 				reqBody["abi"] = abiMap
 			}
@@ -919,7 +919,7 @@ func (t *HTTPTransport) DeployContract(ctx context.Context, contract *core.Creat
 }
 
 func (t *HTTPTransport) GetContract(ctx context.Context, address []byte) (*core.SmartContract, error) {
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"value":   tronutils.EncodeCheck(address),
 		"visible": true,
 	}
@@ -933,7 +933,7 @@ func (t *HTTPTransport) GetContract(ctx context.Context, address []byte) (*core.
 }
 
 func (t *HTTPTransport) UpdateSetting(ctx context.Context, contract *core.UpdateSettingContract) (*api.TransactionExtention, error) {
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"owner_address":                 tronutils.EncodeCheck(contract.OwnerAddress),
 		"contract_address":              tronutils.EncodeCheck(contract.ContractAddress),
 		"consume_user_resource_percent": contract.ConsumeUserResourcePercent,
@@ -949,7 +949,7 @@ func (t *HTTPTransport) UpdateSetting(ctx context.Context, contract *core.Update
 }
 
 func (t *HTTPTransport) UpdateEnergyLimit(ctx context.Context, contract *core.UpdateEnergyLimitContract) (*api.TransactionExtention, error) {
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"owner_address":       tronutils.EncodeCheck(contract.OwnerAddress),
 		"contract_address":    tronutils.EncodeCheck(contract.ContractAddress),
 		"origin_energy_limit": contract.OriginEnergyLimit,
@@ -971,7 +971,7 @@ func (t *HTTPTransport) GetAccountResourceMessage(ctx context.Context, account *
 }
 
 func (t *HTTPTransport) GetDelegatedResource(ctx context.Context, msg *api.DelegatedResourceMessage) (*api.DelegatedResourceList, error) {
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"fromAddress": tronutils.EncodeCheck(msg.FromAddress),
 		"toAddress":   tronutils.EncodeCheck(msg.ToAddress),
 		"visible":     true,
@@ -986,7 +986,7 @@ func (t *HTTPTransport) GetDelegatedResource(ctx context.Context, msg *api.Deleg
 }
 
 func (t *HTTPTransport) GetDelegatedResourceV2(ctx context.Context, msg *api.DelegatedResourceMessage) (*api.DelegatedResourceList, error) {
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"fromAddress": tronutils.EncodeCheck(msg.FromAddress),
 		"toAddress":   tronutils.EncodeCheck(msg.ToAddress),
 		"visible":     true,
@@ -1001,7 +1001,7 @@ func (t *HTTPTransport) GetDelegatedResourceV2(ctx context.Context, msg *api.Del
 }
 
 func (t *HTTPTransport) GetDelegatedResourceAccountIndex(ctx context.Context, address []byte) (*core.DelegatedResourceAccountIndex, error) {
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"value":   tronutils.EncodeCheck(address),
 		"visible": true,
 	}
@@ -1015,7 +1015,7 @@ func (t *HTTPTransport) GetDelegatedResourceAccountIndex(ctx context.Context, ad
 }
 
 func (t *HTTPTransport) GetDelegatedResourceAccountIndexV2(ctx context.Context, address []byte) (*core.DelegatedResourceAccountIndex, error) {
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"value":   tronutils.EncodeCheck(address),
 		"visible": true,
 	}
@@ -1029,7 +1029,7 @@ func (t *HTTPTransport) GetDelegatedResourceAccountIndexV2(ctx context.Context, 
 }
 
 func (t *HTTPTransport) GetCanDelegatedMaxSize(ctx context.Context, msg *api.CanDelegatedMaxSizeRequestMessage) (*api.CanDelegatedMaxSizeResponseMessage, error) {
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"owner_address": tronutils.EncodeCheck(msg.OwnerAddress),
 		"type":          msg.Type,
 		"visible":       true,
@@ -1044,7 +1044,7 @@ func (t *HTTPTransport) GetCanDelegatedMaxSize(ctx context.Context, msg *api.Can
 }
 
 func (t *HTTPTransport) DelegateResource(ctx context.Context, contract *core.DelegateResourceContract) (*api.TransactionExtention, error) {
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"owner_address":    tronutils.EncodeCheck(contract.OwnerAddress),
 		"receiver_address": tronutils.EncodeCheck(contract.ReceiverAddress),
 		"balance":          contract.Balance,
@@ -1066,7 +1066,7 @@ func (t *HTTPTransport) DelegateResource(ctx context.Context, contract *core.Del
 }
 
 func (t *HTTPTransport) UnDelegateResource(ctx context.Context, contract *core.UnDelegateResourceContract) (*api.TransactionExtention, error) {
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"owner_address":    tronutils.EncodeCheck(contract.OwnerAddress),
 		"receiver_address": tronutils.EncodeCheck(contract.ReceiverAddress),
 		"balance":          contract.Balance,
@@ -1085,7 +1085,7 @@ func (t *HTTPTransport) UnDelegateResource(ctx context.Context, contract *core.U
 // Asset operations
 
 func (t *HTTPTransport) GetAssetIssueById(ctx context.Context, id []byte) (*core.AssetIssueContract, error) {
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"value": string(id),
 	}
 
@@ -1098,7 +1098,7 @@ func (t *HTTPTransport) GetAssetIssueById(ctx context.Context, id []byte) (*core
 }
 
 func (t *HTTPTransport) GetAssetIssueListByName(ctx context.Context, name []byte) (*api.AssetIssueList, error) {
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"value": string(name),
 	}
 
