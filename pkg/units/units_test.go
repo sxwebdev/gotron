@@ -46,3 +46,19 @@ func TestBandwidth(t *testing.T) {
 	// value / transactionFee => 5_000 / 1000 = 5 ; inverse of TRX.ToBandwidth
 	equal(t, b.ToTRX(1000).ToDecimal(), decimal.NewFromInt(5))
 }
+
+// A zero fee must not panic (shopspring/decimal panics on division by zero).
+func TestZeroFeeDoesNotPanic(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("unexpected panic on zero fee: %v", r)
+		}
+	}()
+
+	if got := units.NewTRX(decimal.NewFromInt(10)).ToEnergy(0); !got.IsZero() {
+		t.Errorf("TRX.ToEnergy(0) = %s, want 0", got)
+	}
+	if got := units.NewBandwidth(decimal.NewFromInt(10)).ToTRX(0); !got.ToDecimal().IsZero() {
+		t.Errorf("Bandwidth.ToTRX(0) = %s, want 0", got.ToDecimal())
+	}
+}
