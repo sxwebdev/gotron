@@ -29,6 +29,22 @@ func TestEncodeCheckDecodeCheckRoundTrip(t *testing.T) {
 	require.Equal(t, input, got)
 }
 
+func TestEncodeCheckDoesNotMutateInput(t *testing.T) {
+	// Two 21-byte payloads share one backing array; encoding the first must not
+	// corrupt the second (append-aliasing regression).
+	buf := make([]byte, 42)
+	for i := range buf {
+		buf[i] = byte(i + 1)
+	}
+	first := buf[:21]
+	second := buf[21:42]
+	want := append([]byte(nil), second...)
+
+	_ = tronutils.EncodeCheck(first)
+
+	require.Equal(t, want, second, "EncodeCheck must not mutate neighbouring bytes")
+}
+
 func TestDecodeCheckValidAddress(t *testing.T) {
 	got, err := tronutils.DecodeCheck(validTronAddr)
 	require.NoError(t, err)

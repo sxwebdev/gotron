@@ -39,6 +39,9 @@ func (a Address) Hex() string {
 // If b is larger than len(h), b will be cropped from the left.
 func BigToAddress(b *big.Int) Address {
 	id := b.Bytes()
+	if len(id) > AddressLength {
+		id = id[len(id)-AddressLength:]
+	}
 	base := bytes.Repeat([]byte{0}, AddressLength-len(id))
 	return append(base, id...)
 }

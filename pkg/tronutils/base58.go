@@ -24,8 +24,11 @@ func EncodeCheck(input []byte) string {
 	h256h1.Write(h0)
 	h1 := h256h1.Sum(nil)
 
-	inputCheck := input
-	inputCheck = append(inputCheck, h1[:4]...)
+	// Copy into a fresh slice: appending to input would write the checksum
+	// into the caller's backing array when it has spare capacity.
+	inputCheck := make([]byte, len(input)+4)
+	copy(inputCheck, input)
+	copy(inputCheck[len(input):], h1[:4])
 
 	return Encode(inputCheck)
 }

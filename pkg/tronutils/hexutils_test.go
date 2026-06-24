@@ -32,6 +32,12 @@ func TestHexStringToBytes(t *testing.T) {
 		_, err := tronutils.HexStringToBytes("0xzz")
 		require.Error(t, err)
 	})
+	t.Run("mid-string 0x is not stripped", func(t *testing.T) {
+		// Only the leading prefix may be removed; "0x300x41" must fail to decode
+		// rather than be silently repaired into "3041".
+		_, err := tronutils.HexStringToBytes("0x300x41")
+		require.Error(t, err)
+	})
 }
 
 func TestToHex(t *testing.T) {

@@ -24,6 +24,20 @@ func TestBigToAddress(t *testing.T) {
 	require.Equal(t, byte(0x00), a[0])
 }
 
+func TestBigToAddressOversized(t *testing.T) {
+	// A 22-byte integer must be cropped from the left (per the doc), not panic.
+	raw := make([]byte, 22)
+	for i := range raw {
+		raw[i] = byte(i + 1)
+	}
+	require.NotPanics(t, func() {
+		a := tronutils.BigToAddress(new(big.Int).SetBytes(raw))
+		require.Len(t, a, tronutils.AddressLength)
+		// Left-cropped: keeps the last 21 bytes of the 22-byte input.
+		require.Equal(t, raw[len(raw)-tronutils.AddressLength:], []byte(a))
+	})
+}
+
 func TestHexToAddress(t *testing.T) {
 	require.Equal(t, tronutils.Address([]byte{0x41, 0x02}), tronutils.HexToAddress("0x4102"))
 	require.Nil(t, tronutils.HexToAddress("0xzz"))
