@@ -3,10 +3,18 @@ package address
 import (
 	"fmt"
 
-	"github.com/btcsuite/btcd/btcutil/hdkeychain"
-	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/decred/dcrd/hdkeychain/v3"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/sxwebdev/go-bip39"
 )
+
+// hdNetParams satisfies hdkeychain.NetworkParams. The extended-key version bytes
+// only affect xprv/xpub serialization, which is never used for Tron, so the
+// concrete values are arbitrary; the standard Bitcoin mainnet prefixes are used.
+type hdNetParams struct{}
+
+func (hdNetParams) HDPrivKeyVersion() [4]byte { return [4]byte{0x04, 0x88, 0xad, 0xe4} }
+func (hdNetParams) HDPubKeyVersion() [4]byte  { return [4]byte{0x04, 0x88, 0xb2, 0x1e} }
 
 type Generator struct {
 	bipPurpose uint32
@@ -14,7 +22,6 @@ type Generator struct {
 	account    uint32
 	mnemonic   string
 	passphrase string
-	net        *chaincfg.Params
 }
 
 // NewGenerator creates a new AddressGenerator with default BIP44 parameters for Tron
@@ -25,7 +32,6 @@ func NewGenerator(mnemonic, passphrase string) *Generator {
 		account:    defaultAccount,
 		mnemonic:   mnemonic,
 		passphrase: passphrase,
-		net:        &chaincfg.MainNetParams,
 	}
 }
 
@@ -47,12 +53,6 @@ func (ag *Generator) SetAccount(account uint32) *Generator {
 	return ag
 }
 
-// SetNetwork sets the network parameters
-func (ag *Generator) SetNetwork(net *chaincfg.Params) *Generator {
-	ag.net = net
-	return ag
-}
-
 // Generate generates an address at the specified index
 func (ag *Generator) Generate(index uint32) (*Address, error) {
 	if ag.mnemonic == "" {
@@ -65,41 +65,46 @@ func (ag *Generator) Generate(index uint32) (*Address, error) {
 
 	seed := bip39.NewSeed(ag.mnemonic, ag.passphrase)
 
-	masterKey, err := hdkeychain.NewMaster(seed, ag.net)
+	masterKey, err := hdkeychain.NewMaster(seed, hdNetParams{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create master key: %w", err)
 	}
 
 	// Derive using BIP44 path: m / purpose' / coin_type' / account' / change / address_index
-	purpose, err := masterKey.Derive(hdkeychain.HardenedKeyStart + ag.bipPurpose)
+	purpose, err := masterKey.ChildBIP32Std(hdkeychain.HardenedKeyStart + ag.bipPurpose)
 	if err != nil {
 		return nil, fmt.Errorf("failed to derive purpose: %w", err)
 	}
 
-	coinType, err := purpose.Derive(hdkeychain.HardenedKeyStart + ag.coinType)
+	coinType, err := purpose.ChildBIP32Std(hdkeychain.HardenedKeyStart + ag.coinType)
 	if err != nil {
 		return nil, fmt.Errorf("failed to derive coin type: %w", err)
 	}
 
-	account, err := coinType.Derive(hdkeychain.HardenedKeyStart + ag.account)
+	account, err := coinType.ChildBIP32Std(hdkeychain.HardenedKeyStart + ag.account)
 	if err != nil {
 		return nil, fmt.Errorf("failed to derive account: %w", err)
 	}
 
-	change, err := account.Derive(defaultChange)
+	change, err := account.ChildBIP32Std(defaultChange)
 	if err != nil {
 		return nil, fmt.Errorf("failed to derive change: %w", err)
 	}
 
-	addressKey, err := change.Derive(index)
+	addressKey, err := change.ChildBIP32Std(index)
 	if err != nil {
 		return nil, fmt.Errorf("failed to derive address: %w", err)
 	}
 
-	privKey, err := addressKey.ECPrivKey()
+	privKeyBytes, err := addressKey.SerializedPrivKey()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get private key: %w", err)
 	}
 
-	return fromECDSA(privKey.ToECDSA(), ag.mnemonic)
+	privKey, err := crypto.ToECDSA(privKeyBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert private key: %w", err)
+	}
+
+	return fromECDSA(privKey, ag.mnemonic)
 }

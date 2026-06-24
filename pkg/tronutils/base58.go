@@ -4,7 +4,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 
-	"github.com/shengdoushi/base58"
+	"github.com/decred/base58"
 )
 
 const (
@@ -12,7 +12,7 @@ const (
 )
 
 func Encode(input []byte) string {
-	return base58.Encode(input, base58.BitcoinAlphabet)
+	return base58.Encode(input)
 }
 
 func EncodeCheck(input []byte) string {
@@ -31,7 +31,11 @@ func EncodeCheck(input []byte) string {
 }
 
 func Decode(input string) ([]byte, error) {
-	return base58.Decode(input, base58.BitcoinAlphabet)
+	decoded := base58.Decode(input)
+	if len(input) != 0 && len(decoded) == 0 {
+		return nil, fmt.Errorf("invalid base58 string")
+	}
+	return decoded, nil
 }
 
 func DecodeCheck(input string) ([]byte, error) {

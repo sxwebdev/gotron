@@ -47,12 +47,7 @@ func (c *Client) GetAccountBalance(ctx context.Context, address string) (decimal
 		return decimal.Zero, err
 	}
 
-	balance, err := decimal.NewFromString(tronutils.FormatPrecisionNumber(res.GetBalance(), TrxDecimals))
-	if err != nil {
-		return decimal.Zero, fmt.Errorf("convert balance to decimal: %w", err)
-	}
-
-	return balance, nil
+	return decimal.New(res.GetBalance(), -TrxDecimals), nil
 }
 
 // IsAccountActivated checks if the account with the given address is activated

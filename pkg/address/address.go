@@ -8,8 +8,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/decred/base58"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/mr-tron/base58"
 	"github.com/sxwebdev/go-bip39"
 )
 
@@ -184,10 +184,7 @@ func encodeCheck(input []byte) string {
 
 // decodeCheck decodes a base58 string and verifies checksum
 func decodeCheck(input string) ([]byte, error) {
-	decoded, err := base58.Decode(input)
-	if err != nil {
-		return nil, err
-	}
+	decoded := base58.Decode(input)
 
 	if len(decoded) < 4 {
 		return nil, errors.New("invalid encoded data")
