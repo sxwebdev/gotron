@@ -179,7 +179,12 @@ func Validate(address string) error {
 func encodeCheck(input []byte) string {
 	hash := doubleSHA256(input)
 	checksum := hash[:4]
-	return base58.Encode(append(input, checksum...))
+	// Copy into a fresh slice: appending to input would corrupt the caller's
+	// backing array when it has spare capacity.
+	out := make([]byte, len(input)+4)
+	copy(out, input)
+	copy(out[len(input):], checksum)
+	return base58.Encode(out)
 }
 
 // decodeCheck decodes a base58 string and verifies checksum

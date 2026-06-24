@@ -43,6 +43,22 @@ func TestValidateLengthAndPrefix(t *testing.T) {
 	})
 }
 
+func TestEncodeCheckDoesNotMutateInput(t *testing.T) {
+	// Two payloads share one backing array; encoding the first must not corrupt
+	// the second (append-aliasing regression).
+	buf := make([]byte, 2*addressLength)
+	for i := range buf {
+		buf[i] = byte(i + 1)
+	}
+	first := buf[:addressLength]
+	second := buf[addressLength:]
+	want := append([]byte(nil), second...)
+
+	_ = encodeCheck(first)
+
+	require.Equal(t, want, second, "encodeCheck must not corrupt neighbouring bytes")
+}
+
 func TestDecodeCheckErrors(t *testing.T) {
 	t.Run("too short", func(t *testing.T) {
 		_, err := decodeCheck(base58.Encode([]byte{1, 2}))
