@@ -168,3 +168,58 @@ func TestGetPaddedParamUintArrayHexElements(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, b, 64)
 }
+
+// Regression: unparseable numeric strings must error, never silently encode 0
+// (small ints) or panic inside PackValues (big ints).
+func TestConvertToIntRejectsBadInput(t *testing.T) {
+	tests := []struct {
+		name  string
+		param []Param
+	}{
+		{"bad uint64 (was silent 0)", []Param{{"uint64": "abc"}}},
+		{"empty int64 (was silent 0)", []Param{{"int64": ""}}},
+		{"bad uint256 (was panic)", []Param{{"uint256": "abc"}}},
+		{"bad int256 (was panic)", []Param{{"int256": "xyz"}}},
+		{"bad hex uint256", []Param{{"uint256": "0xZZ"}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := GetPaddedParam(tt.param)
+			require.Error(t, err)
+		})
+	}
+}
+
+// Regression: uint256[] decoded from JSON arrives as []interface{}.
+func TestUintArrayFromJSON(t *testing.T) {
+	param, err := LoadFromJSON(`[{"uint256[2]": ["1", "2"]}]`)
+	require.NoError(t, err)
+	b, err := GetPaddedParam(param)
+	require.NoError(t, err)
+	require.Len(t, b, 64)
+}
+
+// Regression: a bad element in a uint256[] must error, not panic.
+func TestUintArrayBadElement(t *testing.T) {
+	_, err := GetPaddedParam([]Param{{"uint256[2]": []string{"1", "abc"}}})
+	require.Error(t, err)
+}
+
+// Regression: fixed-bytes types of every size (not just 1/2/8/16/32) must pack.
+func TestFixedBytesAllSizes(t *testing.T) {
+	tests := []struct {
+		typ string
+		hex string
+	}{
+		{"bytes4", "deadbeef"},
+		{"bytes20", strings.Repeat("ab", 20)},
+		{"bytes31", strings.Repeat("cd", 31)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.typ, func(t *testing.T) {
+			b, err := GetPaddedParam([]Param{{tt.typ: tt.hex}})
+			require.NoError(t, err)
+			require.Len(t, b, 32) // fixed bytes pad to a single 32-byte word
+		})
+	}
+}
