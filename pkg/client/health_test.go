@@ -37,7 +37,7 @@ func TestHealthAware_AllPrimaryHealthy_RoundRobin(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		h := newHarness(t, []int{0, 0, 0}, HealthConfig{})
 
-		for i := 0; i < 6; i++ {
+		for range 6 {
 			_, err := h.transport.GetAccount(bgctx(), &core.Account{})
 			require.NoError(t, err)
 		}
@@ -64,7 +64,7 @@ func TestHealthAware_PrimaryFails_FailoverToTier1(t *testing.T) {
 		h.nodes[1].setNextErr(grpcErr(codes.Unavailable))
 
 		// Four live calls — round-robin will hit each primary twice → both unhealthy.
-		for i := 0; i < 4; i++ {
+		for range 4 {
 			_, _ = h.transport.GetAccount(bgctx(), &core.Account{})
 		}
 		assert.False(t, h.nodeHealthy(0))
@@ -206,14 +206,12 @@ func TestHealthAware_ConcurrentRequestsRace(t *testing.T) {
 		h.nodes[2].setProbeErr(nil)
 
 		var wg sync.WaitGroup
-		for i := 0; i < 50; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for j := 0; j < 4; j++ {
+		for range 50 {
+			wg.Go(func() {
+				for range 4 {
 					_, _ = h.transport.GetAccount(bgctx(), &core.Account{})
 				}
-			}()
+			})
 		}
 		// Let the probes tick a few times during the storm.
 		time.Sleep(500 * time.Millisecond)
@@ -240,7 +238,7 @@ func TestHealthAware_CloseStopsGoroutines(t *testing.T) {
 
 	// Give the runtime a beat — Close + wg.Wait happens inside the bubble,
 	// but goroutine cleanup may lag behind by one scheduler tick.
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		if runtime.NumGoroutine() <= before+2 {
 			break
 		}
@@ -261,7 +259,7 @@ func TestHealthAware_LogicalErrorDoesNotMarkUnhealthy(t *testing.T) {
 		})
 		h.nodes[0].setNextErr(grpcErr(codes.InvalidArgument))
 
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			_, _ = h.transport.GetAccount(bgctx(), &core.Account{})
 		}
 		assert.True(t, h.nodeHealthy(0))
@@ -434,7 +432,7 @@ func TestHealthAware_HTTP4xxIsLogical(t *testing.T) {
 			Host: "http://x", Protocol: "http", Method: "/x",
 			Err: &HTTPStatusError{Code: 400, Body: "bad request"},
 		})
-		for i := 0; i < 5; i++ {
+		for range 5 {
 			_, _ = h.transport.GetAccount(bgctx(), &core.Account{})
 		}
 		assert.True(t, h.nodeHealthy(0))

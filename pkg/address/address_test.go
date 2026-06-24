@@ -235,7 +235,7 @@ func TestAddressGenerator_Generate(t *testing.T) {
 		generator := NewGenerator(mnemonic, "")
 
 		addresses := make(map[string]bool)
-		for i := uint32(0); i < 5; i++ {
+		for i := range uint32(5) {
 			addr, err := generator.Generate(i)
 			if err != nil {
 				t.Fatalf("Generate(%d) error = %v", i, err)
@@ -387,5 +387,4 @@ func TestAddressGenerator_Generate(t *testing.T) {
 		t.Logf("Account 0: %s", addr1.Address)
 		t.Logf("Account 1: %s", addr2.Address)
 	})
-
 }

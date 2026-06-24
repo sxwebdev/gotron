@@ -111,7 +111,7 @@ func TestGetPaddedParamErrors(t *testing.T) {
 		{"invalid address string", []Param{{"address": "not-an-address"}}},
 		{"non-string address", []Param{{"address": 123}}},
 		{"address array not an array", []Param{{"address[2]": "notarray"}}},
-		{"address array with invalid element", []Param{{"address[2]": []interface{}{"bad", "bad"}}}},
+		{"address array with invalid element", []Param{{"address[2]": []any{"bad", "bad"}}}},
 		{"uint array not a string slice", []Param{{"uint256[2]": "notslice"}}},
 		{"bytes neither hex nor base64", []Param{{"bytes": "zz"}}},
 		{"fixed bytes wrong size", []Param{{"bytes2": "0102030405"}}},
@@ -128,8 +128,14 @@ func TestGetPaddedParamErrors(t *testing.T) {
 func TestGetPaddedParamIntegerSizes(t *testing.T) {
 	// String inputs route through convertToInt for every signed/unsigned width.
 	b, err := GetPaddedParam([]Param{
-		{"int8": "1"}, {"int16": "1"}, {"int32": "1"}, {"int64": "1"},
-		{"uint8": "1"}, {"uint16": "1"}, {"uint32": "1"}, {"uint64": "1"},
+		{"int8": "1"},
+		{"int16": "1"},
+		{"int32": "1"},
+		{"int64": "1"},
+		{"uint8": "1"},
+		{"uint16": "1"},
+		{"uint32": "1"},
+		{"uint64": "1"},
 		{"int128": "1"}, // > 64 bits routes through the big.Int branch
 	})
 	require.NoError(t, err)

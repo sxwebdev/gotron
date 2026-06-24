@@ -72,7 +72,9 @@ func (m *mockTransport) CreateAccount(context.Context, *core.AccountCreateContra
 func (m *mockTransport) GetBlockByNum(context.Context, int64) (*api.BlockExtention, error) {
 	return nil, m.err
 }
+
 func (m *mockTransport) GetBlockById(context.Context, []byte) (*core.Block, error) { return nil, m.err }
+
 func (m *mockTransport) GetBlockByLimitNext(context.Context, int64, int64) (*api.BlockListExtention, error) {
 	return nil, m.err
 }
@@ -172,6 +174,7 @@ func (m *mockTransport) ListNodes(context.Context) (*api.NodeList, error) { retu
 func (m *mockTransport) GetNodeInfo(context.Context) (*core.NodeInfo, error) {
 	return nil, m.err
 }
+
 func (m *mockTransport) GetChainParameters(context.Context) (*core.ChainParameters, error) {
 	return nil, m.err
 }

@@ -97,7 +97,7 @@ func PubkeyToAddress(p ecdsa.PublicKey) Address {
 }
 
 // Scan implements Scanner for database/sql.
-func (a *Address) Scan(src interface{}) error {
+func (a *Address) Scan(src any) error {
 	srcB, ok := src.([]byte)
 	if !ok {
 		return fmt.Errorf("can't scan %T into Address", src)

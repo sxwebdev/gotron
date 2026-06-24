@@ -64,7 +64,7 @@ func NewGRPCTransport(cfg NodeConfig) (*GRPCTransport, error) {
 
 // headersInterceptor returns a gRPC unary interceptor that adds headers as metadata
 func headersInterceptor(headers map[string]string) grpc.UnaryClientInterceptor {
-	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		md := metadata.New(headers)
 		ctx = metadata.NewOutgoingContext(ctx, md)
 		return invoker(ctx, method, req, reply, cc, opts...)
@@ -73,7 +73,7 @@ func headersInterceptor(headers map[string]string) grpc.UnaryClientInterceptor {
 
 // transportErrorInterceptor returns a gRPC unary interceptor that wraps errors with TransportError
 func transportErrorInterceptor(address string) grpc.UnaryClientInterceptor {
-	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		err := invoker(ctx, method, req, reply, cc, opts...)
 		if err != nil {
 			return &TransportError{

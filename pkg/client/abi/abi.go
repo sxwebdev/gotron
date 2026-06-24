@@ -18,7 +18,7 @@ import (
 )
 
 // Param list
-type Param map[string]interface{}
+type Param map[string]any
 
 // LoadFromJSON string into ABI data
 func LoadFromJSON(jString string) ([]Param, error) {
@@ -42,7 +42,7 @@ func Signature(method string) []byte {
 	return b[:4]
 }
 
-func convetToAddress(v interface{}) (common.Address, error) {
+func convetToAddress(v any) (common.Address, error) {
 	switch v := v.(type) {
 	case string:
 		addr, err := tronutils.DecodeCheck(v)
@@ -54,7 +54,7 @@ func convetToAddress(v interface{}) (common.Address, error) {
 	return common.Address{}, fmt.Errorf("invalid address %v", v)
 }
 
-func convertToInt(ty eABI.Type, v interface{}) (interface{}, error) {
+func convertToInt(ty eABI.Type, v any) (any, error) {
 	s, ok := v.(string)
 	if !ok {
 		return nil, fmt.Errorf("invalid integer %v", v)
@@ -106,7 +106,7 @@ func convertToInt(ty eABI.Type, v interface{}) (interface{}, error) {
 
 // GetPaddedParam from struct
 func GetPaddedParam(param []Param) ([]byte, error) {
-	values := make([]interface{}, 0)
+	values := make([]any, 0)
 	arguments := eABI.Arguments{}
 
 	for _, p := range param {
@@ -118,7 +118,8 @@ func GetPaddedParam(param []Param) ([]byte, error) {
 			if err != nil {
 				return nil, fmt.Errorf("invalid param %+v: %+v", p, err)
 			}
-			arguments = append(arguments,
+			arguments = append(
+				arguments,
 				eABI.Argument{
 					Name:    "",
 					Type:    ty,
@@ -128,7 +129,7 @@ func GetPaddedParam(param []Param) ([]byte, error) {
 
 			if ty.T == eABI.SliceTy || ty.T == eABI.ArrayTy {
 				if ty.Elem.T == eABI.AddressTy {
-					tmp, ok := v.([]interface{})
+					tmp, ok := v.([]any)
 					if !ok {
 						return nil, fmt.Errorf("unable to convert array of addresses %+v", p)
 					}
@@ -150,7 +151,7 @@ func GetPaddedParam(param []Param) ([]byte, error) {
 					switch arr := v.(type) {
 					case []string:
 						tmpSlice = arr
-					case []interface{}:
+					case []any:
 						for _, e := range arr {
 							s, ok := e.(string)
 							if !ok {
@@ -204,7 +205,7 @@ func GetPaddedParam(param []Param) ([]byte, error) {
 	return arguments.PackValues(values)
 }
 
-func convertToBytes(ty eABI.Type, v interface{}) (interface{}, error) {
+func convertToBytes(ty eABI.Type, v any) (any, error) {
 	// if string
 	if data, ok := v.(string); ok {
 		// convert from hex string
@@ -225,7 +226,7 @@ func convertToBytes(ty eABI.Type, v interface{}) (interface{}, error) {
 		}
 		// Build a [ty.Size]byte array for any fixed-bytes size (bytes1..bytes32),
 		// which is the value type go-ethereum's PackValues expects.
-		arr := reflect.New(reflect.ArrayOf(ty.Size, reflect.TypeOf(byte(0)))).Elem()
+		arr := reflect.New(reflect.ArrayOf(ty.Size, reflect.TypeFor[byte]())).Elem()
 		reflect.Copy(arr, reflect.ValueOf(dataBytes))
 		return arr.Interface(), nil
 	}
