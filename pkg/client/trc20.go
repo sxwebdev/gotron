@@ -60,10 +60,15 @@ func (c *Client) TRC20Call(ctx context.Context, from, contractAddress, data stri
 		result, err = c.triggerContract(ctx, ct, feeLimit.Int64())
 	}
 	if err != nil {
-		return nil, err
-	}
-	if result.GetResult().GetCode() > 0 {
-		return result, fmt.Errorf("%s", string(result.GetResult().GetMessage()))
+		// The result is returned with the error rather than dropped: a failed
+		// call still carries the energy it burned and whatever constant_result
+		// the VM produced before giving up.
+		//
+		// Both branches above already reject a non-zero result code, and the
+		// constant one also catches a revert - which arrives with code SUCCESS
+		// and is only named in the message. Re-checking the code here would be
+		// unreachable and would suggest the callee does not.
+		return result, err
 	}
 	return result, nil
 }

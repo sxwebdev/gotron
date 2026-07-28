@@ -277,6 +277,20 @@ func TestCompare_Contract(t *testing.T) {
 	assert.Equal(t, grpcContract.GetOriginEnergyLimit(), httpContract.GetOriginEnergyLimit(),
 		"OriginEnergyLimit mismatch")
 
+	// The byte fields are the ones that actually went wrong: HTTP handed hex
+	// straight to protojson, which base64-decoded it, so a 21-byte address came
+	// back as 31 bytes and no error. Comparing only the scalars above let that
+	// through for as long as it existed.
+	assert.Equal(t, grpcContract.GetOriginAddress(), httpContract.GetOriginAddress(),
+		"OriginAddress mismatch - this decides who pays a call's energy")
+	assert.Equal(t, grpcContract.GetContractAddress(), httpContract.GetContractAddress(),
+		"ContractAddress mismatch")
+	assert.Equal(t, grpcContract.GetBytecode(), httpContract.GetBytecode(), "Bytecode mismatch")
+	assert.Equal(t, grpcContract.GetCodeHash(), httpContract.GetCodeHash(), "CodeHash mismatch")
+
+	// And it really is an address, not merely the same on both sides.
+	require.Len(t, grpcContract.GetOriginAddress(), 21)
+
 	t.Logf("Contract %s matches between gRPC and HTTP", grpcContract.GetName())
 }
 

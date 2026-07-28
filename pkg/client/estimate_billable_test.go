@@ -174,6 +174,18 @@ func (f estimateFake) client(t *testing.T) *Client {
 				Transaction: &core.Transaction{RawData: &core.TransactionRaw{Timestamp: 1}},
 			}, nil
 		},
+		getContract: func(_ context.Context, address []byte) (*core.SmartContract, error) {
+			// consume_user_resource_percent 100: the caller pays for all of the
+			// call's energy. These cases are about how the *sender's* own
+			// resources are billed, so the contract is deliberately made to
+			// subsidise nothing; the split itself is covered by
+			// TestContractEnergyShare and its estimate-level counterpart.
+			return &core.SmartContract{
+				OriginAddress:              address,
+				ConsumeUserResourcePercent: 100,
+				OriginEnergyLimit:          1_000_000_000,
+			}, nil
+		},
 	})
 }
 

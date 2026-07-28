@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/shopspring/decimal"
 	"github.com/sxwebdev/gotron/pkg/address"
@@ -24,77 +25,113 @@ func (c *Client) GetAccountResource(ctx context.Context, addr string) (*api.Acco
 	return c.transport.GetAccountResource(ctx, account)
 }
 
-// GetDelegatedResourcesV2 retrieves delegated resources for the specified account address
-func (c *Client) GetDelegatedResources(ctx context.Context, address string) ([]*api.DelegatedResourceList, error) {
+// GetDelegatedResources lists what address has delegated out, using the Stake
+// 1.0 index. Most accounts want GetDelegatedResourcesV2.
+func (c *Client) GetDelegatedResources(ctx context.Context, address string) ([]Delegation, error) {
+	return c.delegationsOut(ctx, address,
+		c.transport.GetDelegatedResourceAccountIndex, c.transport.GetDelegatedResource)
+}
+
+// GetDelegatedResourcesV2 lists what address has delegated out under Stake 2.0.
+func (c *Client) GetDelegatedResourcesV2(ctx context.Context, address string) ([]Delegation, error) {
+	return c.delegationsOut(ctx, address,
+		c.transport.GetDelegatedResourceAccountIndexV2, c.transport.GetDelegatedResourceV2)
+}
+
+// delegationsOut walks the account index and reads each delegation, converting
+// the chain's raw form - byte addresses, SUN as int64, Unix-millisecond lock
+// expiries - into the same string/SUN/time.Time shape GetStakeInfo uses. The
+// two Stake versions differ only in which pair of RPCs they call.
+func (c *Client) delegationsOut(
+	ctx context.Context,
+	address string,
+	index func(context.Context, []byte) (*core.DelegatedResourceAccountIndex, error),
+	fetch func(context.Context, *api.DelegatedResourceMessage) (*api.DelegatedResourceList, error),
+) ([]Delegation, error) {
+	if address == "" {
+		return nil, fmt.Errorf("%w: address is required", ErrEmptyAddress)
+	}
+
 	addrBytes, err := tronutils.DecodeCheck(address)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s", ErrInvalidAddress, err)
+	}
+
+	ai, err := index(ctx, addrBytes)
 	if err != nil {
 		return nil, err
 	}
 
-	ai, err := c.transport.GetDelegatedResourceAccountIndex(ctx, addrBytes)
-	if err != nil {
-		return nil, err
-	}
-	result := make([]*api.DelegatedResourceList, len(ai.GetToAccounts()))
-	for i, addrTo := range ai.GetToAccounts() {
-		dm := &api.DelegatedResourceMessage{
+	var result []Delegation
+	for _, addrTo := range ai.GetToAccounts() {
+		list, err := fetch(ctx, &api.DelegatedResourceMessage{
 			FromAddress: addrBytes,
 			ToAddress:   addrTo,
-		}
-		resource, err := c.transport.GetDelegatedResource(ctx, dm)
+		})
 		if err != nil {
 			return nil, err
 		}
-		result[i] = resource
+
+		// One index entry can hold several records, and the node returns
+		// placeholder entries with nothing delegated; those are dropped rather
+		// than reported as zero-amount delegations.
+		for _, d := range list.GetDelegatedResource() {
+			if d.GetFrozenBalanceForBandwidth() <= 0 && d.GetFrozenBalanceForEnergy() <= 0 {
+				continue
+			}
+			result = append(result, Delegation{
+				From:               tronutils.EncodeCheck(d.GetFrom()),
+				To:                 tronutils.EncodeCheck(d.GetTo()),
+				Bandwidth:          SUN(d.GetFrozenBalanceForBandwidth()),
+				BandwidthExpiresAt: msToTime(d.GetExpireTimeForBandwidth()),
+				Energy:             SUN(d.GetFrozenBalanceForEnergy()),
+				EnergyExpiresAt:    msToTime(d.GetExpireTimeForEnergy()),
+			})
+		}
 	}
+
 	return result, nil
 }
 
-// GetDelegatedResourcesV2 retrieves delegated resources V2 for the specified account address
-func (c *Client) GetDelegatedResourcesV2(ctx context.Context, address string) ([]*api.DelegatedResourceList, error) {
-	addrBytes, err := tronutils.DecodeCheck(address)
-	if err != nil {
-		return nil, err
+// msToTime converts a Unix-millisecond field to a time.Time, mapping the
+// chain's "not set" zero to the zero time rather than to 1970.
+func msToTime(ms int64) time.Time {
+	if ms <= 0 {
+		return time.Time{}
 	}
-
-	ai, err := c.transport.GetDelegatedResourceAccountIndexV2(ctx, addrBytes)
-	if err != nil {
-		return nil, err
-	}
-
-	result := make([]*api.DelegatedResourceList, len(ai.GetToAccounts()))
-	for i, addrTo := range ai.GetToAccounts() {
-		dm := &api.DelegatedResourceMessage{
-			FromAddress: addrBytes,
-			ToAddress:   addrTo,
-		}
-		resource, err := c.transport.GetDelegatedResourceV2(ctx, dm)
-		if err != nil {
-			return nil, err
-		}
-		result[i] = resource
-	}
-	return result, nil
+	return time.UnixMilli(ms)
 }
 
-// GetCanDelegatedMaxSize retrieves the maximum size that can be delegated for a given resource type
-func (c *Client) GetCanDelegatedMaxSize(ctx context.Context, address string, resource int32) (*api.CanDelegatedMaxSizeResponseMessage, error) {
-	addrBytes, err := tronutils.DecodeCheck(address)
-	if err != nil {
-		return nil, err
+// GetCanDelegatedMaxSize returns the largest stake the account may still
+// delegate for the given resource.
+//
+// The answer is a staked TRX amount, not an amount of the resource: delegation
+// moves the stake, and how much bandwidth or energy that yields depends on the
+// network weights at the time. Convert with ConvertStakedToBandwidth or
+// ConvertStakedToEnergy.
+func (c *Client) GetCanDelegatedMaxSize(ctx context.Context, addr string, resource ResourceType) (SUN, error) {
+	if addr == "" {
+		return 0, fmt.Errorf("%w: address is required", ErrEmptyAddress)
 	}
 
-	dm := &api.CanDelegatedMaxSizeRequestMessage{}
-
-	dm.Type = resource
-	dm.OwnerAddress = addrBytes
-
-	response, err := c.transport.GetCanDelegatedMaxSize(ctx, dm)
-	if err != nil {
-		return nil, err
+	if err := resource.Validate(); err != nil {
+		return 0, err
 	}
 
-	return response, nil
+	addrBytes, err := tronutils.DecodeCheck(addr)
+	if err != nil {
+		return 0, fmt.Errorf("%w: %s", ErrInvalidAddress, err)
+	}
+
+	response, err := c.transport.GetCanDelegatedMaxSize(ctx, &api.CanDelegatedMaxSizeRequestMessage{
+		OwnerAddress: addrBytes,
+		Type:         int32(resource.ToProto()),
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	return SUN(response.GetMaxSize()), nil
 }
 
 // DelegateResource delegates a resource from one account to another

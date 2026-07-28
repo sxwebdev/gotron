@@ -234,12 +234,19 @@ func (c *Client) GetStakeInfo(ctx context.Context, addr string) (*StakeInfo, err
 
 // checkTransaction rejects transactions the node did not actually build: an empty
 // response, or one carrying a contract validation error.
+//
+// The validation error is returned as *ContractValidateError so that callers can
+// tell "my request is wrong" from "this node is unwell" with errors.As instead
+// of by matching on the message.
 func checkTransaction(tx *api.TransactionExtention) error {
 	if proto.Size(tx) == 0 {
 		return ErrInvalidTransaction
 	}
-	if tx.GetResult().GetCode() != 0 {
-		return fmt.Errorf("%s", tx.GetResult().GetMessage())
+	if code := tx.GetResult().GetCode(); code != 0 {
+		return &ContractValidateError{
+			Code:    code,
+			Message: string(tx.GetResult().GetMessage()),
+		}
 	}
 	return nil
 }

@@ -92,8 +92,13 @@ func TestHTTPTxRequestSurfacesNodeError(t *testing.T) {
 
 	// The generic "no raw_data_hex" fallback embeds the whole response body in its
 	// message, so ErrorContains alone would pass even with the Error handling
-	// removed. Pinning the sentinel is what actually distinguishes the two paths.
-	require.NotErrorIs(t, err, ErrInvalidTransaction)
+	// removed. The type is what distinguishes the two paths: only the Error
+	// branch produces a ContractValidateError, while the fallback is a plain
+	// wrapped sentinel. (Both satisfy errors.Is(ErrInvalidTransaction), so that
+	// no longer tells them apart.)
+	var cve *ContractValidateError
+	require.ErrorAs(t, err, &cve)
+	require.Contains(t, cve.Message, "frozenBalance must be positive")
 }
 
 func TestHTTPTxRequestRejectsEmptyBody(t *testing.T) {

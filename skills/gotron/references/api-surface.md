@@ -11,13 +11,18 @@
   - [Transaction operations](#transaction-operations)
   - [TRC20 token operations](#trc20-token-operations)
   - [Resource operations](#resource-operations)
+  - [Resource pricing helpers](#resource-pricing-helpers)
   - [Staking operations](#staking-operations)
   - [Witness and reward operations](#witness-and-reward-operations)
   - [Estimate operations](#estimate-operations)
   - [Contract operations](#contract-operations)
+  - [Asset operations (TRC10)](#asset-operations-trc10)
   - [Network operations](#network-operations)
   - [Chain parameters](#chain-parameters)
+  - [Transport stack (low-level)](#transport-stack-low-level)
   - [Common types](#common-types)
+  - [Sentinel errors](#sentinel-errors)
+- [Package pkg/client/abi](#package-pkgclientabi)
 - [Package pkg/address](#package-pkgaddress)
 - [Package pkg/units](#package-pkgunits)
 - [Package pkg/tronutils](#package-pkgtronutils)
@@ -168,6 +173,14 @@ The activation fee in TRX is computed from chain params:
 - If caller has enough **own staked** bandwidth: that bandwidth is consumed (`Bandwidth` field set).
 - Otherwise: extra `chainParams.CreateAccountFee` (typically 0.1 TRX) is burned. Free daily quota and bandwidth received via delegation do **not** count.
 
+**These two are for standalone activation only — do not add their result to a transfer estimate.**
+A TRX transfer to a new address creates the account inside the transfer transaction itself, so
+`EstimateTRXTransfer` already prices the creation; adding an activation estimate on top counts a
+`CreateAccount` transaction that never reaches the chain. Their surcharge decision is also less
+precise than the transfer estimator's: they compare against `AvailableForDelegateResources`, whose
+`Bandwidth` is `min(staked limit from FrozenV2, staked remaining + free remaining)`, so free
+bandwidth can make it report staked bandwidth the account does not have.
+
 ### Block operations
 
 **File:** `block.go`
@@ -226,9 +239,9 @@ func (c *Client) ParseTRC20StringProperty(data string) (string, error)
 
 ```go
 func (c *Client) GetAccountResource(ctx context.Context, addr string) (*api.AccountResourceMessage, error)
-func (c *Client) GetDelegatedResources(ctx context.Context, address string) ([]*api.DelegatedResourceList, error)
-func (c *Client) GetDelegatedResourcesV2(ctx context.Context, address string) ([]*api.DelegatedResourceList, error)
-func (c *Client) GetCanDelegatedMaxSize(ctx context.Context, address string, resource int32) (*api.CanDelegatedMaxSizeResponseMessage, error)
+func (c *Client) GetDelegatedResources(ctx context.Context, address string) ([]Delegation, error)   // Stake 1.0 index
+func (c *Client) GetDelegatedResourcesV2(ctx context.Context, address string) ([]Delegation, error) // Stake 2.0
+func (c *Client) GetCanDelegatedMaxSize(ctx context.Context, addr string, resource ResourceType) (SUN, error)
 func (c *Client) DelegateResource(ctx context.Context, owner, receiver string, resource ResourceType, delegateBalance SUN, lock bool, lockPeriod int64) (*api.TransactionExtention, error)
 func (c *Client) ReclaimResource(ctx context.Context, owner, receiver string, resource ResourceType, delegateBalance SUN) (*api.TransactionExtention, error)
 func (c *Client) AvailableForDelegateResources(ctx context.Context, addr string) (*AvailableResources, error)
@@ -245,6 +258,26 @@ func (c *Client) TotalBandwidthLimit(res *api.AccountResourceMessage) decimal.De
 ```
 
 ```go
+// Delegation is one active resource delegation, flattened out of the chain's
+// nested list-of-lists and converted the way GetStakeInfo converts a stake:
+// base58 addresses, SUN amounts, and time.Time expiries out of Unix
+// milliseconds. An unlocked delegation has the zero time, not 1970. Records the
+// node returns with nothing delegated are dropped.
+type Delegation struct {
+    From               string    `json:"from"`
+    To                 string    `json:"to"`
+    Bandwidth          SUN       `json:"bandwidth"`
+    BandwidthExpiresAt time.Time `json:"bandwidth_expires_at"`
+    Energy             SUN       `json:"energy"`
+    EnergyExpiresAt    time.Time `json:"energy_expires_at"`
+}
+```
+
+`GetCanDelegatedMaxSize` answers in **staked TRX**, not in resource units:
+delegation moves the stake, and what that yields depends on the network weights
+at the time. Convert with `ConvertStakedToBandwidth` / `ConvertStakedToEnergy`.
+
+```go
 // Renamed from "Resources" — represents an account's currently usable resources
 // plus its hard limits. Used as return type by AvailableForDelegateResources
 // and TotalAvailableResources.
@@ -255,6 +288,34 @@ type AvailableResources struct {
     TotalBandwidth decimal.Decimal `json:"total_bandwidth"`
 }
 ```
+
+`AvailableForDelegateResources` caps each field by what the account staked itself (from
+`core.Account.FrozenV2`), which is what delegation is allowed to draw on. Note this is a cap on a
+*limit*, not on a remainder: `Bandwidth` is `min(staked limit, staked remaining + free remaining)`,
+so an account with free bandwidth left can report more staked bandwidth than it actually has. For
+"will this specific transaction be free" use `AvailableBandwidthWithoutFree` and
+`AvailableFreeBandwidth`, or let `EstimateTRXTransfer` answer it.
+
+### Resource pricing helpers
+
+**File:** `converter.go`
+
+Convert between staked TRX and the resources that stake yields, at the network's current weights
+(`GetAccountResource` supplies `TotalNetWeight` / `TotalNetLimit` / `TotalEnergyWeight`, and
+`ChainParams` supplies `TotalEnergyCurrentLimit`). The rates move with total network stake, so
+these are point-in-time answers, not constants.
+
+```go
+func (c *Client) ConvertStakedToEnergy(totalEnergyCurrentLimit, totalEnergyWeight int64, staked SUN) decimal.Decimal
+func (c *Client) ConvertEnergyToStaked(totalEnergyCurrentLimit, totalEnergyWeight int64, energy decimal.Decimal) SUN
+func (c *Client) ConvertStakedToBandwidth(totalNetWeight, totalNetLimit int64, staked SUN) decimal.Decimal
+func (c *Client) ConvertBandwidthToStaked(totalNetWeight, totalNetLimit int64, bandwidth decimal.Decimal) SUN
+```
+
+The two `…ToStaked` directions round up via `units.CeilToSUN`, so they answer "how much must I
+stake", never "how much might be enough". All four return zero rather than an error when the
+divisor the network supplies is zero, so check the weights yourself if a silent zero would be
+mistaken for a real answer.
 
 ### Staking operations
 
@@ -343,6 +404,12 @@ func (c *Client) EstimateEnergy(
 ) (*api.EstimateEnergyMessage, error)
 ```
 
+**`EstimateEnergy` needs a node that opted in** (`vm.estimateEnergy = true`), and the public ones
+have not: `tron-rpc.publicnode.com` answers `CONTRACT_VALIDATE_ERROR: this node does not support
+estimate energy`, which the client surfaces as an error. The portable way to price a contract call
+is `TriggerConstantContract` / `TriggerConstantContractCustom` and its `GetEnergyUsed()` — that is
+what `EstimateTRC20Transfer` uses.
+
 **File:** `estimate_transfer.go`
 
 ```go
@@ -370,13 +437,18 @@ func (c *Client) EstimateTRC20Transfer(
 
 ```go
 type EstimateTransferResult struct {
-    Usage     ResourceUsage   `json:"usage"`     // Bandwidth, Energy
+    Usage     ResourceUsage   `json:"usage"`     // Bandwidth, Energy, ContractEnergy
     Available SenderResources `json:"available"` // FreeBandwidth, StakedBandwidth, StakedEnergy
     Charges   TransferCharges `json:"charges"`   // Bandwidth, Energy, AccountCreation, UnstakedCreation
     Fee       SUN             `json:"fee"`       // == Charges.Total()
 }
 
 func (c TransferCharges) Total() SUN
+
+// Usage.Energy is the whole call (receipt.energy_usage_total); ContractEnergy is
+// the part the contract's owner absorbs (receipt.origin_energy_usage). Only the
+// difference is the sender's to pay.
+func (u ResourceUsage) SenderEnergy() decimal.Decimal
 ```
 
 A real answer (Nile, sender with 600 free bandwidth and no stake, recipient not created):
@@ -442,16 +514,145 @@ where 1.1 is charged. Callers who want a worst case multiply `Usage` by the chai
 `AvailableBandwidth` sums the two pools and is therefore the wrong input here; use
 `AvailableBandwidthWithoutFree` and `AvailableFreeBandwidth` separately.
 
+**A contract can pay for its own calls, and the estimate must credit that.**
+`consume_user_resource_percent` is the share of every call the *caller* pays; the contract's owner
+covers the rest from its own staked energy, capped per call by `origin_energy_limit`, and only what
+the owner cannot cover falls back to the caller (java-tron, `ReceiptCapsule.payEnergyBill`). Calling
+a contract you own is a self-call and is billed to you in full. `Usage.Energy` stays the whole call
+(`receipt.energy_usage_total`), `Usage.ContractEnergy` is the owner's share
+(`receipt.origin_energy_usage`), and `SenderEnergy()` is the difference — the only part that can
+become a fee. Assuming the caller pays everything is how an estimate quotes 1.465 TRX for a transfer
+the chain settles for nothing: Nile tx `e3e1633c…` has `energy_usage_total 14650`,
+`origin_energy_usage 14650`, `energy_fee 0`, `fee 0`. Establishing the split costs
+`EstimateTRC20Transfer` two extra RPCs (`GetContract` plus the owner's `GetAccountResource`), because
+it depends on the contract's settings and the owner's balance right now.
+
+**`EstimateTRC20Transfer` fails for a transfer that would revert** — insufficient token balance
+being the usual reason — because it measures energy with a constant call, and a reverted call
+reports only what the VM burned before giving up. The error wraps `ErrContractCallFailed`. This is
+deliberate: the alternative is an estimate an order of magnitude too low (8624 against 64285 for
+USDT), which a caller then sets as a fee limit on a transfer that runs out of energy.
+
 ### Contract operations
 
 **File:** `contract.go`
 
+Every write method returns an **unsigned** transaction. Sign it with `SignTransaction` and send it
+with `BroadcastTransaction`; nothing here broadcasts on its own.
+
 ```go
+// Deploying.
+type DeployContractRequest struct {
+    From                       string                  // deploying account, base58check
+    Name                       string                  // stored on-chain; metadata only
+    ABI                        *core.SmartContract_ABI // build with abi.LoadContractABI
+    Bytecode                   string                  // compiled contract as hex, 0x optional
+    ConstructorParams          string                  // abi jsonString; "" when there are none
+    FeeLimit                   SUN                     // 0 = leave unset (the node's default is low)
+    ConsumeUserResourcePercent int64                   // 0..100
+    OriginEnergyLimit          int64                   // must be > 0
+}
+
+func (r DeployContractRequest) Validate() error
+func (c *Client) DeployContract(ctx context.Context, req DeployContractRequest) (*api.TransactionExtention, error)
+
+// The address the deployment will occupy, derived locally from the transaction.
+func DeployedContractAddress(tx *core.Transaction) (string, error)
+
+// Calling. method is the full signature ("transfer(address,uint256)"); jsonString
+// is the argument list in the pkg/client/abi form (see below).
+func (c *Client) TriggerContract(
+    ctx context.Context,
+    from, contractAddress, method, jsonString string,
+    feeLimit SUN, tAmount int64, tTokenID string, tTokenAmount int64,
+) (*api.TransactionExtention, error)
+
+// Read-only calls. Nothing is broadcast; the answer is in GetConstantResult(),
+// the metered cost in GetEnergyUsed(). A call the VM refused returns an error
+// wrapping ErrContractCallFailed, with the extention alongside it.
 func (c *Client) TriggerConstantContract(ctx context.Context, ct *core.TriggerSmartContract) (*api.TransactionExtention, error)
 func (c *Client) TriggerConstantContractCustom(ctx context.Context, from, contractAddress, method, jsonString string) (*api.TransactionExtention, error)
-func (c *Client) DeployContract(ctx context.Context, ct *core.CreateSmartContract) (*api.TransactionExtention, error)
-func (c *Client) GetContract(ctx context.Context, address string) (*core.SmartContract, error)
+
+// Introspection.
+func (c *Client) GetContract(ctx context.Context, contractAddress string) (*core.SmartContract, error)
+func (c *Client) GetContractABI(ctx context.Context, contractAddress string) (*core.SmartContract_ABI, error)
+
+// Owner-only settings on an already-deployed contract.
+func (c *Client) UpdateSettingContract(ctx context.Context, from, contractAddress string, value int64) (*api.TransactionExtention, error)     // consume_user_resource_percent
+func (c *Client) UpdateEnergyLimitContract(ctx context.Context, from, contractAddress string, value int64) (*api.TransactionExtention, error) // origin_energy_limit
+
+// Recompute txID after editing RawData locally. DeployContract and
+// TriggerContract already call it when they set a fee limit.
+func (c *Client) UpdateHash(tx *api.TransactionExtention) error
 ```
+
+`tAmount` on `TriggerContract` is the TRX call value in SUN; `tTokenID` / `tTokenAmount` attach a
+TRC10 token and are both required for either to take effect.
+
+`TriggerConstantContractCustom` accepts an empty `from` and substitutes the zero address, which is
+what makes it usable for reads from an account you do not control.
+
+**Deploying, end to end:**
+
+```go
+contractABI, err := abi.LoadContractABI(solcABIJSON)   // solc's array or Tron's {"entrys":…}
+
+tx, err := c.DeployContract(ctx, client.DeployContractRequest{
+    From:                       wallet,
+    Name:                       "Token",
+    ABI:                        contractABI,
+    Bytecode:                   solcBytecodeHex,
+    ConstructorParams:          `[{"uint256":"1000000"},{"address":"T..."}]`,
+    FeeLimit:                   client.MustFromTRX(decimal.NewFromInt(1000)),
+    ConsumeUserResourcePercent: 100,
+    OriginEnergyLimit:          10_000_000,
+})
+
+addr, err := client.DeployedContractAddress(tx.GetTransaction()) // known before broadcasting
+
+err = c.SignTransaction(tx.GetTransaction(), priv)
+_, err = c.BroadcastTransaction(ctx, tx.GetTransaction())
+```
+
+- **Constructor arguments belong in `ConstructorParams`, not appended to `Bytecode`.** Tron has no
+  field for them: they are ABI-encoded and concatenated onto the bytecode, which `DeployContract`
+  does. Appending them yourself as well encodes them twice.
+- **`Validate` covers the whole request**, constructor arguments included, and `DeployContract`
+  runs it before spending a round-trip. `Bytecode` must have an even number of hex digits: an odd
+  count means the string is truncated, and `tronutils.FromHex` would left-pad it with a zero nibble,
+  shifting every byte by half a byte into code that means something else.
+- **`DeployedContractAddress` derives the address rather than reading it back.** Tron computes it as
+  `keccak256(txID ‖ ownerAddress)` keeping the low 20 bytes, with the `0x41` prefix put back, so it
+  is fixed the moment the transaction is built — no need to wait for the receipt. It is pinned in
+  the tests against two live mainnet contracts (USDT and `TQuCVz7…`) and their creation transactions.
+  **Read it after the last edit to `raw_data`**: the fee limit is inside `raw_data`, so setting it
+  changes the txID and therefore the address. `DeployContract` sets the fee limit before returning,
+  so the transaction it hands back is already final.
+- **`FeeLimit` matters.** A deployment left at the node's default routinely runs out of energy
+  mid-construction, which still burns what it used.
+- **The receipt is still the authority after the fact:**
+  `GetTransactionInfoByHash(…).GetContractAddress()` returns the raw bytes;
+  `tronutils.EncodeCheck` turns them into the `T…` form.
+
+**A reverted constant call is not reported by the result code.** The node answers
+`result.result = true` with code `SUCCESS` and puts the failure only in `result.message`
+(`"REVERT opcode executed"`), leaving `constant_result` empty and `energy_used` at whatever the VM
+burned before giving up — 8624 against 64285 for a real USDT transfer. `TriggerConstantContract`
+therefore keys on the message, not the code, and returns `ErrContractCallFailed` with the extention
+still attached so the partial evidence is readable. Anything that trusted the code alone priced the
+pre-revert energy as the cost of the whole call.
+
+### Asset operations (TRC10)
+
+**File:** `asset.go`
+
+```go
+func (c *Client) GetAssetIssueById(ctx context.Context, id string) (*core.AssetIssueContract, error)
+func (c *Client) GetAssetIssueListByName(ctx context.Context, name string) (*api.AssetIssueList, error)
+```
+
+Read-only TRC10 lookups. TRC10 is Tron's native token standard and is unrelated to TRC20, which is
+contract-based — see [TRC20 token operations](#trc20-token-operations) for those.
 
 ### Network operations
 
@@ -459,9 +660,13 @@ func (c *Client) GetContract(ctx context.Context, address string) (*core.SmartCo
 
 ```go
 func (c *Client) ListNodes(ctx context.Context) (*api.NodeList, error)
+func (c *Client) GetNodeInfo(ctx context.Context) (*core.NodeInfo, error)
 func (c *Client) GetNextMaintenanceTime(ctx context.Context) (*api.NumberMessage, error)
 func (c *Client) TotalTransaction(ctx context.Context) (*api.NumberMessage, error)
 ```
+
+`GetNodeInfo` reports the node that actually served the call, so under the health-aware transport
+it names whichever node the tier logic picked — it is not pinned to a configured address.
 
 ### Chain parameters
 
@@ -503,20 +708,159 @@ tests, embedding gotron in a higher-level multi-chain harness, etc.).
 
 **File:** `types.go`
 
-Generic resource cost type used across activation and transfer estimators.
-
 ```go
-// EstimateResult is the canonical result shape for any "how much does this cost"
-// query — Energy and Bandwidth in raw resource points, Fee in SUN (what those
-// resources cost when they have to be burned).
-// Reused by EstimateActivationFee, EstimateSystemContractActivation, and as the
-// value type for fields of EstimateTransferResult (Total/Transfer/Activation).
+// EstimateResult is the result shape of the two activation estimators only —
+// Energy and Bandwidth in raw resource points, Fee in SUN. Transfer estimates do
+// not use it: EstimateTransferResult keeps what a transaction needs apart from
+// what it is charged, which one Energy/Bandwidth/Fee triple cannot express.
 type EstimateResult struct {
     Energy    decimal.Decimal `json:"energy"`
     Bandwidth decimal.Decimal `json:"bandwidth"`
     Fee       SUN             `json:"fee"`
 }
 ```
+
+```go
+// Network is informational — it labels the client, it does not select endpoints.
+// Which chain you talk to is decided entirely by Config.Nodes.
+type Network string
+
+const (
+    NetworkMainnet Network = "mainnet"
+    NetworkShasta  Network = "shasta"
+    NetworkNile    Network = "nile"
+)
+
+func (n Network) Validate() error
+func (n Network) String() string
+```
+
+```go
+// ResourceType is the caller-facing form of core.ResourceCode, used by the
+// delegation and staking methods.
+type ResourceType int32
+
+const (
+    ResourceTypeBandwidth ResourceType = 0
+    ResourceTypeEnergy    ResourceType = 1
+)
+
+func (r ResourceType) Validate() error          // ErrInvalidResourceType for anything else
+func (r ResourceType) String() string           // "BANDWIDTH" / "ENERGY" / "UNKNOWN"
+func (r ResourceType) ToProto() core.ResourceCode // -1 for an invalid value, so validate first
+```
+
+**File:** `chain_params.go`
+
+```go
+// ChainParams is the subset of getchainparameters this SDK prices with. Fees are
+// per unit in SUN; the two creation fees are flat amounts in SUN.
+type ChainParams struct {
+    EnergyFee                           int64 // SUN per energy unit
+    TransactionFee                      int64 // SUN per bandwidth point
+    TotalEnergyCurrentLimit             int64
+    FreeNetLimit                        int64
+    CreateNewAccountFeeInSystemContract int64 // 1 TRX on mainnet
+    CreateAccountFee                    int64 // 0.1 TRX on mainnet
+}
+```
+
+**File:** `constants.go`
+
+```go
+const (
+    TrxDecimals        = 6
+    TrxAssetIdentifier = "trx"
+)
+```
+
+### Sentinel errors
+
+**File:** `errors.go`
+
+Match these with `errors.Is`; the package wraps them with `fmt.Errorf("%w: …")` rather than
+returning bare strings.
+
+```go
+// Configuration and connectivity
+ErrInvalidConfig, ErrNotConnected, ErrInvalidParams, ErrNilResponse
+
+// Addresses
+ErrInvalidAddress, ErrEmptyAddress, ErrAccountNotActivated
+
+// Transactions and amounts
+ErrInvalidAmount           // == units.ErrInvalidAmount, so one check covers both layers
+ErrInvalidTransaction, ErrInvalidPrivateKey
+ErrTransactionNotFound, ErrTransactionInfoNotFound
+
+// Resources
+ErrInvalidResourceType
+
+// Contracts
+ErrContractCallFailed      // a constant call the VM refused, most often a revert
+
+// Transport
+ErrNoHealthyNodes          // every node in every tier is currently unhealthy; retry with backoff
+```
+
+Three error types carry structured detail and unwrap to the cause:
+
+```go
+type TransportError struct { Host, Protocol, Method string; Err error }
+// ContractValidateError is a node refusing to *build* a transaction because the
+// request is wrong - not because the node is unwell, so it never counts toward
+// node health and retrying elsewhere gives the same answer. Both transports
+// produce it (gRPC through Result.Code, HTTP through the "Error" field or a
+// nested result object), and it unwraps to ErrInvalidTransaction so the older
+// sentinel check still matches.
+type ContractValidateError struct { Code api.ReturnResponseCode; Message string }
+type HTTPStatusError struct { Code int; Body string }
+type BroadcastError  struct { Code api.ReturnResponseCode; Message string }
+```
+
+---
+
+## Package pkg/client/abi
+
+**File:** `abi/abi.go`
+
+Argument encoding for contract calls. `TriggerContract`, `TriggerConstantContractCustom` and
+`EstimateEnergy` use it internally; reach for it directly when you need the calldata itself.
+
+```go
+// LoadContractABI turns a contract's ABI into the protobuf a deployment needs.
+// It takes both shapes that occur: solc's top-level array and Tron's
+// {"entrys": [...]} envelope, which is what /wallet/getcontract returns.
+// protojson handles neither - an array has no message to unmarshal into, and the
+// enums arrive lowercase against capitalised proto names.
+func LoadContractABI(jString string) (*core.SmartContract_ABI, error)
+
+// Param is one argument as a single-key map from Solidity type to value, which
+// is why the JSON form is an array of one-field objects rather than a plain list.
+type Param map[string]any
+
+func LoadFromJSON(jString string) ([]Param, error)
+func Pack(method string, param []Param) ([]byte, error)      // selector + arguments
+func GetPaddedParam(param []Param) ([]byte, error)           // arguments only, no selector
+func Signature(method string) []byte                         // first 4 bytes = the selector
+func GetParser(ABI *core.SmartContract_ABI, method string) (eABI.Arguments, error)       // outputs
+func GetInputsParser(ABI *core.SmartContract_ABI, method string) (eABI.Arguments, error) // inputs
+```
+
+The `jsonString` every contract method takes is what `LoadFromJSON` parses:
+
+```json
+[{"address":"TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"},{"uint256":"1000000"}]
+```
+
+Addresses go in base58 (`T…`) — they are decoded with `tronutils.DecodeCheck`, so a hex or bare
+address is an error. Integers go as **strings**: a JSON number is rejected outright with
+`invalid integer`, never silently rounded, because a `uint256` does not survive a float. Types
+wider than 64 bits also accept a `0x`-prefixed hex string. `method` is always the full signature
+with types and no spaces: `"transfer(address,uint256)"`.
+
+`GetPaddedParam` is what `DeployContract` uses to encode `ConstructorParams` before appending them
+to the bytecode; call it directly only if you are building a `CreateSmartContract` by hand.
 
 ---
 

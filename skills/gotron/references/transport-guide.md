@@ -192,8 +192,18 @@ reached the caller as an opaque protojson error instead of a `BroadcastError` ca
 - `GetAccount` — uses `httpAccount` helper struct because account JSON is incompatible with
   protojson; it also maps `frozenV2`/`unfrozenV2` (Stake 2.0) via `httpFreezeV2`/`httpUnFreezeV2`.
   Tron omits `"type"` for `BANDWIDTH` (the zero enum) and `"amount"` when zero.
+- `GetContract` — must use **`doRequestTransformed`**, and must *not* send `visible:true`. Every
+  bytes field it returns (`origin_address`, `contract_address`, `bytecode`, `code_hash`) arrives as
+  hex; plain `doRequest` hands that to protojson, which base64-decodes it, so a 21-byte address came
+  back as 31 bytes of nonsense with no error. `visible:true` breaks it the other way, making the node
+  answer in base58 for the same transform to mangle as hex. `origin_address` decides who pays a
+  call's energy, so a wrong one mis-prices every TRC20 estimate.
 - `GetAccountResource` — uses `httpAccountResourceMessage` helper struct
-- `TriggerConstantContract` — uses `httpTriggerConstantContractResponse` for `constant_result` parsing
+- `TriggerConstantContract` — uses `httpTriggerConstantContractResponse` for `constant_result`
+  parsing. It must copy `result.code` **and** `result.message` into `api.Return`, not just the
+  boolean: a revert answers `result.result = true` with the code absent (SUCCESS) and the failure
+  only in the message, so dropping them made every failed call look successful over HTTP while gRPC
+  reported it. `code` arrives as an enum *name*, so map it through `api.ReturnResponseCode_value`.
 - `GetTransactionInfoByBlockNum` — array wrapping + hex->base64 transform
 - `ListWitnesses` — uses `httpWitness`; `/wallet/listwitnesses` ignores `visible` and always returns
   hex addresses. `doRequestTransformed` is *not* usable here: `url` is in the `bytesFields`

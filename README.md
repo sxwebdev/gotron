@@ -16,6 +16,7 @@ A comprehensive Go SDK for the Tron blockchain. This library provides a complete
 - **Address Management** - BIP39/BIP44 mnemonic support, address generation and validation
 - **Transaction Handling** - Create, sign, and broadcast transactions
 - **TRC20 Token Support** - Transfer, approve, balance queries, token info
+- **Smart Contracts** - Deploy with constructor arguments, call, and read contract state
 - **Resource Management** - Delegate/undelegate bandwidth and energy
 - **Staking 2.0** - Stake/unstake TRX, withdraw unstaked funds, aggregated stake overview
 - **Voting & Rewards** - Vote for super representatives, claim voting rewards
@@ -318,6 +319,68 @@ claimTx, err := tron.ClaimRewards(ctx, "TOwnerAddress")
 reward, err := tron.GetUnclaimedReward(ctx, "TAddress")        // SUN
 brokerage, err := tron.GetWitnessBrokerage(ctx, "TWitness")    // percent, 0-100
 witnesses, err := tron.ListWitnesses(ctx)
+```
+
+### Deploy and Call Smart Contracts
+
+```go
+import (
+    "github.com/sxwebdev/gotron/pkg/client"
+    "github.com/sxwebdev/gotron/pkg/client/abi"
+)
+
+ctx := context.Background()
+
+// solc's ABI array, or Tron's {"entrys":[...]} envelope as returned by GetContractABI
+contractABI, err := abi.LoadContractABI(abiJSON)
+if err != nil {
+    log.Fatal(err)
+}
+
+tx, err := tron.DeployContract(ctx, client.DeployContractRequest{
+    From:     "TSenderAddress",
+    Name:     "MyToken",
+    ABI:      contractABI,
+    Bytecode: "608060405234801561001057600080fd5b50...", // solc output, 0x optional
+
+    // Constructor arguments go here, NOT appended to Bytecode: Tron has no
+    // field for them, so they are ABI-encoded and appended for you.
+    ConstructorParams: `[{"uint256":"1000000"},{"address":"TOwnerAddress"}]`,
+
+    FeeLimit:                   client.MustFromTRX(decimal.NewFromInt(1000)),
+    ConsumeUserResourcePercent: 100,      // share of each call paid by the caller
+    OriginEnergyLimit:          10000000, // required, must be > 0
+})
+if err != nil {
+    log.Fatal(err)
+}
+
+// The address is fixed the moment the transaction is built - no need to wait
+// for the receipt. Read it after the last raw_data edit: the fee limit lives in
+// raw_data and changes the txID the address is derived from.
+contractAddress, err := client.DeployedContractAddress(tx.GetTransaction())
+
+if err := tron.SignTransaction(tx.GetTransaction(), privateKey); err != nil {
+    log.Fatal(err)
+}
+if _, err := tron.BroadcastTransaction(ctx, tx.GetTransaction()); err != nil {
+    log.Fatal(err)
+}
+
+// Calling a deployed contract
+tx, err = tron.TriggerContract(ctx, "TSenderAddress", contractAddress,
+    "transfer(address,uint256)",
+    `[{"address":"TRecipient"},{"uint256":"1000000"}]`,
+    client.MustFromTRX(decimal.NewFromInt(100)), // fee limit
+    0, "", 0)                                    // call value, TRC10 id, TRC10 amount
+
+// Read-only call: nothing is broadcast, the answer is in GetConstantResult()
+res, err := tron.TriggerConstantContractCustom(ctx, "TSenderAddress", contractAddress,
+    "balanceOf(address)", `[{"address":"TRecipient"}]`)
+if errors.Is(err, client.ErrContractCallFailed) {
+    // The VM refused the call - usually a revert. res is still returned, so the
+    // energy burned before it gave up remains readable.
+}
 ```
 
 ### Query Blocks and Transactions
@@ -644,6 +707,8 @@ gotron/
 │   │   ├── account.go       # Account operations
 │   │   ├── transfer.go      # TRX transfers
 │   │   ├── trc20.go         # TRC20 token operations
+│   │   ├── contract.go      # Deploy and call smart contracts
+│   │   ├── abi/             # Contract ABI and call-argument encoding
 │   │   ├── resources.go     # Resource delegation
 │   │   ├── staking.go       # Stake 2.0 (stake/unstake/withdraw)
 │   │   ├── witness.go       # SR voting and rewards
@@ -688,6 +753,12 @@ if errors.Is(err, client.ErrAccountNotFound) {
 // - client.ErrInvalidConfig
 // - client.ErrTransactionNotFound
 // - client.ErrInvalidResourceType
+// - client.ErrContractCallFailed — a constant call the VM refused (usually a revert)
+//
+// Structured errors, matched with errors.As:
+// - *client.ContractValidateError — the node refused to build the transaction because
+//   the request is wrong; retrying elsewhere gives the same answer
+// - *client.BroadcastError, *client.TransportError, *client.HTTPStatusError
 // - client.ErrNoHealthyNodes — every node of every tier is currently unhealthy
 ```
 

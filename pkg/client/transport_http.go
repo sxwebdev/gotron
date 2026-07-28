@@ -425,7 +425,10 @@ func (t *HTTPTransport) doTxRequestWrapped(ctx context.Context, endpoint string,
 		if decoded, err := hex.DecodeString(message); err == nil {
 			message = string(decoded)
 		}
-		return nil, t.wrapErr(endpoint, fmt.Errorf("%w: %s: %s", ErrInvalidTransaction, resp.Result.Code, message))
+		return nil, t.wrapErr(endpoint, &ContractValidateError{
+			Code:    api.ReturnResponseCode(api.ReturnResponseCode_value[resp.Result.Code]),
+			Message: message,
+		})
 	}
 
 	if len(resp.Transaction) == 0 {
@@ -446,8 +449,12 @@ func (t *HTTPTransport) parseTxResponse(endpoint string, respBody []byte) (*api.
 		return nil, t.wrapErr(endpoint, fmt.Errorf("unmarshal transaction: %w (body: %s)", err, string(respBody)))
 	}
 
+	// The node answers 200 with this field when it refuses to build the
+	// transaction. It is the same class of failure gRPC reports through
+	// Result.Code, so it gets the same type - otherwise which errors a caller
+	// can match on would depend on the transport.
 	if resp.Error != "" {
-		return nil, t.wrapErr(endpoint, fmt.Errorf("%s", resp.Error))
+		return nil, t.wrapErr(endpoint, &ContractValidateError{Message: resp.Error})
 	}
 
 	if resp.RawDataHex == "" {
@@ -993,10 +1000,15 @@ func (t *HTTPTransport) TriggerConstantContract(ctx context.Context, contract *c
 		return nil, fmt.Errorf("unmarshal trigger constant contract response: %w", err)
 	}
 
-	// Convert constant_result from hex strings to bytes
+	// Code and message must be carried over, not just the boolean: a revert
+	// arrives as result.result = true with the failure only in message, so
+	// dropping them made every failed call indistinguishable from a successful
+	// one over HTTP while gRPC reported it.
 	result := &api.TransactionExtention{
 		Result: &api.Return{
-			Result: httpRes.Result.Result,
+			Result:  httpRes.Result.Result,
+			Code:    api.ReturnResponseCode(api.ReturnResponseCode_value[httpRes.Result.Code]),
+			Message: []byte(httpRes.Result.Message),
 		},
 		EnergyUsed:    httpRes.EnergyUsed,
 		EnergyPenalty: httpRes.EnergyPenalty,
@@ -1058,13 +1070,21 @@ func (t *HTTPTransport) DeployContract(ctx context.Context, contract *core.Creat
 }
 
 func (t *HTTPTransport) GetContract(ctx context.Context, address []byte) (*core.SmartContract, error) {
+	// Every bytes field here - origin_address, contract_address, bytecode,
+	// code_hash - arrives as hex, so the response needs the hex-to-base64
+	// transform before protojson sees it. Plain doRequest fed the hex straight
+	// to protojson, which base64-decoded it: a 21-byte address came back as 31
+	// bytes of nonsense, so whoever read origin_address (who pays a call's
+	// energy, who may update the contract) got a garbage account and no error.
+	//
+	// visible:true would defeat this in the other direction, making the node
+	// answer in base58 for the transform to mangle as if it were hex.
 	reqBody := map[string]any{
-		"value":   tronutils.EncodeCheck(address),
-		"visible": true,
+		"value": hex.EncodeToString(address),
 	}
 
 	result := &core.SmartContract{}
-	if err := t.doRequest(ctx, "/wallet/getcontract", reqBody, result); err != nil {
+	if err := t.doRequestTransformed(ctx, "/wallet/getcontract", reqBody, result); err != nil {
 		return nil, err
 	}
 

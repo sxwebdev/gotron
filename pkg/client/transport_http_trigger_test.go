@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/sxwebdev/gotron/pkg/tronutils"
+	"github.com/sxwebdev/gotron/schema/pb/api"
 	"github.com/sxwebdev/gotron/schema/pb/core"
 	"google.golang.org/protobuf/proto"
 )
@@ -90,6 +91,11 @@ func TestHTTPTriggerContractSurfacesNodeError(t *testing.T) {
 	require.ErrorIs(t, err, ErrInvalidTransaction)
 	require.ErrorContains(t, err, "CONTRACT_VALIDATE_ERROR")
 	require.ErrorContains(t, err, "account des validate error")
+
+	// Typed, so a caller can tell a refused request from an unwell node without
+	// reading the message.
+	var cve *ContractValidateError
+	require.ErrorAs(t, err, &cve)
 }
 
 // publicnode returns the same failure with a plain-text message rather than hex, so
@@ -106,4 +112,134 @@ func TestHTTPTriggerContractSurfacesPlainTextNodeError(t *testing.T) {
 	_, err = tr.TriggerContract(t.Context(), &core.TriggerSmartContract{OwnerAddress: owner, ContractAddress: owner})
 	require.ErrorIs(t, err, ErrInvalidTransaction)
 	require.ErrorContains(t, err, "No contract or not a valid smart contract")
+}
+
+// A reverted constant call, verbatim from tron-rpc.publicnode.com. The node
+// reports result=true with code absent (i.e. SUCCESS) and puts the failure only
+// in message, so dropping code and message - which this transport used to do -
+// leaves a revert indistinguishable from a successful call over HTTP while gRPC
+// reports it. Every caller that trusts the result then prices the energy burned
+// before the revert as the cost of the whole call.
+const liveConstantRevertResponse = `{"result":{"result":true,"message":"REVERT opcode executed"},
+	"constant_result":[""],"energy_used":8624,"energy_penalty":5859,
+	"transaction":{"ret":[{"ret":"FAILED"}],"visible":true,
+		"txID":"0c32fa4b4ea21f8eb5d65daf01c62ac1c252a509a20875788f02d4c93211e1a8"}}`
+
+func TestHTTPTriggerConstantContractCarriesTheFailure(t *testing.T) {
+	tr, _ := newStubTransport(t, http.StatusOK, liveConstantRevertResponse)
+
+	owner, err := tronutils.DecodeCheck(triggerOwnerAddr)
+	require.NoError(t, err)
+
+	tx, err := tr.TriggerConstantContract(t.Context(), &core.TriggerSmartContract{
+		OwnerAddress:    owner,
+		ContractAddress: owner,
+	})
+	// The transport itself does not judge the call; it must simply not lose the
+	// evidence.
+	require.NoError(t, err)
+
+	require.Equal(t, "REVERT opcode executed", string(tx.GetResult().GetMessage()))
+	require.True(t, tx.GetResult().GetResult(), "a revert still answers result=true")
+	require.Equal(t, int64(8624), tx.GetEnergyUsed())
+	require.Equal(t, int64(5859), tx.GetEnergyPenalty())
+}
+
+func TestHTTPTriggerConstantContractMapsTheResultCode(t *testing.T) {
+	const body = `{"result":{"result":false,"code":"CONTRACT_VALIDATE_ERROR","message":"boom"},"constant_result":[]}`
+
+	tr, _ := newStubTransport(t, http.StatusOK, body)
+
+	owner, err := tronutils.DecodeCheck(triggerOwnerAddr)
+	require.NoError(t, err)
+
+	tx, err := tr.TriggerConstantContract(t.Context(), &core.TriggerSmartContract{
+		OwnerAddress:    owner,
+		ContractAddress: owner,
+	})
+	require.NoError(t, err)
+
+	// The code arrives as a name, and the enum it maps to is what callers
+	// compare against - leaving it zero reads as SUCCESS.
+	require.Equal(t, api.Return_CONTRACT_VALIDATE_ERROR, tx.GetResult().GetCode())
+	require.Equal(t, "boom", string(tx.GetResult().GetMessage()))
+}
+
+func TestHTTPTriggerConstantContractSuccessStaysClean(t *testing.T) {
+	const body = `{"result":{"result":true},
+		"constant_result":["0000000000000000000000000000000000000000000000000000000000000001"],
+		"energy_used":64285}`
+
+	tr, _ := newStubTransport(t, http.StatusOK, body)
+
+	owner, err := tronutils.DecodeCheck(triggerOwnerAddr)
+	require.NoError(t, err)
+
+	tx, err := tr.TriggerConstantContract(t.Context(), &core.TriggerSmartContract{
+		OwnerAddress:    owner,
+		ContractAddress: owner,
+	})
+	require.NoError(t, err)
+
+	// An absent code must stay SUCCESS and an absent message must stay empty,
+	// or the client layer would report every successful read as a failure.
+	require.Equal(t, api.Return_SUCCESS, tx.GetResult().GetCode())
+	require.Empty(t, tx.GetResult().GetMessage())
+	require.Len(t, tx.GetConstantResult(), 1)
+}
+
+// Verbatim /wallet/getcontract response (addresses hex, as the node sends them
+// when visible is not set). Every bytes field here has to survive: origin_address
+// decides who pays a call's energy.
+const liveGetContractResponse = `{
+	"origin_address":"414698ca96dd198ae04e6c45b199516c17c31dbc95",
+	"contract_address":"41ea51342dabbb928ae1e576bd39eff8aaf070a8c6",
+	"abi":{"entrys":[{"name":"transfer","stateMutability":"Nonpayable","type":"Function",
+		"inputs":[{"name":"to","type":"address"},{"name":"value","type":"uint256"}],
+		"outputs":[{"name":"","type":"bool"}]}]},
+	"bytecode":"608060405260043610",
+	"name":"TetherToken",
+	"origin_energy_limit":1000000000,
+	"code_hash":"a1b2c3d4",
+	"consume_user_resource_percent":25
+}`
+
+func TestHTTPGetContractDecodesTheByteFields(t *testing.T) {
+	tr, lastReq := newStubTransport(t, http.StatusOK, liveGetContractResponse)
+
+	addr, err := tronutils.DecodeCheck(triggerContractAddr)
+	require.NoError(t, err)
+
+	got, err := tr.GetContract(t.Context(), addr)
+	require.NoError(t, err)
+
+	// Handing the node's hex straight to protojson base64-decodes it: a
+	// 21-byte address came back as 31 bytes of nonsense, with no error, and
+	// callers billed the wrong account for a contract's energy.
+	wantOrigin, err := hex.DecodeString("414698ca96dd198ae04e6c45b199516c17c31dbc95")
+	require.NoError(t, err)
+	require.Equal(t, wantOrigin, got.GetOriginAddress())
+	require.Len(t, got.GetOriginAddress(), 21)
+
+	wantContract, err := hex.DecodeString("41ea51342dabbb928ae1e576bd39eff8aaf070a8c6")
+	require.NoError(t, err)
+	require.Equal(t, wantContract, got.GetContractAddress())
+
+	require.Equal(t, []byte{0x60, 0x80, 0x60, 0x40, 0x52, 0x60, 0x04, 0x36, 0x10}, got.GetBytecode())
+	require.Equal(t, []byte{0xa1, 0xb2, 0xc3, 0xd4}, got.GetCodeHash())
+
+	// The scalars that always worked must keep working.
+	require.Equal(t, "TetherToken", got.GetName())
+	require.Equal(t, int64(25), got.GetConsumeUserResourcePercent())
+	require.Equal(t, int64(1_000_000_000), got.GetOriginEnergyLimit())
+
+	// The ABI's strings must not be mistaken for bytes on the way through.
+	require.Len(t, got.GetAbi().GetEntrys(), 1)
+	require.Equal(t, "transfer", got.GetAbi().GetEntrys()[0].GetName())
+	require.Equal(t, "address", got.GetAbi().GetEntrys()[0].GetInputs()[0].GetType())
+
+	// visible must stay off: with it the node answers in base58, which the
+	// same transform would then mangle as if it were hex.
+	require.NotContains(t, *lastReq, "visible")
+	require.Equal(t, hex.EncodeToString(addr), (*lastReq)["value"])
 }

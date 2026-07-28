@@ -131,6 +131,15 @@ All TRC20 methods are in `pkg/client/trc20.go`. The low-level `TRC20Call` method
 - `TRC20Send` — transfer tokens (requires signing + broadcast)
 - `TRC20Approve`, `TRC20TransferFrom` — approval flow
 
+### Deploying and calling contracts
+
+All in `pkg/client/contract.go`; every write method returns an **unsigned** transaction, so sign with `SignTransaction` and send with `BroadcastTransaction`.
+
+- **Deploy:** `DeployContract(ctx, DeployContractRequest{...})`. Build the `ABI` field with `abi.LoadContractABI` — it takes solc's top-level array *or* Tron's `{"entrys":[…]}` envelope, neither of which `protojson` can parse (an array has no message to unmarshal into, and solc's lowercase `"function"`/`"nonpayable"` do not match the capitalised proto enums). Put constructor arguments in `ConstructorParams` in the `abi` jsonString form; Tron has no field for them, so they are ABI-encoded and appended to the bytecode, and appending them yourself as well encodes them twice. Set `FeeLimit` — the node's default is usually too low to finish a deployment.
+- **Contract address:** `DeployedContractAddress(tx)` derives it locally as `keccak256(txID ‖ owner)` (low 20 bytes, `0x41` prefix), so it is known before broadcasting. Read it **after** the last `raw_data` edit — the fee limit is inside `raw_data` and changes the txID, hence the address. Pinned in tests against USDT and `TQuCVz7…` and their real creation transactions.
+- **Call:** `TriggerContract(ctx, from, contract, method, jsonString, feeLimit, callValue, tokenID, tokenAmount)`; read-only via `TriggerConstantContractCustom` (accepts an empty `from`).
+- **A revert is not signalled by the result code.** The node answers `result.result = true` with code `SUCCESS` and reports the failure only in `result.message` (`"REVERT opcode executed"`), leaving `constant_result` empty and `energy_used` at the pre-revert amount — 8624 vs 64285 for a real USDT transfer. `TriggerConstantContract` keys on the message and returns `ErrContractCallFailed`, with the extention alongside the error so the partial result stays readable.
+
 ### Estimating fees
 
 Cost estimators all return `*EstimateResult { Energy, Bandwidth, Fee }` — `Energy` and `Bandwidth` in raw resource points, `Fee` as a `SUN`.

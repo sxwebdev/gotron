@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/shopspring/decimal"
+	"github.com/sxwebdev/gotron/pkg/tronutils"
 	"github.com/sxwebdev/gotron/pkg/units"
 )
 
@@ -16,8 +17,30 @@ const estimateTransferFeeLimit = SUN(100 * units.SunPerTRX)
 // ResourceUsage is what a transaction needs from the network, before any
 // question of who pays for it.
 type ResourceUsage struct {
+	// Bandwidth is the whole transaction's bandwidth, matching the receipt's
+	// net_usage + net_fee.
 	Bandwidth decimal.Decimal `json:"bandwidth"`
-	Energy    decimal.Decimal `json:"energy"`
+	// Energy is the whole call's energy, matching the receipt's
+	// energy_usage_total. It is not what the sender pays for - see
+	// ContractEnergy.
+	Energy decimal.Decimal `json:"energy"`
+	// ContractEnergy is the part of Energy the contract's owner pays instead of
+	// the sender, matching the receipt's origin_energy_usage. It is zero for a
+	// TRX transfer, and for a contract whose consume_user_resource_percent is
+	// 100 or whose owner has run out of energy.
+	ContractEnergy decimal.Decimal `json:"contract_energy"`
+}
+
+// SenderEnergy is the energy the sender is actually accountable for: the call's
+// total less whatever the contract's owner covers.
+func (u ResourceUsage) SenderEnergy() decimal.Decimal {
+	if !u.Energy.IsPositive() {
+		return decimal.Zero
+	}
+	if u.ContractEnergy.GreaterThanOrEqual(u.Energy) {
+		return decimal.Zero
+	}
+	return u.Energy.Sub(u.ContractEnergy)
 }
 
 // SenderResources is what the sending account can cover a transaction with.
@@ -115,6 +138,51 @@ func billableBandwidth(needed, staked, free decimal.Decimal) decimal.Decimal {
 // nothing beyond the 1 TRX, and none paid a per-byte amount.
 func createAccountNeedsFee(needed, staked decimal.Decimal) bool {
 	return needed.GreaterThan(staked)
+}
+
+// contractEnergyShare returns how much of a call's energy the contract's owner
+// pays instead of the caller.
+//
+// A Tron contract carries consume_user_resource_percent, the share of every
+// call the *caller* pays; the owner covers the rest out of the energy it staked,
+// capped per call by origin_energy_limit. java-tron settles it in
+// ReceiptCapsule.payEnergyBill: the owner's share is
+// energy_usage_total * (100 - percent) / 100, then capped by the smaller of its
+// remaining staked energy and origin_energy_limit, and whatever is left over
+// falls back to the caller. Assuming the caller pays everything is how an
+// estimate reports a fee for a transfer the chain settles for nothing: verified
+// on Nile, tx e3e1633c… moved USDT with energy_usage_total 14650,
+// origin_energy_usage 14650, energy_fee 0 and fee 0, where this SDK had
+// quoted 1.465 TRX.
+//
+// The percentage is applied with integer truncation, as java-tron does.
+func contractEnergyShare(total decimal.Decimal, consumeUserResourcePercent, originEnergyLimit int64, originAvailable decimal.Decimal) decimal.Decimal {
+	if !total.IsPositive() {
+		return decimal.Zero
+	}
+
+	ownerPercent := 100 - consumeUserResourcePercent
+	if ownerPercent <= 0 {
+		return decimal.Zero
+	}
+	if ownerPercent > 100 {
+		ownerPercent = 100
+	}
+
+	share := total.Mul(decimal.NewFromInt(ownerPercent)).Div(decimal.NewFromInt(100)).Floor()
+
+	limit := decimal.NewFromInt(originEnergyLimit)
+	if originAvailable.LessThan(limit) {
+		limit = originAvailable
+	}
+	if !limit.IsPositive() {
+		return decimal.Zero
+	}
+	if share.GreaterThan(limit) {
+		return limit
+	}
+
+	return share
 }
 
 // billableEnergy returns the energy a transaction is actually charged for.
@@ -217,6 +285,11 @@ func (c *Client) EstimateTRC20Transfer(ctx context.Context, fromAddress, toAddre
 
 	usage.Energy = decimal.NewFromInt(data.GetEnergyUsed())
 
+	usage.ContractEnergy, err = c.contractEnergySubsidy(ctx, fromAddress, contractAddress, usage.Energy)
+	if err != nil {
+		return nil, err
+	}
+
 	// No activation charge, whatever state the recipient is in. The
 	// account-creation fees belong to Tron's system contracts; a contract call
 	// that creates an account is billed 25000 energy for it instead (java-tron's
@@ -236,6 +309,47 @@ func (c *Client) EstimateTRC20Transfer(ctx context.Context, fromAddress, toAddre
 	//     difference between a recipient that has no balance and one that has no
 	//     account.
 	return c.priceTransfer(ctx, fromAddress, usage, false)
+}
+
+// contractEnergySubsidy reads the contract and its owner to work out how much
+// of a call's energy the owner absorbs.
+//
+// It costs two extra RPCs, which is the price of not inventing a fee: the split
+// depends on the contract's settings and on the owner's balance right now, and
+// neither can be guessed from the call itself.
+func (c *Client) contractEnergySubsidy(ctx context.Context, fromAddress, contractAddress string, total decimal.Decimal) (decimal.Decimal, error) {
+	if !total.IsPositive() {
+		return decimal.Zero, nil
+	}
+
+	contract, err := c.GetContract(ctx, contractAddress)
+	if err != nil {
+		return decimal.Zero, fmt.Errorf("get contract: %w", err)
+	}
+
+	origin := contract.GetOriginAddress()
+	if len(origin) == 0 {
+		return decimal.Zero, nil
+	}
+
+	// Calling one's own contract is settled as a self-call: java-tron skips the
+	// split entirely and bills the caller for everything.
+	originAddress := tronutils.EncodeCheck(origin)
+	if originAddress == fromAddress {
+		return decimal.Zero, nil
+	}
+
+	res, err := c.GetAccountResource(ctx, originAddress)
+	if err != nil {
+		return decimal.Zero, fmt.Errorf("get contract owner resources: %w", err)
+	}
+
+	return contractEnergyShare(
+		total,
+		contract.GetConsumeUserResourcePercent(),
+		contract.GetOriginEnergyLimit(),
+		c.AvailableEnergy(res),
+	), nil
 }
 
 // priceTransfer turns what a transfer consumes into what it costs, by pricing
@@ -263,8 +377,10 @@ func (c *Client) priceTransfer(ctx context.Context, fromAddress string, usage Re
 	}
 
 	charges := TransferCharges{
+		// SenderEnergy, not Energy: a contract that pays for its own calls
+		// leaves the sender nothing to be billed for.
 		Energy: units.NewEnergy(
-			billableEnergy(usage.Energy, available.StakedEnergy),
+			billableEnergy(usage.SenderEnergy(), available.StakedEnergy),
 		).ToSUN(chainParams.EnergyFee),
 	}
 

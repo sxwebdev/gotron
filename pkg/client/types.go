@@ -126,6 +126,29 @@ type Vote struct {
 	Count          int64  `json:"count"`
 }
 
+// Delegation is one active resource delegation between two accounts.
+//
+// The chain reports a delegation as one record covering both resources, so the
+// two amounts are kept together rather than split into a row each: a single
+// pair of accounts can be delegating bandwidth and energy at once, on separate
+// lock schedules.
+type Delegation struct {
+	// From is the account that staked the TRX and lent the resource out.
+	From string `json:"from"`
+	// To is the account that can spend it.
+	To string `json:"to"`
+	// Bandwidth is the staked amount lent for bandwidth, zero if none.
+	Bandwidth SUN `json:"bandwidth"`
+	// BandwidthExpiresAt is when the bandwidth delegation may be reclaimed. It
+	// is the zero time for an unlocked delegation, which is reclaimable at any
+	// time - not a delegation that expired in 1970.
+	BandwidthExpiresAt time.Time `json:"bandwidth_expires_at"`
+	// Energy is the staked amount lent for energy, zero if none.
+	Energy SUN `json:"energy"`
+	// EnergyExpiresAt is the energy delegation's lock expiry, zero if unlocked.
+	EnergyExpiresAt time.Time `json:"energy_expires_at"`
+}
+
 // PendingUnstake is one in-flight unstake entry. Amount becomes withdrawable at
 // ExpireTime.
 type PendingUnstake struct {

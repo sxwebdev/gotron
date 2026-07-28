@@ -49,6 +49,50 @@ func (e *HTTPStatusError) Error() string {
 	return fmt.Sprintf("http status %d: %s", e.Code, e.Body)
 }
 
+// ContractValidateError is returned when a node refuses to *build* a
+// transaction because the request itself is invalid - a negative amount, an
+// account that does not exist, nothing to unfreeze, and so on.
+//
+// It is a distinct type because such a refusal says nothing about the node: it
+// is the caller's request that is wrong, and retrying it against another node
+// gives the same answer. Without a type the only way to tell it apart from a
+// node problem was to match on the message text, and the two arrive by
+// different routes - gRPC returns a transaction carrying an error Result, HTTP
+// answers 200 with an "Error" field - so the text differed by transport too.
+//
+// Errors of this type never count toward a node's health: isNetworkError is
+// conservative and answers false for anything it does not recognise as a
+// transport failure. TestValidateErrorsDoNotMarkANodeUnhealthy pins that, so a
+// future classifier rule cannot start evicting nodes over a bad request.
+type ContractValidateError struct {
+	// Code is the node's response code. It is zero when the node did not send
+	// one, which is the normal case over HTTP - a zero Code therefore does not
+	// mean success.
+	Code api.ReturnResponseCode
+	// Message is the node's reason, verbatim. java-tron usually prefixes it
+	// with the exception class, e.g.
+	// "class org.tron.core.exception.ContractValidateException : ...".
+	Message string
+}
+
+// Unwrap keeps errors.Is(err, ErrInvalidTransaction) true. A refused request is
+// a kind of invalid transaction, and callers matching that sentinel before this
+// type existed should not have to change.
+func (e *ContractValidateError) Unwrap() error { return ErrInvalidTransaction }
+
+func (e *ContractValidateError) Error() string {
+	switch {
+	case e.Message != "" && e.Code != 0:
+		return fmt.Sprintf("contract validate error: %s: %s", e.Code, e.Message)
+	case e.Message != "":
+		return "contract validate error: " + e.Message
+	case e.Code != 0:
+		return fmt.Sprintf("contract validate error: %s", e.Code)
+	default:
+		return "contract validate error"
+	}
+}
+
 // BroadcastError is returned by Client.BroadcastTransaction when the node
 // rejects a transaction.
 //
@@ -99,6 +143,17 @@ var (
 
 	// Resources errors
 	ErrInvalidResourceType = errors.New("invalid resource type")
+
+	// ErrContractCallFailed marks a constant contract call the node executed but
+	// that did not complete - most often a revert.
+	//
+	// Such a call is not signalled by the result code: the node answers
+	// result.result = true with code SUCCESS and reports the failure only in
+	// result.message ("REVERT opcode executed"), leaving constant_result empty
+	// and energy_used at whatever was burned before the revert. Treating that as
+	// success is how an estimate for a transfer that cannot succeed comes back
+	// an order of magnitude too cheap.
+	ErrContractCallFailed = errors.New("contract call failed")
 
 	// ErrNoHealthyNodes is returned when no node in any tier is currently
 	// marked healthy. The health-checker runs continuously and will return

@@ -21,12 +21,19 @@ type fakeTransport struct {
 	getChainParameters      func(ctx context.Context) (*core.ChainParameters, error)
 	broadcastTransaction    func(ctx context.Context, tx *core.Transaction) (*api.Return, error)
 	getContract             func(ctx context.Context, address []byte) (*core.SmartContract, error)
-	getNowBlock             func(ctx context.Context) (*api.BlockExtention, error)
-	getBlockByNum           func(ctx context.Context, num int64) (*api.BlockExtention, error)
-	getTransactionById      func(ctx context.Context, id []byte) (*core.Transaction, error)
-	getTransactionInfoById  func(ctx context.Context, id []byte) (*core.TransactionInfo, error)
-	delegateResource        func(ctx context.Context, c *core.DelegateResourceContract) (*api.TransactionExtention, error)
-	unDelegateResource      func(ctx context.Context, c *core.UnDelegateResourceContract) (*api.TransactionExtention, error)
+	deployContract          func(ctx context.Context, c *core.CreateSmartContract) (*api.TransactionExtention, error)
+
+	getDelegatedResource               func(ctx context.Context, m *api.DelegatedResourceMessage) (*api.DelegatedResourceList, error)
+	getDelegatedResourceV2             func(ctx context.Context, m *api.DelegatedResourceMessage) (*api.DelegatedResourceList, error)
+	getDelegatedResourceAccountIndex   func(ctx context.Context, address []byte) (*core.DelegatedResourceAccountIndex, error)
+	getDelegatedResourceAccountIndexV2 func(ctx context.Context, address []byte) (*core.DelegatedResourceAccountIndex, error)
+	getCanDelegatedMaxSize             func(ctx context.Context, m *api.CanDelegatedMaxSizeRequestMessage) (*api.CanDelegatedMaxSizeResponseMessage, error)
+	getNowBlock                        func(ctx context.Context) (*api.BlockExtention, error)
+	getBlockByNum                      func(ctx context.Context, num int64) (*api.BlockExtention, error)
+	getTransactionById                 func(ctx context.Context, id []byte) (*core.Transaction, error)
+	getTransactionInfoById             func(ctx context.Context, id []byte) (*core.TransactionInfo, error)
+	delegateResource                   func(ctx context.Context, c *core.DelegateResourceContract) (*api.TransactionExtention, error)
+	unDelegateResource                 func(ctx context.Context, c *core.UnDelegateResourceContract) (*api.TransactionExtention, error)
 
 	freezeBalanceV2              func(ctx context.Context, c *core.FreezeBalanceV2Contract) (*api.TransactionExtention, error)
 	unfreezeBalanceV2            func(ctx context.Context, c *core.UnfreezeBalanceV2Contract) (*api.TransactionExtention, error)
@@ -175,7 +182,10 @@ func (f *fakeTransport) GetTransactionInfoById(ctx context.Context, id []byte) (
 	return nil, nil
 }
 
-func (f *fakeTransport) DeployContract(context.Context, *core.CreateSmartContract) (*api.TransactionExtention, error) {
+func (f *fakeTransport) DeployContract(ctx context.Context, c *core.CreateSmartContract) (*api.TransactionExtention, error) {
+	if f.deployContract != nil {
+		return f.deployContract(ctx, c)
+	}
 	return nil, nil
 }
 
@@ -187,23 +197,38 @@ func (f *fakeTransport) UpdateEnergyLimit(context.Context, *core.UpdateEnergyLim
 	return nil, nil
 }
 
-func (f *fakeTransport) GetDelegatedResource(context.Context, *api.DelegatedResourceMessage) (*api.DelegatedResourceList, error) {
+func (f *fakeTransport) GetDelegatedResource(ctx context.Context, m *api.DelegatedResourceMessage) (*api.DelegatedResourceList, error) {
+	if f.getDelegatedResource != nil {
+		return f.getDelegatedResource(ctx, m)
+	}
 	return nil, nil
 }
 
-func (f *fakeTransport) GetDelegatedResourceV2(context.Context, *api.DelegatedResourceMessage) (*api.DelegatedResourceList, error) {
+func (f *fakeTransport) GetDelegatedResourceV2(ctx context.Context, m *api.DelegatedResourceMessage) (*api.DelegatedResourceList, error) {
+	if f.getDelegatedResourceV2 != nil {
+		return f.getDelegatedResourceV2(ctx, m)
+	}
 	return nil, nil
 }
 
-func (f *fakeTransport) GetDelegatedResourceAccountIndex(context.Context, []byte) (*core.DelegatedResourceAccountIndex, error) {
+func (f *fakeTransport) GetDelegatedResourceAccountIndex(ctx context.Context, address []byte) (*core.DelegatedResourceAccountIndex, error) {
+	if f.getDelegatedResourceAccountIndex != nil {
+		return f.getDelegatedResourceAccountIndex(ctx, address)
+	}
 	return nil, nil
 }
 
-func (f *fakeTransport) GetDelegatedResourceAccountIndexV2(context.Context, []byte) (*core.DelegatedResourceAccountIndex, error) {
+func (f *fakeTransport) GetDelegatedResourceAccountIndexV2(ctx context.Context, address []byte) (*core.DelegatedResourceAccountIndex, error) {
+	if f.getDelegatedResourceAccountIndexV2 != nil {
+		return f.getDelegatedResourceAccountIndexV2(ctx, address)
+	}
 	return nil, nil
 }
 
-func (f *fakeTransport) GetCanDelegatedMaxSize(context.Context, *api.CanDelegatedMaxSizeRequestMessage) (*api.CanDelegatedMaxSizeResponseMessage, error) {
+func (f *fakeTransport) GetCanDelegatedMaxSize(ctx context.Context, m *api.CanDelegatedMaxSizeRequestMessage) (*api.CanDelegatedMaxSizeResponseMessage, error) {
+	if f.getCanDelegatedMaxSize != nil {
+		return f.getCanDelegatedMaxSize(ctx, m)
+	}
 	return nil, nil
 }
 
