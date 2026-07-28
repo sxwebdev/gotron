@@ -16,6 +16,12 @@ const (
 	testAddress  = "TZ4UXDV5ZhNW7fb2AMSbgfAEZ7hWsnYS2g" // Binance hot wallet
 	usdtContract = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t" // USDT contract
 
+	// Account with an active Stake 2.0 position (both bandwidth and energy),
+	// a non-zero brokerage and active SR votes.
+	stakedAddress = "TUFaFimz7DYk8DVzUznvBgzBAFGppLEJaL"
+	// Registered super representative (huobiwallet).
+	witnessAddress = "TN2W4cc7a4dsYyTLiLMWa9m7jVpdLjGvYs"
+
 	// Known block with transactions for testing
 	testBlockNum = uint64(79831098)
 )

@@ -139,6 +139,10 @@ func (c *Client) DelegateResource(ctx context.Context, owner, receiver string, r
 		return nil, err
 	}
 
+	if err := checkTransaction(response); err != nil {
+		return nil, err
+	}
+
 	return response, nil
 }
 
@@ -179,6 +183,10 @@ func (c *Client) ReclaimResource(ctx context.Context, owner, receiver string, re
 
 	response, err := c.transport.UnDelegateResource(ctx, contract)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := checkTransaction(response); err != nil {
 		return nil, err
 	}
 

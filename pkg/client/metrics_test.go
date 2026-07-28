@@ -163,6 +163,50 @@ func (m *mockTransport) UnDelegateResource(context.Context, *core.UnDelegateReso
 	return nil, m.err
 }
 
+func (m *mockTransport) FreezeBalanceV2(context.Context, *core.FreezeBalanceV2Contract) (*api.TransactionExtention, error) {
+	return nil, m.err
+}
+
+func (m *mockTransport) UnfreezeBalanceV2(context.Context, *core.UnfreezeBalanceV2Contract) (*api.TransactionExtention, error) {
+	return nil, m.err
+}
+
+func (m *mockTransport) WithdrawExpireUnfreeze(context.Context, *core.WithdrawExpireUnfreezeContract) (*api.TransactionExtention, error) {
+	return nil, m.err
+}
+
+func (m *mockTransport) CancelAllUnfreezeV2(context.Context, *core.CancelAllUnfreezeV2Contract) (*api.TransactionExtention, error) {
+	return nil, m.err
+}
+
+func (m *mockTransport) GetAvailableUnfreezeCount(context.Context, *api.GetAvailableUnfreezeCountRequestMessage) (*api.GetAvailableUnfreezeCountResponseMessage, error) {
+	return nil, m.err
+}
+
+func (m *mockTransport) GetCanWithdrawUnfreezeAmount(context.Context, *api.CanWithdrawUnfreezeAmountRequestMessage) (*api.CanWithdrawUnfreezeAmountResponseMessage, error) {
+	return nil, m.err
+}
+
+func (m *mockTransport) VoteWitnessAccount(context.Context, *core.VoteWitnessContract) (*api.TransactionExtention, error) {
+	return nil, m.err
+}
+
+func (m *mockTransport) WithdrawBalance(context.Context, *core.WithdrawBalanceContract) (*api.TransactionExtention, error) {
+	return nil, m.err
+}
+
+func (m *mockTransport) ListWitnesses(context.Context) (*api.WitnessList, error) {
+	return nil, m.err
+}
+
+func (m *mockTransport) GetRewardInfo(context.Context, []byte) (*api.NumberMessage, error) {
+	return nil, m.err
+}
+
+func (m *mockTransport) GetBrokerageInfo(context.Context, []byte) (*api.NumberMessage, error) {
+	return nil, m.err
+}
+
 func (m *mockTransport) GetAssetIssueById(context.Context, []byte) (*core.AssetIssueContract, error) {
 	return nil, m.err
 }

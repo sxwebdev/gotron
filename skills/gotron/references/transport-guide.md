@@ -58,6 +58,21 @@ type Transport interface {
     DelegateResource(ctx context.Context, contract *core.DelegateResourceContract) (*api.TransactionExtention, error)
     UnDelegateResource(ctx context.Context, contract *core.UnDelegateResourceContract) (*api.TransactionExtention, error)
 
+    // Staking (Stake 2.0)
+    FreezeBalanceV2(ctx context.Context, contract *core.FreezeBalanceV2Contract) (*api.TransactionExtention, error)
+    UnfreezeBalanceV2(ctx context.Context, contract *core.UnfreezeBalanceV2Contract) (*api.TransactionExtention, error)
+    WithdrawExpireUnfreeze(ctx context.Context, contract *core.WithdrawExpireUnfreezeContract) (*api.TransactionExtention, error)
+    CancelAllUnfreezeV2(ctx context.Context, contract *core.CancelAllUnfreezeV2Contract) (*api.TransactionExtention, error)
+    GetAvailableUnfreezeCount(ctx context.Context, msg *api.GetAvailableUnfreezeCountRequestMessage) (*api.GetAvailableUnfreezeCountResponseMessage, error)
+    GetCanWithdrawUnfreezeAmount(ctx context.Context, msg *api.CanWithdrawUnfreezeAmountRequestMessage) (*api.CanWithdrawUnfreezeAmountResponseMessage, error)
+
+    // Witness
+    VoteWitnessAccount(ctx context.Context, contract *core.VoteWitnessContract) (*api.TransactionExtention, error)
+    WithdrawBalance(ctx context.Context, contract *core.WithdrawBalanceContract) (*api.TransactionExtention, error)
+    ListWitnesses(ctx context.Context) (*api.WitnessList, error)
+    GetRewardInfo(ctx context.Context, address []byte) (*api.NumberMessage, error)
+    GetBrokerageInfo(ctx context.Context, address []byte) (*api.NumberMessage, error)
+
     // Asset
     GetAssetIssueById(ctx context.Context, id []byte) (*core.AssetIssueContract, error)
     GetAssetIssueListByName(ctx context.Context, name []byte) (*api.AssetIssueList, error)
@@ -133,15 +148,48 @@ Uses HTTP POST to Tron's REST API. All requests are JSON with `Content-Type: app
 | `doBlockRequest`       | Block responses needing transaction wrapping into `TransactionExtention` |
 | `doBlockListRequest`   | Block list responses (array -> `{block: [...]}`)                         |
 | `doRequestRaw`         | Custom parsing needed (returns raw `[]byte`)                             |
+| `doTxRequest`          | **Every transaction-creating endpoint** — see below                      |
+
+**`doTxRequest` — transaction-creating endpoints.**
+`/wallet/createtransaction`, `/wallet/freezebalancev2` and friends return the transaction at the
+**top level** (`{"raw_data":…,"raw_data_hex":…,"txID":…}`), not in the `TransactionExtention` shape,
+and report contract validation failures as **HTTP 200 with an `Error` field**. Feeding either to
+`doRequest` yields a silently empty message and a nil error. `doTxRequest` rebuilds the transaction
+from `raw_data_hex` (the protobuf-serialized `TransactionRaw`, so no JSON translation is needed and
+addresses stay in byte form regardless of `visible`) and turns `Error` into a real error.
+`txID == sha256(raw_data_hex)`, which the unit tests assert.
+
+**`doTxRequestWrapped` — `/wallet/triggersmartcontract`.**
+This endpoint nests the transaction under `"transaction"` and reports the outcome in `"result"`
+rather than `"Error"`, so it needs its own wrapper. Do **not** be fooled by the top-level shape
+looking like `TransactionExtention`: inside `transaction.raw_data` the contract parameter is a
+Tron-style `Any` (`{"value":…,"type_url":…}`) that protojson drops via its `errMissingType` branch
+under `DiscardUnknown`, and the bytes fields are hex, so `ref_block_bytes`/`ref_block_hash` get
+mangled by base64 decoding. `doRequestTransformed` would fix the byte fields but not the wrapper,
+so `doTxRequestWrapped` reuses `parseTxResponse` on the nested object instead.
+
+**`BroadcastTransaction` cannot use `doRequest` either.** `api.Return.Message` is a protobuf bytes
+field and protojson insists on base64, but the node sends a plain-text sentence
+(`"Validate signature error: …"`). Unmarshaling into `api.Return` fails outright, so every rejection
+reached the caller as an opaque protojson error instead of a `BroadcastError` carrying the code.
+It uses the `httpBroadcastResponse` helper struct.
 
 **Custom parsing examples:**
 
-- `GetAccount` — uses `httpAccount` helper struct because account JSON is incompatible with protojson
+- `GetAccount` — uses `httpAccount` helper struct because account JSON is incompatible with
+  protojson; it also maps `frozenV2`/`unfrozenV2` (Stake 2.0) via `httpFreezeV2`/`httpUnFreezeV2`.
+  Tron omits `"type"` for `BANDWIDTH` (the zero enum) and `"amount"` when zero.
 - `GetAccountResource` — uses `httpAccountResourceMessage` helper struct
 - `TriggerConstantContract` — uses `httpTriggerConstantContractResponse` for `constant_result` parsing
 - `GetTransactionInfoByBlockNum` — array wrapping + hex->base64 transform
+- `ListWitnesses` — uses `httpWitness`; `/wallet/listwitnesses` ignores `visible` and always returns
+  hex addresses. `doRequestTransformed` is *not* usable here: `url` is in the `bytesFields`
+  allow-list (for `AssetIssueContract.Url`) while `core.Witness.Url` is a string.
+- `GetRewardInfo` / `GetBrokerageInfo` — the response fields are `reward` and `brokerage`, not
+  `NumberMessage`'s `num`, so `doRequest` would always return 0.
 
-**HTTP endpoints map to `/wallet/<methodname>` paths:**
+**HTTP endpoints map to `/wallet/<methodname>` paths** — with two exceptions that are camelCase and
+return HTTP 405 in lowercase: **`/wallet/getReward`** and **`/wallet/getBrokerage`**.
 
 - `/wallet/getaccount`
 - `/wallet/getnowblock`

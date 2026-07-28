@@ -48,6 +48,21 @@ type Transport interface {
 	DelegateResource(ctx context.Context, contract *core.DelegateResourceContract) (*api.TransactionExtention, error)
 	UnDelegateResource(ctx context.Context, contract *core.UnDelegateResourceContract) (*api.TransactionExtention, error)
 
+	// Staking operations (Stake 2.0)
+	FreezeBalanceV2(ctx context.Context, contract *core.FreezeBalanceV2Contract) (*api.TransactionExtention, error)
+	UnfreezeBalanceV2(ctx context.Context, contract *core.UnfreezeBalanceV2Contract) (*api.TransactionExtention, error)
+	WithdrawExpireUnfreeze(ctx context.Context, contract *core.WithdrawExpireUnfreezeContract) (*api.TransactionExtention, error)
+	CancelAllUnfreezeV2(ctx context.Context, contract *core.CancelAllUnfreezeV2Contract) (*api.TransactionExtention, error)
+	GetAvailableUnfreezeCount(ctx context.Context, msg *api.GetAvailableUnfreezeCountRequestMessage) (*api.GetAvailableUnfreezeCountResponseMessage, error)
+	GetCanWithdrawUnfreezeAmount(ctx context.Context, msg *api.CanWithdrawUnfreezeAmountRequestMessage) (*api.CanWithdrawUnfreezeAmountResponseMessage, error)
+
+	// Witness operations
+	VoteWitnessAccount(ctx context.Context, contract *core.VoteWitnessContract) (*api.TransactionExtention, error)
+	WithdrawBalance(ctx context.Context, contract *core.WithdrawBalanceContract) (*api.TransactionExtention, error)
+	ListWitnesses(ctx context.Context) (*api.WitnessList, error)
+	GetRewardInfo(ctx context.Context, address []byte) (*api.NumberMessage, error)
+	GetBrokerageInfo(ctx context.Context, address []byte) (*api.NumberMessage, error)
+
 	// Asset operations
 	GetAssetIssueById(ctx context.Context, id []byte) (*core.AssetIssueContract, error)
 	GetAssetIssueListByName(ctx context.Context, name []byte) (*api.AssetIssueList, error)

@@ -26,8 +26,10 @@ func TestParseTRC20NumericProperty(t *testing.T) {
 	}{
 		{"value with 0x prefix", "0x" + fmt.Sprintf("%064x", 10), "10", false},
 		{"value without prefix", fmt.Sprintf("%064x", 255), "255", false},
-		{"empty is zero", "", "0", false},
-		{"0x only is zero", "0x", "0", false},
+		// An empty payload means the call returned nothing; reporting it as the
+		// value zero silently corrupts decimals and balances.
+		{"empty is an error", "", "", true},
+		{"0x only is an error", "0x", "", true},
 		{"wrong length", "abcd", "", true},
 		{"64 chars but not hex", strings.Repeat("g", 64), "", true},
 	}

@@ -30,6 +30,15 @@ func (c *Client) CreateTransferTransaction(ctx context.Context, from, to string,
 	// Convert TRX to SUN
 	amount = amount.Mul(decimal.NewFromInt(1e6))
 
+	// IntPart() is big.Int.Int64(), which keeps only the low 64 bits when the
+	// value does not fit. An amount above ~9.22e12 TRX would therefore be
+	// rebuilt as an unrelated number, signed, and broadcast as a valid transfer
+	// of the wrong size.
+	sun := amount.BigInt()
+	if !sun.IsInt64() {
+		return nil, fmt.Errorf("%w: amount %s TRX exceeds the maximum transferable value", ErrInvalidAmount, amount.Div(decimal.NewFromInt(1e6)))
+	}
+
 	var err error
 	contract := &core.TransferContract{}
 	if contract.OwnerAddress, err = tronutils.DecodeCheck(from); err != nil {
@@ -40,7 +49,7 @@ func (c *Client) CreateTransferTransaction(ctx context.Context, from, to string,
 		return nil, err
 	}
 
-	contract.Amount = amount.IntPart()
+	contract.Amount = sun.Int64()
 
 	// Create the transaction
 	tx, err := c.transport.CreateTransaction(ctx, contract)

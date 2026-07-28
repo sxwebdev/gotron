@@ -161,6 +161,54 @@ func (t *RoundRobinTransport) UnDelegateResource(ctx context.Context, contract *
 	return t.next().UnDelegateResource(ctx, contract)
 }
 
+// Staking operations (Stake 2.0)
+
+func (t *RoundRobinTransport) FreezeBalanceV2(ctx context.Context, contract *core.FreezeBalanceV2Contract) (*api.TransactionExtention, error) {
+	return t.next().FreezeBalanceV2(ctx, contract)
+}
+
+func (t *RoundRobinTransport) UnfreezeBalanceV2(ctx context.Context, contract *core.UnfreezeBalanceV2Contract) (*api.TransactionExtention, error) {
+	return t.next().UnfreezeBalanceV2(ctx, contract)
+}
+
+func (t *RoundRobinTransport) WithdrawExpireUnfreeze(ctx context.Context, contract *core.WithdrawExpireUnfreezeContract) (*api.TransactionExtention, error) {
+	return t.next().WithdrawExpireUnfreeze(ctx, contract)
+}
+
+func (t *RoundRobinTransport) CancelAllUnfreezeV2(ctx context.Context, contract *core.CancelAllUnfreezeV2Contract) (*api.TransactionExtention, error) {
+	return t.next().CancelAllUnfreezeV2(ctx, contract)
+}
+
+func (t *RoundRobinTransport) GetAvailableUnfreezeCount(ctx context.Context, msg *api.GetAvailableUnfreezeCountRequestMessage) (*api.GetAvailableUnfreezeCountResponseMessage, error) {
+	return t.next().GetAvailableUnfreezeCount(ctx, msg)
+}
+
+func (t *RoundRobinTransport) GetCanWithdrawUnfreezeAmount(ctx context.Context, msg *api.CanWithdrawUnfreezeAmountRequestMessage) (*api.CanWithdrawUnfreezeAmountResponseMessage, error) {
+	return t.next().GetCanWithdrawUnfreezeAmount(ctx, msg)
+}
+
+// Witness operations
+
+func (t *RoundRobinTransport) VoteWitnessAccount(ctx context.Context, contract *core.VoteWitnessContract) (*api.TransactionExtention, error) {
+	return t.next().VoteWitnessAccount(ctx, contract)
+}
+
+func (t *RoundRobinTransport) WithdrawBalance(ctx context.Context, contract *core.WithdrawBalanceContract) (*api.TransactionExtention, error) {
+	return t.next().WithdrawBalance(ctx, contract)
+}
+
+func (t *RoundRobinTransport) ListWitnesses(ctx context.Context) (*api.WitnessList, error) {
+	return t.next().ListWitnesses(ctx)
+}
+
+func (t *RoundRobinTransport) GetRewardInfo(ctx context.Context, address []byte) (*api.NumberMessage, error) {
+	return t.next().GetRewardInfo(ctx, address)
+}
+
+func (t *RoundRobinTransport) GetBrokerageInfo(ctx context.Context, address []byte) (*api.NumberMessage, error) {
+	return t.next().GetBrokerageInfo(ctx, address)
+}
+
 // Asset operations
 
 func (t *RoundRobinTransport) GetAssetIssueById(ctx context.Context, id []byte) (*core.AssetIssueContract, error) {

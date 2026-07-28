@@ -178,6 +178,50 @@ func (c *controllableTransport) UnDelegateResource(ctx context.Context, contract
 	return &api.TransactionExtention{}, c.live()
 }
 
+func (c *controllableTransport) FreezeBalanceV2(ctx context.Context, contract *core.FreezeBalanceV2Contract) (*api.TransactionExtention, error) {
+	return &api.TransactionExtention{}, c.live()
+}
+
+func (c *controllableTransport) UnfreezeBalanceV2(ctx context.Context, contract *core.UnfreezeBalanceV2Contract) (*api.TransactionExtention, error) {
+	return &api.TransactionExtention{}, c.live()
+}
+
+func (c *controllableTransport) WithdrawExpireUnfreeze(ctx context.Context, contract *core.WithdrawExpireUnfreezeContract) (*api.TransactionExtention, error) {
+	return &api.TransactionExtention{}, c.live()
+}
+
+func (c *controllableTransport) CancelAllUnfreezeV2(ctx context.Context, contract *core.CancelAllUnfreezeV2Contract) (*api.TransactionExtention, error) {
+	return &api.TransactionExtention{}, c.live()
+}
+
+func (c *controllableTransport) GetAvailableUnfreezeCount(ctx context.Context, msg *api.GetAvailableUnfreezeCountRequestMessage) (*api.GetAvailableUnfreezeCountResponseMessage, error) {
+	return &api.GetAvailableUnfreezeCountResponseMessage{}, c.live()
+}
+
+func (c *controllableTransport) GetCanWithdrawUnfreezeAmount(ctx context.Context, msg *api.CanWithdrawUnfreezeAmountRequestMessage) (*api.CanWithdrawUnfreezeAmountResponseMessage, error) {
+	return &api.CanWithdrawUnfreezeAmountResponseMessage{}, c.live()
+}
+
+func (c *controllableTransport) VoteWitnessAccount(ctx context.Context, contract *core.VoteWitnessContract) (*api.TransactionExtention, error) {
+	return &api.TransactionExtention{}, c.live()
+}
+
+func (c *controllableTransport) WithdrawBalance(ctx context.Context, contract *core.WithdrawBalanceContract) (*api.TransactionExtention, error) {
+	return &api.TransactionExtention{}, c.live()
+}
+
+func (c *controllableTransport) ListWitnesses(ctx context.Context) (*api.WitnessList, error) {
+	return &api.WitnessList{}, c.live()
+}
+
+func (c *controllableTransport) GetRewardInfo(ctx context.Context, address []byte) (*api.NumberMessage, error) {
+	return &api.NumberMessage{}, c.live()
+}
+
+func (c *controllableTransport) GetBrokerageInfo(ctx context.Context, address []byte) (*api.NumberMessage, error) {
+	return &api.NumberMessage{}, c.live()
+}
+
 func (c *controllableTransport) GetAssetIssueById(ctx context.Context, id []byte) (*core.AssetIssueContract, error) {
 	return &core.AssetIssueContract{}, c.live()
 }

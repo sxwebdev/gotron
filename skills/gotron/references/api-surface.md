@@ -11,6 +11,8 @@
   - [Transaction operations](#transaction-operations)
   - [TRC20 token operations](#trc20-token-operations)
   - [Resource operations](#resource-operations)
+  - [Staking operations](#staking-operations)
+  - [Witness and reward operations](#witness-and-reward-operations)
   - [Estimate operations](#estimate-operations)
   - [Contract operations](#contract-operations)
   - [Network operations](#network-operations)
@@ -234,6 +236,73 @@ type AvailableResources struct {
 }
 ```
 
+### Staking operations
+
+Tron Stake 2.0. All amounts are in SUN. Legacy Stake 1.0 (FreezeBalance/UnfreezeBalance) is
+deliberately not implemented.
+
+**File:** `staking.go`
+
+```go
+func (c *Client) Stake(ctx context.Context, owner string, resource ResourceType, amount int64) (*api.TransactionExtention, error)
+func (c *Client) Unstake(ctx context.Context, owner string, resource ResourceType, amount int64) (*api.TransactionExtention, error)
+func (c *Client) WithdrawUnstaked(ctx context.Context, owner string) (*api.TransactionExtention, error)
+func (c *Client) CancelAllUnstakes(ctx context.Context, owner string) (*api.TransactionExtention, error)
+func (c *Client) GetAvailableUnstakeCount(ctx context.Context, owner string) (int64, error)
+func (c *Client) GetWithdrawableUnstaked(ctx context.Context, owner string) (int64, error)
+func (c *Client) GetStakeInfo(ctx context.Context, addr string) (*StakeInfo, error)
+```
+
+`GetStakeInfo` reads `core.Account.FrozenV2` / `UnfrozenV2` in a single `GetAccount` call.
+`TRON_POWER` entries in `FrozenV2` are always present and are skipped — summing them would double
+the total. `UnfreezeExpireTime` is in Unix **milliseconds**.
+
+`GetWithdrawableUnstaked` is the node's answer (`GetCanWithdrawUnfreezeAmount` with the current
+timestamp); `StakeInfo.WithdrawableNow` is the same figure computed locally without a second
+round-trip.
+
+```go
+// PendingUnstake is one in-flight unstake entry.
+type PendingUnstake struct {
+    Resource   ResourceType `json:"resource"`
+    Amount     int64        `json:"amount"` // SUN
+    ExpireTime time.Time    `json:"expire_time"`
+}
+
+// StakeInfo aggregates an account's Stake 2.0 position. All amounts in SUN.
+type StakeInfo struct {
+    StakedBandwidth int64            `json:"staked_bandwidth"`
+    StakedEnergy    int64            `json:"staked_energy"`
+    TotalStaked     int64            `json:"total_staked"`
+    UnstakingTotal  int64            `json:"unstaking_total"`
+    WithdrawableNow int64            `json:"withdrawable_now"`
+    PendingUnstakes []PendingUnstake `json:"pending_unstakes"`
+}
+```
+
+### Witness and reward operations
+
+**File:** `witness.go`
+
+```go
+func (c *Client) VoteWitnesses(ctx context.Context, owner string, votes []Vote) (*api.TransactionExtention, error)
+func (c *Client) ClaimRewards(ctx context.Context, owner string) (*api.TransactionExtention, error)
+func (c *Client) ListWitnesses(ctx context.Context) (*api.WitnessList, error)
+func (c *Client) GetUnclaimedReward(ctx context.Context, addr string) (int64, error)
+func (c *Client) GetWitnessBrokerage(ctx context.Context, witness string) (int64, error)
+```
+
+`VoteWitnesses` replaces the account's **entire** vote set, so always pass the full desired list.
+`[]Vote` is a slice rather than a map so the resulting transaction bytes are reproducible.
+
+```go
+// Vote counts are in TRON POWER (1 per staked TRX), not SUN.
+type Vote struct {
+    WitnessAddress string `json:"witness_address"`
+    Count          int64  `json:"count"`
+}
+```
+
 ### Estimate operations
 
 Cost estimators for transactions and transfers. Use these to compute fees before broadcasting.
@@ -391,45 +460,60 @@ func NewGenerator(mnemonic, passphrase string) *Generator
 func (g *Generator) SetBipPurpose(purpose uint32) *Generator
 func (g *Generator) SetCoinType(coinType uint32) *Generator
 func (g *Generator) SetAccount(account uint32) *Generator
-func (g *Generator) SetNetwork(net *chaincfg.Params) *Generator
 func (g *Generator) Generate(index uint32) (*Address, error)
 ```
 
-Default BIP44 path: `m/44'/195'/0'/0/{index}`
+Default BIP44 path: `m/44'/195'/0'/0/{index}`. The HD key versions are fixed to
+mainnet — there is no network selector.
 
 ---
 
 ## Package pkg/tronutils
 
-**Files:** `address.go`, `hex.go`, `number.go`, `encoding.go`
+**Files:** `address.go`, `base58.go`, `hash.go`, `hexutils.go`
 
-**Address utilities:**
+**Address utilities** (`address.go`, `base58.go`):
 
 ```go
-func DecodeCheck(addr string) ([]byte, error)   // base58 -> bytes (with checksum verify)
-func EncodeCheck(data []byte) string             // bytes -> base58 (with checksum)
+type Address []byte
+
+func DecodeCheck(input string) ([]byte, error)  // base58 -> bytes (with checksum verify)
+func EncodeCheck(input []byte) string           // bytes -> base58 (with checksum)
+func Decode(input string) ([]byte, error)       // base58, no checksum
+func Encode(input []byte) string                // base58, no checksum
 func Base58ToAddress(s string) (Address, error)
 func Base64ToAddress(s string) (Address, error)
 func HexToAddress(s string) Address
 func BigToAddress(b *big.Int) Address
+func PubkeyToAddress(p ecdsa.PublicKey) Address
 ```
 
-**Hex utilities:**
+**Hex utilities** (`hexutils.go`):
 
 ```go
-func BytesToHexString(bytes []byte) string  // "0x..." prefixed
-func FromHex(s string) ([]byte, error)      // supports "0x" prefix
+func BytesToHexString(bytes []byte) string      // "0x..." prefixed
+func HexStringToBytes(input string) ([]byte, error)
+func ToHex(b []byte) string
+func ToHexArray(b [][]byte) []string
+func FromHex(s string) ([]byte, error)          // supports "0x" prefix
 func Has0xPrefix(str string) bool
 func IsHex(str string) bool
-func Bytes2Hex(d []byte) string             // no prefix
-func Hex2Bytes(str string) ([]byte, error)  // no prefix
+func Bytes2Hex(d []byte) string                 // no prefix
+func Hex2Bytes(str string) ([]byte, error)      // no prefix
+func Hex2BytesFixed(str string, flen int) []byte
 func LeftPadBytes(slice []byte, l int) []byte
 func RightPadBytes(slice []byte, l int) []byte
+func TrimLeftZeroes(s []byte) []byte
+func CopyBytes(b []byte) []byte
 ```
 
-**Number utilities:**
+**Hash utilities** (`hash.go`):
 
 ```go
-func FormatPrecisionNumber(value, decimals int) string
-func DoubleSHA256(data []byte) []byte
+type Hash [32]byte
+
+func Keccak256(msg []byte) []byte
+func BytesToHash(b []byte) Hash
+func BigToHash(b *big.Int) Hash
+func HexToHash(s string) (Hash, error)
 ```

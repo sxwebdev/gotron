@@ -15,6 +15,8 @@
 //   - Transaction creation, signing, and broadcasting
 //   - TRC20 token support (transfer, balance, metadata)
 //   - Resource delegation (bandwidth and energy)
+//   - Staking 2.0: stake, unstake, withdraw, aggregated stake overview
+//   - Super representative voting and reward claiming
 //   - Account operations and activation
 //   - Block and transaction queries
 //   - Multi-network support (Mainnet, Shasta, Nile)
@@ -215,8 +217,11 @@
 //	}
 //
 //	// Sign with private key
-//	privateKey, _ := address.PrivateKeyFromHex("your-hex-private-key")
-//	err = tron.SignTransaction(tx.Transaction, privateKey)
+//	signer, err := address.FromPrivateKey("your-hex-private-key")
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	err = tron.SignTransaction(tx.Transaction, signer.PrivateKeyECDSA)
 //	if err != nil {
 //	    log.Fatal(err)
 //	}
@@ -274,6 +279,35 @@
 //	    gotron.Energy,
 //	    1000_000_000,
 //	)
+//
+// # Staking and Voting
+//
+// Stake TRX to obtain resources, then unstake and withdraw it. All amounts are
+// in SUN:
+//
+//	// Stake 1000 TRX for energy
+//	tx, err := tron.Stake(ctx, "TOwnerAddress", gotron.Energy, 1000_000_000)
+//
+//	// Start unstaking; the TRX becomes withdrawable after the unfreeze delay
+//	tx, err = tron.Unstake(ctx, "TOwnerAddress", gotron.Energy, 1000_000_000)
+//
+//	// Withdraw everything whose unfreeze period has expired
+//	tx, err = tron.WithdrawUnstaked(ctx, "TOwnerAddress")
+//
+// GetStakeInfo aggregates the whole position in a single call:
+//
+//	info, err := tron.GetStakeInfo(ctx, "TAddress")
+//	fmt.Println(info.TotalStaked, info.UnstakingTotal, info.WithdrawableNow)
+//	for _, p := range info.PendingUnstakes {
+//	    fmt.Println(p.Resource, p.Amount, p.ExpireTime)
+//	}
+//
+// Vote for super representatives and claim the resulting rewards:
+//
+//	tx, err := tron.VoteWitnesses(ctx, "TOwnerAddress", []client.Vote{
+//	    {WitnessAddress: "TWitnessAddress", Count: 100},
+//	})
+//	tx, err = tron.ClaimRewards(ctx, "TOwnerAddress")
 //
 // # Package Organization
 //
@@ -357,7 +391,7 @@
 //
 // Generate multiple addresses from a single mnemonic:
 //
-//	generator := address.NewAddressGenerator(mnemonic, "")
+//	generator := address.NewGenerator(mnemonic, "")
 //	for i := uint32(0); i < 10; i++ {
 //	    addr, err := generator.Generate(i)
 //	    // Use addr...

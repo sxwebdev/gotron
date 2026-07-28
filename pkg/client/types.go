@@ -2,6 +2,7 @@ package client
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/shopspring/decimal"
 	"github.com/sxwebdev/gotron/schema/pb/core"
@@ -88,4 +89,30 @@ type AvailableResources struct {
 	Bandwidth      decimal.Decimal `json:"bandwidth"`
 	TotalEnergy    decimal.Decimal `json:"total_energy"`
 	TotalBandwidth decimal.Decimal `json:"total_bandwidth"`
+}
+
+// Vote is a single super representative vote. Count is in TRON POWER units
+// (1 TRON POWER = 1 TRX staked), not SUN.
+type Vote struct {
+	WitnessAddress string `json:"witness_address"`
+	Count          int64  `json:"count"`
+}
+
+// PendingUnstake is one in-flight unstake entry. Amount is in SUN and becomes
+// withdrawable at ExpireTime.
+type PendingUnstake struct {
+	Resource   ResourceType `json:"resource"`
+	Amount     int64        `json:"amount"`
+	ExpireTime time.Time    `json:"expire_time"`
+}
+
+// StakeInfo is an aggregated view of an account's Stake 2.0 position.
+// All amounts are in SUN.
+type StakeInfo struct {
+	StakedBandwidth int64            `json:"staked_bandwidth"`
+	StakedEnergy    int64            `json:"staked_energy"`
+	TotalStaked     int64            `json:"total_staked"`
+	UnstakingTotal  int64            `json:"unstaking_total"`
+	WithdrawableNow int64            `json:"withdrawable_now"`
+	PendingUnstakes []PendingUnstake `json:"pending_unstakes"`
 }

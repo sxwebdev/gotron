@@ -713,6 +713,120 @@ func (h *HealthAwareTransport) UnDelegateResource(ctx context.Context, contract 
 	return res, callErr
 }
 
+// Staking operations (Stake 2.0)
+
+func (h *HealthAwareTransport) FreezeBalanceV2(ctx context.Context, contract *core.FreezeBalanceV2Contract) (*api.TransactionExtention, error) {
+	n, err := h.next()
+	if err != nil {
+		return nil, err
+	}
+	res, callErr := n.transport.FreezeBalanceV2(ctx, contract)
+	h.recordOutcome(n, callErr)
+	return res, callErr
+}
+
+func (h *HealthAwareTransport) UnfreezeBalanceV2(ctx context.Context, contract *core.UnfreezeBalanceV2Contract) (*api.TransactionExtention, error) {
+	n, err := h.next()
+	if err != nil {
+		return nil, err
+	}
+	res, callErr := n.transport.UnfreezeBalanceV2(ctx, contract)
+	h.recordOutcome(n, callErr)
+	return res, callErr
+}
+
+func (h *HealthAwareTransport) WithdrawExpireUnfreeze(ctx context.Context, contract *core.WithdrawExpireUnfreezeContract) (*api.TransactionExtention, error) {
+	n, err := h.next()
+	if err != nil {
+		return nil, err
+	}
+	res, callErr := n.transport.WithdrawExpireUnfreeze(ctx, contract)
+	h.recordOutcome(n, callErr)
+	return res, callErr
+}
+
+func (h *HealthAwareTransport) CancelAllUnfreezeV2(ctx context.Context, contract *core.CancelAllUnfreezeV2Contract) (*api.TransactionExtention, error) {
+	n, err := h.next()
+	if err != nil {
+		return nil, err
+	}
+	res, callErr := n.transport.CancelAllUnfreezeV2(ctx, contract)
+	h.recordOutcome(n, callErr)
+	return res, callErr
+}
+
+func (h *HealthAwareTransport) GetAvailableUnfreezeCount(ctx context.Context, msg *api.GetAvailableUnfreezeCountRequestMessage) (*api.GetAvailableUnfreezeCountResponseMessage, error) {
+	n, err := h.next()
+	if err != nil {
+		return nil, err
+	}
+	res, callErr := n.transport.GetAvailableUnfreezeCount(ctx, msg)
+	h.recordOutcome(n, callErr)
+	return res, callErr
+}
+
+func (h *HealthAwareTransport) GetCanWithdrawUnfreezeAmount(ctx context.Context, msg *api.CanWithdrawUnfreezeAmountRequestMessage) (*api.CanWithdrawUnfreezeAmountResponseMessage, error) {
+	n, err := h.next()
+	if err != nil {
+		return nil, err
+	}
+	res, callErr := n.transport.GetCanWithdrawUnfreezeAmount(ctx, msg)
+	h.recordOutcome(n, callErr)
+	return res, callErr
+}
+
+// Witness operations
+
+func (h *HealthAwareTransport) VoteWitnessAccount(ctx context.Context, contract *core.VoteWitnessContract) (*api.TransactionExtention, error) {
+	n, err := h.next()
+	if err != nil {
+		return nil, err
+	}
+	res, callErr := n.transport.VoteWitnessAccount(ctx, contract)
+	h.recordOutcome(n, callErr)
+	return res, callErr
+}
+
+func (h *HealthAwareTransport) WithdrawBalance(ctx context.Context, contract *core.WithdrawBalanceContract) (*api.TransactionExtention, error) {
+	n, err := h.next()
+	if err != nil {
+		return nil, err
+	}
+	res, callErr := n.transport.WithdrawBalance(ctx, contract)
+	h.recordOutcome(n, callErr)
+	return res, callErr
+}
+
+func (h *HealthAwareTransport) ListWitnesses(ctx context.Context) (*api.WitnessList, error) {
+	n, err := h.next()
+	if err != nil {
+		return nil, err
+	}
+	res, callErr := n.transport.ListWitnesses(ctx)
+	h.recordOutcome(n, callErr)
+	return res, callErr
+}
+
+func (h *HealthAwareTransport) GetRewardInfo(ctx context.Context, address []byte) (*api.NumberMessage, error) {
+	n, err := h.next()
+	if err != nil {
+		return nil, err
+	}
+	res, callErr := n.transport.GetRewardInfo(ctx, address)
+	h.recordOutcome(n, callErr)
+	return res, callErr
+}
+
+func (h *HealthAwareTransport) GetBrokerageInfo(ctx context.Context, address []byte) (*api.NumberMessage, error) {
+	n, err := h.next()
+	if err != nil {
+		return nil, err
+	}
+	res, callErr := n.transport.GetBrokerageInfo(ctx, address)
+	h.recordOutcome(n, callErr)
+	return res, callErr
+}
+
 // Asset operations
 
 func (h *HealthAwareTransport) GetAssetIssueById(ctx context.Context, id []byte) (*core.AssetIssueContract, error) {

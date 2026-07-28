@@ -14,10 +14,10 @@ func TestDelegateResourceValidation(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
-		name              string
-		owner, receiver   string
-		resource          ResourceType
-		balance           int64
+		name            string
+		owner, receiver string
+		resource        ResourceType
+		balance         int64
 	}{
 		{"invalid owner", "bad!", testAddr2, ResourceTypeEnergy, 1},
 		{"invalid receiver", testAddr, "bad!", ResourceTypeEnergy, 1},
@@ -39,7 +39,7 @@ func TestDelegateResourceSuccess(t *testing.T) {
 	c := newTestClient(&fakeTransport{
 		delegateResource: func(_ context.Context, ct *core.DelegateResourceContract) (*api.TransactionExtention, error) {
 			got = ct
-			return &api.TransactionExtention{}, nil
+			return okTx(), nil
 		},
 	})
 
@@ -64,7 +64,7 @@ func TestReclaimResourceValidationAndSuccess(t *testing.T) {
 		c := newTestClient(&fakeTransport{
 			unDelegateResource: func(_ context.Context, ct *core.UnDelegateResourceContract) (*api.TransactionExtention, error) {
 				got = ct
-				return &api.TransactionExtention{}, nil
+				return okTx(), nil
 			},
 		})
 		_, err := c.ReclaimResource(context.Background(), testAddr, testAddr2, ResourceTypeBandwidth, 500)
@@ -84,9 +84,62 @@ func TestAvailableResourceCalcs(t *testing.T) {
 		FreeNetLimit: 600,
 		FreeNetUsed:  50,
 	}
-	require.Equal(t, int64(600), c.AvailableEnergy(res).IntPart())                 // 1000-400
-	require.Equal(t, int64(1000), c.TotalEnergyLimit(res).IntPart())               // 1000
-	require.Equal(t, int64(950), c.AvailableBandwidth(res).IntPart())              // 500+600-100-50
-	require.Equal(t, int64(400), c.AvailableBandwidthWithoutFree(res).IntPart())   // 500-100
-	require.Equal(t, int64(1100), c.TotalBandwidthLimit(res).IntPart())            // 500+600
+	require.Equal(t, int64(600), c.AvailableEnergy(res).IntPart())               // 1000-400
+	require.Equal(t, int64(1000), c.TotalEnergyLimit(res).IntPart())             // 1000
+	require.Equal(t, int64(950), c.AvailableBandwidth(res).IntPart())            // 500+600-100-50
+	require.Equal(t, int64(400), c.AvailableBandwidthWithoutFree(res).IntPart()) // 500-100
+	require.Equal(t, int64(1100), c.TotalBandwidthLimit(res).IntPart())          // 500+600
+}
+
+// DelegateResource and ReclaimResource gained checkTransaction guards, but nothing
+// exercised them: deleting both calls left the whole suite green while the methods
+// handed back an empty transaction that only fails later, at signing or broadcast.
+func TestDelegateAndReclaimRejectEmptyTransaction(t *testing.T) {
+	t.Parallel()
+
+	empty := func() (*api.TransactionExtention, error) { return &api.TransactionExtention{}, nil }
+
+	c := newTestClient(&fakeTransport{
+		delegateResource: func(context.Context, *core.DelegateResourceContract) (*api.TransactionExtention, error) {
+			return empty()
+		},
+		unDelegateResource: func(context.Context, *core.UnDelegateResourceContract) (*api.TransactionExtention, error) {
+			return empty()
+		},
+	})
+
+	_, err := c.DelegateResource(t.Context(), testAddr, testAddr2, ResourceTypeEnergy, 1, false, 0)
+	require.ErrorIs(t, err, ErrInvalidTransaction)
+
+	_, err = c.ReclaimResource(t.Context(), testAddr, testAddr2, ResourceTypeEnergy, 1)
+	require.ErrorIs(t, err, ErrInvalidTransaction)
+}
+
+func TestDelegateAndReclaimSurfaceNodeError(t *testing.T) {
+	t.Parallel()
+
+	rejected := func() (*api.TransactionExtention, error) {
+		return &api.TransactionExtention{
+			Transaction: &core.Transaction{RawData: &core.TransactionRaw{Timestamp: 1}},
+			Result: &api.Return{
+				Code:    api.Return_CONTRACT_VALIDATE_ERROR,
+				Message: []byte("delegateBalance must be greater than 1 TRX"),
+			},
+		}, nil
+	}
+
+	c := newTestClient(&fakeTransport{
+		delegateResource: func(context.Context, *core.DelegateResourceContract) (*api.TransactionExtention, error) {
+			return rejected()
+		},
+		unDelegateResource: func(context.Context, *core.UnDelegateResourceContract) (*api.TransactionExtention, error) {
+			return rejected()
+		},
+	})
+
+	_, err := c.DelegateResource(t.Context(), testAddr, testAddr2, ResourceTypeEnergy, 1, false, 0)
+	require.ErrorContains(t, err, "delegateBalance must be greater than 1 TRX")
+
+	_, err = c.ReclaimResource(t.Context(), testAddr, testAddr2, ResourceTypeEnergy, 1)
+	require.ErrorContains(t, err, "delegateBalance must be greater than 1 TRX")
 }
