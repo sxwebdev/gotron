@@ -17,6 +17,8 @@ A comprehensive Go SDK for the Tron blockchain. This library provides a complete
 - **Transaction Handling** - Create, sign, and broadcast transactions
 - **TRC20 Token Support** - Transfer, approve, balance queries, token info
 - **Resource Management** - Delegate/undelegate bandwidth and energy
+- **Staking 2.0** - Stake/unstake TRX, withdraw unstaked funds, aggregated stake overview
+- **Voting & Rewards** - Vote for super representatives, claim voting rewards
 - **Account Operations** - Balance queries, account info, activation
 - **Block & Transaction Queries** - Get blocks, transactions, and receipts
 - **Multi-Network Support** - Mainnet, Shasta testnet, Nile testnet
@@ -30,7 +32,6 @@ This repository includes [AI agent skills](https://github.com/sxwebdev/skills) w
 
 ```bash
 go install github.com/sxwebdev/skills/cmd/skills@latest
-skills init
 skills repo add sxwebdev/gotron
 ```
 
@@ -80,7 +81,7 @@ func main() {
   if err != nil {
     log.Fatal(err)
   }
-  fmt.Printf("Balance: %s TRX\n", balance.String())
+  fmt.Printf("Balance: %s\n", balance) // e.g. "1.5 TRX"
 }
 ```
 
@@ -130,24 +131,26 @@ import (
 ctx := context.Background()
 
 // Create transfer transaction (amount in TRX)
-tx, err := tron.CreateTransferTransaction(
-  ctx,
-  "TFromAddress",
-  "TToAddress",
-  decimal.NewFromFloat(1.5), // 1.5 TRX
-)
+// Every TRX amount is a SUN, so the unit is part of the signature.
+// FromTRX rejects amounts that cannot be represented exactly.
+amount, err := gotron.FromTRX(decimal.NewFromFloat(1.5)) // 1.5 TRX
+if err != nil {
+  log.Fatal(err)
+}
+
+tx, err := tron.CreateTransferTransaction(ctx, "TFromAddress", "TToAddress", amount)
 if err != nil {
   log.Fatal(err)
 }
 
 // Import private key
-privateKey, err := address.PrivateKeyFromHex("your-hex-private-key")
+signer, err := address.FromPrivateKey("your-hex-private-key")
 if err != nil {
   log.Fatal(err)
 }
 
 // Sign transaction
-err = tron.SignTransaction(tx.Transaction, privateKey)
+err = tron.SignTransaction(tx.Transaction, signer.PrivateKeyECDSA)
 if err != nil {
   log.Fatal(err)
 }
@@ -182,24 +185,31 @@ balance, err := tron.TRC20ContractBalance(ctx, "TYourAddress", usdtContract)
 if err != nil {
     log.Fatal(err)
 }
-fmt.Printf("Balance: %s\n", balance.String())
+// TokenAmount prints raw minimal units; render it with the token's decimals.
+fmt.Printf("Balance: %s USDT\n", balance.Decimal(6))
 
-// Transfer tokens (amount in smallest unit, 1 USDT = 1000000)
+// Transfer tokens.
+// TRC20 amounts live on the token's own scale, so they are a different type.
+usdtAmount, err := gotron.FromTokenDecimal(decimal.NewFromInt(1), 6) // 1 USDT
+if err != nil {
+  log.Fatal(err)
+}
+
 tx, err := tron.TRC20Send(
   ctx,
   "TFromAddress",
   "TToAddress",
   usdtContract,
-  decimal.NewFromInt(1000000), // 1 USDT
-  100_000_000, // Fee limit in SUN (100 TRX)
+  usdtAmount,                  // TokenAmount, in the token's minimal units
+  gotron.SUN(100_000_000),     // Fee limit: 100 TRX
 )
 if err != nil {
     log.Fatal(err)
 }
 
 // Sign and broadcast...
-privateKey, _ := address.PrivateKeyFromHex("your-private-key")
-tron.SignTransaction(tx.Transaction, privateKey)
+signer, _ := address.FromPrivateKey("your-hex-private-key")
+tron.SignTransaction(tx.Transaction, signer.PrivateKeyECDSA)
 result, _ := tron.BroadcastTransaction(ctx, tx.Transaction)
 ```
 
@@ -216,7 +226,7 @@ tx, err := tron.DelegateResource(
   "TOwnerAddress",
   "TReceiverAddress",
   gotron.Energy,              // Resource type
-  1000_000_000,               // Balance in SUN (1000 TRX)
+  gotron.SUN(1000_000_000),   // 1000 TRX
   false,                      // Lock
   0,                          // Lock period
 )
@@ -232,8 +242,82 @@ reclaimTx, err := tron.ReclaimResource(
   "TOwnerAddress",
   "TReceiverAddress",
   gotron.Energy,
-  1000_000_000, // Amount in SUN
+  gotron.SUN(1000_000_000), // 1000 TRX
 )
+```
+
+### Stake & Unstake (Stake 2.0)
+
+All TRX amounts are `gotron.SUN`; build one from TRX with `gotron.FromTRX`.
+
+```go
+import "github.com/sxwebdev/gotron"
+
+ctx := context.Background()
+
+// Stake 1000 TRX for energy
+tx, err := tron.Stake(ctx, "TOwnerAddress", gotron.Energy, gotron.SUN(1000_000_000))
+if err != nil {
+    log.Fatal(err)
+}
+
+// Sign and broadcast...
+
+// Start unstaking. The TRX becomes withdrawable after the network's
+// unfreeze delay (14 days on mainnet).
+unstakeTx, err := tron.Unstake(ctx, "TOwnerAddress", gotron.Energy, gotron.SUN(1000_000_000))
+
+// Withdraw everything whose unfreeze period has expired
+withdrawTx, err := tron.WithdrawUnstaked(ctx, "TOwnerAddress")
+
+// Cancel all pending unstakes and re-stake the TRX
+cancelTx, err := tron.CancelAllUnstakes(ctx, "TOwnerAddress")
+```
+
+Aggregated view of an account's position:
+
+```go
+info, err := tron.GetStakeInfo(ctx, "TAddress")
+if err != nil {
+    log.Fatal(err)
+}
+
+fmt.Printf("staked: %d SUN (bandwidth %d, energy %d)\n",
+    info.TotalStaked, info.StakedBandwidth, info.StakedEnergy)
+fmt.Printf("unstaking: %d SUN, withdrawable now: %d SUN\n",
+    info.UnstakingTotal, info.WithdrawableNow)
+
+for _, p := range info.PendingUnstakes {
+    fmt.Printf("  %s %d SUN available at %s\n", p.Resource, p.Amount, p.ExpireTime)
+}
+
+// How many more Unstake calls the account may make (max 32)
+count, err := tron.GetAvailableUnstakeCount(ctx, "TAddress")
+
+// The node's own answer for the withdrawable amount
+amount, err := tron.GetWithdrawableUnstaked(ctx, "TAddress")
+```
+
+### Vote & Claim Rewards
+
+```go
+ctx := context.Background()
+
+// Replace the entire vote set. Counts are in TRON POWER (1 per staked TRX).
+tx, err := tron.VoteWitnesses(ctx, "TOwnerAddress", []client.Vote{
+    {WitnessAddress: "TWitnessAddress1", Count: 100},
+    {WitnessAddress: "TWitnessAddress2", Count: 50},
+})
+
+// Sign and broadcast...
+
+// Claim accumulated voting rewards (once every 24 hours)
+claimTx, err := tron.ClaimRewards(ctx, "TOwnerAddress")
+
+// Read-only queries
+reward, err := tron.GetUnclaimedReward(ctx, "TAddress")        // SUN
+brokerage, err := tron.GetWitnessBrokerage(ctx, "TWitness")    // percent, 0-100
+witnesses, err := tron.ListWitnesses(ctx)
 ```
 
 ### Query Blocks and Transactions
@@ -269,7 +353,7 @@ isActivated, err := tron.IsAccountActivated(ctx, "TAddress")
 
 // Estimate activation cost
 estimate, err := tron.EstimateActivateAccount(ctx, "TFromAddress", "TToAddress")
-fmt.Printf("Activation cost: %s TRX\n", estimate.Trx.String())
+fmt.Printf("Activation cost: %s\n", estimate.Fee) // e.g. "1.1 TRX"
 
 // Get account resources
 resources, err := tron.TotalAvailableResources(ctx, "TAddress")
@@ -561,6 +645,8 @@ gotron/
 │   │   ├── transfer.go      # TRX transfers
 │   │   ├── trc20.go         # TRC20 token operations
 │   │   ├── resources.go     # Resource delegation
+│   │   ├── staking.go       # Stake 2.0 (stake/unstake/withdraw)
+│   │   ├── witness.go       # SR voting and rewards
 │   │   ├── block.go         # Block queries
 │   │   ├── transactions.go  # Transaction operations
 │   │   └── ...
@@ -613,7 +699,7 @@ if errors.Is(err, client.ErrAccountNotFound) {
 import "github.com/sxwebdev/gotron/pkg/address"
 
 // Create address generator
-generator := address.NewAddressGenerator(mnemonic, "passphrase")
+generator := address.NewGenerator(mnemonic, "passphrase")
 
 // Customize BIP44 path
 generator.

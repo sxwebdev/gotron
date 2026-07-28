@@ -120,6 +120,100 @@ func CreateFakeCreateAccountTransaction(fromAddress, toAddress string) (*core.Tr
 	return tx, nil
 }
 
+// CreateFakeStakeTransaction creates a fake FreezeBalanceV2 (unstake=false) or
+// UnfreezeBalanceV2 (unstake=true) transaction for bandwidth estimation.
+func CreateFakeStakeTransaction(ownerAddress string, amount int64, resourceType core.ResourceCode, unstake bool) (*core.Transaction, error) {
+	addrOwnerBytes, err := tronutils.DecodeCheck(ownerAddress)
+	if err != nil {
+		return nil, err
+	}
+
+	var contract proto.Message
+	var transactionContractType core.Transaction_Contract_ContractType
+
+	if !unstake {
+		contract = &core.FreezeBalanceV2Contract{
+			OwnerAddress:  addrOwnerBytes,
+			FrozenBalance: amount,
+			Resource:      resourceType,
+		}
+
+		transactionContractType = core.Transaction_Contract_FreezeBalanceV2Contract
+	} else {
+		contract = &core.UnfreezeBalanceV2Contract{
+			OwnerAddress:    addrOwnerBytes,
+			UnfreezeBalance: amount,
+			Resource:        resourceType,
+		}
+
+		transactionContractType = core.Transaction_Contract_UnfreezeBalanceV2Contract
+	}
+
+	contractAnyType, err := anypb.New(contract)
+	if err != nil {
+		return nil, err
+	}
+
+	refBlockBytes := []byte{0x01, 0x01}
+	hash := []byte{0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01}
+	now := time.Now().UnixNano() / int64(time.Millisecond)
+
+	transaction := &core.Transaction{
+		RawData: &core.TransactionRaw{
+			RefBlockBytes: refBlockBytes,
+			RefBlockHash:  hash,
+			Expiration:    now,
+			Timestamp:     now,
+			Contract: []*core.Transaction_Contract{
+				{
+					Type:      transactionContractType,
+					Parameter: contractAnyType,
+				},
+			},
+		},
+	}
+
+	return transaction, nil
+}
+
+// CreateFakeWithdrawUnstakedTransaction creates a fake WithdrawExpireUnfreeze
+// transaction for bandwidth estimation. CancelAllUnfreezeV2 carries the same
+// owner-only contract, so its estimate matches this one.
+func CreateFakeWithdrawUnstakedTransaction(ownerAddress string) (*core.Transaction, error) {
+	addrOwnerBytes, err := tronutils.DecodeCheck(ownerAddress)
+	if err != nil {
+		return nil, err
+	}
+
+	contract := &core.WithdrawExpireUnfreezeContract{OwnerAddress: addrOwnerBytes}
+
+	contractAnyType, err := anypb.New(contract)
+	if err != nil {
+		return nil, err
+	}
+
+	refBlockBytes := []byte{0x01, 0x01}
+	hash := []byte{0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01}
+	now := time.Now().UnixNano() / int64(time.Millisecond)
+
+	tx := &core.Transaction{
+		RawData: &core.TransactionRaw{
+			RefBlockBytes: refBlockBytes,
+			RefBlockHash:  hash,
+			Expiration:    now,
+			Timestamp:     now,
+			Contract: []*core.Transaction_Contract{
+				{
+					Type:      core.Transaction_Contract_WithdrawExpireUnfreezeContract,
+					Parameter: contractAnyType,
+				},
+			},
+		},
+	}
+
+	return tx, nil
+}
+
 // fillFakeTX fills the transaction with fake data.
 func fillFakeTX(tx *core.Transaction) error {
 	tx.Ret = nil

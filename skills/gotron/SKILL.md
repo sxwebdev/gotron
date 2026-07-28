@@ -75,8 +75,9 @@ See `references/transport-guide.md` for the full interface and implementation pa
 
 ### Key conventions
 
-- All amounts use `decimal.Decimal` (shopspring) to avoid floating-point precision errors
-- TRX to SUN: multiply by 1,000,000 (TrxDecimals = 6)
+- Amounts are typed, never bare numbers: every TRX-denominated value is a `SUN` (1 TRX = 1,000,000 SUN) and every TRC20 amount is a `TokenAmount` in the token's own minimal units. The unit is part of the signature, so the compiler rejects the mix-up
+- Convert only at the edges — `FromTRX` / `SUN.TRX()`, `FromTokenDecimal` / `FromTokenUnits` / `TokenAmount.Decimal(decimals)`. Those constructors are the single place that rejects unrepresentable values, so per-method overflow guards are neither needed nor wanted
+- Resource units (energy, bandwidth) and percentages stay plain `decimal.Decimal` / `int64` — they are not money
 - All operations are stateless and context-driven
 - Addresses are base58-encoded strings at the Client API level, decoded to `[]byte` before passing to Transport
 - Config struct (not functional options) for client construction
@@ -132,12 +133,12 @@ All TRC20 methods are in `pkg/client/trc20.go`. The low-level `TRC20Call` method
 
 ### Estimating fees
 
-Cost estimators all return `*EstimateResult { Energy, Bandwidth, Trx }` (TRX in actual TRX, not SUN).
+Cost estimators all return `*EstimateResult { Energy, Bandwidth, Fee }` — `Energy` and `Bandwidth` in raw resource points, `Fee` as a `SUN`.
 
 - **Per transaction:** `EstimateBandwidth(tx)` for bandwidth points, `EstimateEnergy(...)` for contract energy.
   Both live in `pkg/client/estimate_resources.go`.
 - **Activation only:** `EstimateActivationFee(ctx, from, to)` (local fake tx, fast) or `EstimateSystemContractActivation(ctx, caller, receiver)` (real CreateAccount RPC, more accurate). Both return zeros for already-activated receivers and are in `pkg/client/activate.go`.
-- **Full transfer (TRX or TRC20):** `EstimateTransfer(ctx, from, to, contract, amount, decimals)` returns `EstimateTransferResult` with `Total / Transfer / Activation` breakdown. `Activation` is zero for activated recipients; `Total = Transfer + Activation` (conservative upper bound — Tron consumes the activation fee inside the transfer tx itself, so real cost may be slightly lower).
+- **Full transfer:** `EstimateTRXTransfer(ctx, from, to, amount SUN)` and `EstimateTRC20Transfer(ctx, from, to, contract, amount TokenAmount)` — separate calls because the two amounts sit on different scales. Both return `EstimateTransferResult` with a `Total / Transfer / Activation` breakdown. `Activation` is zero for activated recipients; `Total = Transfer + Activation` (conservative upper bound — Tron consumes the activation fee inside the transfer tx itself, so real cost may be slightly lower).
 - **Unactivated recipients are valid.** Sending TRX or TRC20 to an unactivated address activates it; do not gate transfers on `IsAccountActivated`. The sentinel `ErrAccountNotActivated` exists for callers that explicitly require an activated address.
 
 ### Health checking and tier-based fallback
@@ -273,5 +274,5 @@ func TestGetNodeInfo_GRPC(t *testing.T) {
 - **All transports must stay in sync.** Every `Transport` interface method must have implementations in **all 6 transport files** (`transport_grpc.go`, `transport_http.go`, `transport_roundrobin.go`, `health.go`, `transport_metrics.go`, plus the interface declaration in `transport.go`). The compiler enforces the interface, but forgetting one of the wrappers — especially `HealthAwareTransport` (default in production) — will surface only at runtime.
 - **HTTP transport needs JSON transformation.** Tron's HTTP API returns non-standard JSON (hex strings instead of base64, `type_url`/`value` instead of `@type`). Use the appropriate `doRequest*` variant.
 - **Addresses are strings at the Client boundary.** Convert to `[]byte` with `tronutils.DecodeCheck(addr)` before passing to transport. This keeps the public API ergonomic while the transport layer works with raw bytes.
-- **Decimal precision matters.** Never use `float64` for token amounts. Use `decimal.Decimal` for TRX and `*big.Int` for TRC20 token amounts.
+- **Decimal precision matters.** Never use `float64` for an amount, and never carry one as a bare `int64`. Build a `SUN` or a `TokenAmount`; the constructors take `decimal.Decimal` / `*big.Int` and reject anything unrepresentable.
 - **Tests hit real public nodes.** No mocks — integration tests use `tron-grpc.publicnode.com:443` and `https://tron-rpc.publicnode.com`. Always add both `_GRPC` and `_HTTP` variants.

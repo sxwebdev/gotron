@@ -2,6 +2,7 @@ package gotron
 
 import (
 	"github.com/sxwebdev/gotron/pkg/client"
+	"github.com/sxwebdev/gotron/pkg/units"
 )
 
 // Network types for Tron blockchain
@@ -26,6 +27,8 @@ const (
 const (
 	// TrxDecimals is the number of decimals for TRX (1 TRX = 1,000,000 SUN)
 	TrxDecimals = client.TrxDecimals
+	// SunPerTRX is the fixed scale of TRX: 1 TRX = 1,000,000 SUN
+	SunPerTRX = units.SunPerTRX
 	// Trc20TransferEventSignature is the event signature for TRC20 transfers
 	Trc20TransferEventSignature = client.Trc20TransferEventSignature
 )
@@ -39,6 +42,28 @@ type Tron struct {
 
 // Config is an alias for client.Config for convenience
 type Config = client.Config
+
+// Amount types. Every TRX-denominated value in the SDK is a SUN and every TRC20
+// amount is a TokenAmount, so the unit is always part of the signature.
+type (
+	// SUN is an amount of TRX in the chain's native unit: 1 TRX = 1,000,000 SUN.
+	SUN = client.SUN
+	// TokenAmount is an amount of a TRC20 token in the token's minimal units.
+	TokenAmount = client.TokenAmount
+)
+
+// Amount constructors, re-exported for convenience.
+var (
+	// FromTRX converts a TRX amount to SUN, rejecting values that cannot be
+	// represented exactly.
+	FromTRX = client.FromTRX
+	// MustFromTRX is FromTRX for constants and tests; it panics on bad input.
+	MustFromTRX = client.MustFromTRX
+	// FromTokenUnits wraps a raw minimal-unit token amount.
+	FromTokenUnits = client.FromTokenUnits
+	// FromTokenDecimal converts a human-facing token amount using the token's decimals.
+	FromTokenDecimal = client.FromTokenDecimal
+)
 
 // New creates a new Tron client with the specified configuration.
 //

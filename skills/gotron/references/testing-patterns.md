@@ -32,7 +32,15 @@ httpAddress = "https://tron-rpc.publicnode.com"
 testAddress  = "TZ4UXDV5ZhNW7fb2AMSbgfAEZ7hWsnYS2g"  // Binance hot wallet (always active, has balance)
 usdtContract = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"  // USDT TRC20 contract
 testBlockNum = uint64(79831098)                         // known block with transactions
+
+stakedAddress  = "TUFaFimz7DYk8DVzUznvBgzBAFGppLEJaL"  // active Stake 2.0 position (bandwidth + energy),
+                                                        // non-zero brokerage, active SR votes
+witnessAddress = "TN2W4cc7a4dsYyTLiLMWa9m7jVpdLjGvYs"  // registered super representative (huobiwallet)
 ```
+
+No account with a pending unstake (`unfrozenV2`) is known, so the integration tests exercise the
+`UnstakingTotal`/`WithdrawableNow` path only through the zero case. The non-zero cases are covered
+by unit tests in `pkg/client/staking_test.go` with now-relative fixtures.
 
 ## Test Naming Convention
 
@@ -88,17 +96,22 @@ func TestGetAccount_HTTP(t *testing.T) {
 | `contract_test.go`     | TRC20GetName, TRC20GetSymbol, TRC20GetDecimals, TRC20ContractBalance               |
 | `asset_test.go`        | GetAssetIssueById, GetAssetIssueListByName                                         |
 | `multinode_test.go`    | Round-robin distribution across gRPC + HTTP                                        |
+| `staking_test.go`      | GetStakeInfo, GetAvailableUnstakeCount, GetWithdrawableUnstaked                    |
+| `witness_test.go`      | ListWitnesses, GetUnclaimedReward, GetWitnessBrokerage                             |
 | `compare_test.go`      | Cross-protocol comparison (same query, both transports, compare results)           |
 | `large_blocks_test.go` | Large block range retrieval (tests MaxCallRecvMsgSize)                             |
 | `common_test.go`       | Shared helpers and test constants                                                  |
 
 Unit tests in `pkg/client/`:
 
-| File                       | What it tests                                                                  |
-| -------------------------- | ------------------------------------------------------------------------------ |
-| `metrics_test.go`          | `MetricsTransport`, built-in Prometheus metrics, mock helpers                  |
-| `health_test.go`           | `HealthAwareTransport` behaviour with `synctest`: tier fallback, recovery, etc.|
-| `health_helpers_test.go`   | `controllableTransport` mock + `newHarness` for health tests                   |
+| File                             | What it tests                                                                   |
+| -------------------------------- | ------------------------------------------------------------------------------- |
+| `metrics_test.go`                | `MetricsTransport`, built-in Prometheus metrics, mock helpers                   |
+| `health_test.go`                 | `HealthAwareTransport` behaviour with `synctest`: tier fallback, recovery, etc. |
+| `health_helpers_test.go`         | `controllableTransport` mock + `newHarness` for health tests                    |
+| `staking_test.go`                | Stake/Unstake contract building, `GetStakeInfo` aggregation, ms-vs-s expiry     |
+| `witness_test.go`                | Vote set building and order, reward/brokerage unwrapping                        |
+| `transport_http_stake_test.go`   | `doTxRequest` on recorded live responses, `frozenV2` mapping, reward fields     |
 
 ## Running Tests
 

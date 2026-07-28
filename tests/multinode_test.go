@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/sxwebdev/gotron/pkg/client"
@@ -58,9 +57,9 @@ func TestMultiNode_GetAccountBalance(t *testing.T) {
 	for i := range 4 {
 		balance, err := c.GetAccountBalance(ctx, testAddress)
 		require.NoError(t, err)
-		assert.True(t, balance.GreaterThanOrEqual(decimal.Zero))
+		assert.GreaterOrEqual(t, balance, client.SUN(0))
 
-		t.Logf("MultiNode request %d: Account balance: %s TRX", i+1, balance.String())
+		t.Logf("MultiNode request %d: Account balance: %s", i+1, balance)
 	}
 }
 

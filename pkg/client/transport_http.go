@@ -382,6 +382,100 @@ func (t *HTTPTransport) doRequest(ctx context.Context, endpoint string, body any
 	return nil
 }
 
+// doTxRequest performs an HTTP POST request to a transaction-creating endpoint.
+//
+// Such endpoints return the raw transaction at the top level instead of the
+// TransactionExtention shape, and report contract validation failures as HTTP 200
+// with an "Error" field. The transaction is rebuilt from raw_data_hex, which is the
+// protobuf-serialized TransactionRaw - unlike raw_data, it needs no JSON translation
+// and carries addresses in their canonical byte form regardless of "visible".
+func (t *HTTPTransport) doTxRequest(ctx context.Context, endpoint string, body any) (*api.TransactionExtention, error) {
+	respBody, err := t.doRequestRaw(ctx, endpoint, body)
+	if err != nil {
+		return nil, err
+	}
+
+	return t.parseTxResponse(endpoint, respBody)
+}
+
+// doTxRequestWrapped is doTxRequest for transaction-creating endpoints that nest the
+// transaction under "transaction" and report the outcome in "result" instead of "Error"
+// (e.g. /wallet/triggersmartcontract).
+func (t *HTTPTransport) doTxRequestWrapped(ctx context.Context, endpoint string, body any) (*api.TransactionExtention, error) {
+	respBody, err := t.doRequestRaw(ctx, endpoint, body)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp struct {
+		Result struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"result"`
+		Transaction json.RawMessage `json:"transaction"`
+	}
+	if err := json.Unmarshal(respBody, &resp); err != nil {
+		return nil, t.wrapErr(endpoint, fmt.Errorf("unmarshal response: %w (body: %s)", err, string(respBody)))
+	}
+
+	if resp.Result.Code != "" && resp.Result.Code != api.Return_SUCCESS.String() {
+		// java-tron serializes Return.message (bytes) as hex, so decode it when possible
+		// to surface the human-readable validation error.
+		message := resp.Result.Message
+		if decoded, err := hex.DecodeString(message); err == nil {
+			message = string(decoded)
+		}
+		return nil, t.wrapErr(endpoint, fmt.Errorf("%w: %s: %s", ErrInvalidTransaction, resp.Result.Code, message))
+	}
+
+	if len(resp.Transaction) == 0 {
+		return nil, t.wrapErr(endpoint, fmt.Errorf("%w: no transaction in response (body: %s)", ErrInvalidTransaction, string(respBody)))
+	}
+
+	return t.parseTxResponse(endpoint, resp.Transaction)
+}
+
+// parseTxResponse rebuilds a transaction from a Tron transaction JSON object.
+func (t *HTTPTransport) parseTxResponse(endpoint string, respBody []byte) (*api.TransactionExtention, error) {
+	var resp struct {
+		Error      string `json:"Error"`
+		TxID       string `json:"txID"`
+		RawDataHex string `json:"raw_data_hex"`
+	}
+	if err := json.Unmarshal(respBody, &resp); err != nil {
+		return nil, t.wrapErr(endpoint, fmt.Errorf("unmarshal transaction: %w (body: %s)", err, string(respBody)))
+	}
+
+	if resp.Error != "" {
+		return nil, t.wrapErr(endpoint, fmt.Errorf("%s", resp.Error))
+	}
+
+	if resp.RawDataHex == "" {
+		return nil, t.wrapErr(endpoint, fmt.Errorf("%w: no raw_data_hex in response (body: %s)", ErrInvalidTransaction, string(respBody)))
+	}
+
+	rawBytes, err := hex.DecodeString(resp.RawDataHex)
+	if err != nil {
+		return nil, t.wrapErr(endpoint, fmt.Errorf("decode raw_data_hex: %w", err))
+	}
+
+	rawData := &core.TransactionRaw{}
+	if err := proto.Unmarshal(rawBytes, rawData); err != nil {
+		return nil, t.wrapErr(endpoint, fmt.Errorf("unmarshal raw_data_hex: %w", err))
+	}
+
+	txid, err := hex.DecodeString(resp.TxID)
+	if err != nil {
+		return nil, t.wrapErr(endpoint, fmt.Errorf("decode txID: %w", err))
+	}
+
+	return &api.TransactionExtention{
+		Transaction: &core.Transaction{RawData: rawData},
+		Txid:        txid,
+		Result:      &api.Return{Result: true, Code: api.Return_SUCCESS},
+	}, nil
+}
+
 // doRequestTransformed performs an HTTP POST request and transforms Tron's
 // non-standard JSON format to standard protobuf JSON before unmarshaling.
 // This is needed for endpoints that return protobuf Any types.
@@ -498,10 +592,25 @@ type httpAccount struct {
 	AccountResource       *httpAccountResource `json:"account_resource"`
 	OwnerPermission       json.RawMessage      `json:"owner_permission"`
 	ActivePermission      json.RawMessage      `json:"active_permission"`
-	FrozenV2              json.RawMessage      `json:"frozenV2"`
+	FrozenV2              []httpFreezeV2       `json:"frozenV2"`
+	UnfrozenV2            []httpUnFreezeV2     `json:"unfrozenV2"`
 	AssetV2               json.RawMessage      `json:"assetV2"`
 	FreeAssetNetUsageV2   json.RawMessage      `json:"free_asset_net_usageV2"`
 	AssetOptimized        bool                 `json:"asset_optimized"`
+}
+
+// httpFreezeV2 is a Stake 2.0 staked-balance entry. Tron omits "type" for
+// BANDWIDTH (the zero enum) and omits "amount" when it is zero.
+type httpFreezeV2 struct {
+	Type   string `json:"type"`
+	Amount int64  `json:"amount"`
+}
+
+// httpUnFreezeV2 is a Stake 2.0 pending-unstake entry.
+type httpUnFreezeV2 struct {
+	Type               string `json:"type"`
+	UnfreezeAmount     int64  `json:"unfreeze_amount"`
+	UnfreezeExpireTime int64  `json:"unfreeze_expire_time"`
 }
 
 type httpAccountResource struct {
@@ -544,6 +653,21 @@ func (t *HTTPTransport) GetAccount(ctx context.Context, account *core.Account) (
 	// Decode address
 	if httpAcc.Address != "" {
 		result.Address, _ = tronutils.DecodeCheck(httpAcc.Address)
+	}
+
+	// Stake 2.0 balances
+	for _, item := range httpAcc.FrozenV2 {
+		result.FrozenV2 = append(result.FrozenV2, &core.Account_FreezeV2{
+			Type:   core.ResourceCode(core.ResourceCode_value[item.Type]),
+			Amount: item.Amount,
+		})
+	}
+	for _, item := range httpAcc.UnfrozenV2 {
+		result.UnfrozenV2 = append(result.UnfrozenV2, &core.Account_UnFreezeV2{
+			Type:               core.ResourceCode(core.ResourceCode_value[item.Type]),
+			UnfreezeAmount:     item.UnfreezeAmount,
+			UnfreezeExpireTime: item.UnfreezeExpireTime,
+		})
 	}
 
 	return result, nil
@@ -606,12 +730,7 @@ func (t *HTTPTransport) CreateAccount(ctx context.Context, contract *core.Accoun
 		"visible":         true,
 	}
 
-	result := &api.TransactionExtention{}
-	if err := t.doRequest(ctx, "/wallet/createaccount", reqBody, result); err != nil {
-		return nil, err
-	}
-
-	return result, nil
+	return t.doTxRequest(ctx, "/wallet/createaccount", reqBody)
 }
 
 // Block operations
@@ -750,6 +869,20 @@ func (t *HTTPTransport) GetTransactionInfoById(ctx context.Context, id []byte) (
 	return result, nil
 }
 
+// httpBroadcastResponse is a helper struct for parsing HTTP API broadcast responses.
+//
+// api.Return.Message is a protobuf bytes field, which protojson insists on decoding
+// as base64, but the node sends a plain-text sentence there ("Validate signature
+// error: ..."). Unmarshaling straight into api.Return therefore fails outright, so
+// every rejection reached the caller as an opaque protojson error instead of a
+// BroadcastError carrying the response code.
+type httpBroadcastResponse struct {
+	Result  bool   `json:"result"`
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	Error   string `json:"Error"`
+}
+
 func (t *HTTPTransport) BroadcastTransaction(ctx context.Context, tx *core.Transaction) (*api.Return, error) {
 	// Convert transaction to JSON using protojson
 	txJSON, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(tx)
@@ -763,12 +896,25 @@ func (t *HTTPTransport) BroadcastTransaction(ctx context.Context, tx *core.Trans
 	}
 	reqBody["visible"] = true
 
-	result := &api.Return{}
-	if err := t.doRequest(ctx, "/wallet/broadcasttransaction", reqBody, result); err != nil {
+	respBody, err := t.doRequestRaw(ctx, "/wallet/broadcasttransaction", reqBody)
+	if err != nil {
 		return nil, err
 	}
 
-	return result, nil
+	var resp httpBroadcastResponse
+	if err := json.Unmarshal(respBody, &resp); err != nil {
+		return nil, t.wrapErr("/wallet/broadcasttransaction", fmt.Errorf("unmarshal response: %w (body: %s)", err, string(respBody)))
+	}
+
+	if resp.Error != "" {
+		return nil, t.wrapErr("/wallet/broadcasttransaction", fmt.Errorf("%s", resp.Error))
+	}
+
+	return &api.Return{
+		Result:  resp.Result,
+		Code:    api.ReturnResponseCode(api.ReturnResponseCode_value[resp.Code]),
+		Message: []byte(resp.Message),
+	}, nil
 }
 
 func (t *HTTPTransport) CreateTransaction(ctx context.Context, contract *core.TransferContract) (*api.TransactionExtention, error) {
@@ -779,12 +925,7 @@ func (t *HTTPTransport) CreateTransaction(ctx context.Context, contract *core.Tr
 		"visible":       true,
 	}
 
-	result := &api.TransactionExtention{}
-	if err := t.doRequest(ctx, "/wallet/createtransaction", reqBody, result); err != nil {
-		return nil, err
-	}
-
-	return result, nil
+	return t.doTxRequest(ctx, "/wallet/createtransaction", reqBody)
 }
 
 // Contract operations
@@ -805,12 +946,7 @@ func (t *HTTPTransport) TriggerContract(ctx context.Context, contract *core.Trig
 		reqBody["token_id"] = contract.TokenId
 	}
 
-	result := &api.TransactionExtention{}
-	if err := t.doRequest(ctx, "/wallet/triggersmartcontract", reqBody, result); err != nil {
-		return nil, err
-	}
-
-	return result, nil
+	return t.doTxRequestWrapped(ctx, "/wallet/triggersmartcontract", reqBody)
 }
 
 // httpTriggerConstantContractResponse is a helper struct for parsing HTTP API response
@@ -910,12 +1046,7 @@ func (t *HTTPTransport) DeployContract(ctx context.Context, contract *core.Creat
 		}
 	}
 
-	result := &api.TransactionExtention{}
-	if err := t.doRequest(ctx, "/wallet/deploycontract", reqBody, result); err != nil {
-		return nil, err
-	}
-
-	return result, nil
+	return t.doTxRequest(ctx, "/wallet/deploycontract", reqBody)
 }
 
 func (t *HTTPTransport) GetContract(ctx context.Context, address []byte) (*core.SmartContract, error) {
@@ -940,12 +1071,7 @@ func (t *HTTPTransport) UpdateSetting(ctx context.Context, contract *core.Update
 		"visible":                       true,
 	}
 
-	result := &api.TransactionExtention{}
-	if err := t.doRequest(ctx, "/wallet/updatesetting", reqBody, result); err != nil {
-		return nil, err
-	}
-
-	return result, nil
+	return t.doTxRequest(ctx, "/wallet/updatesetting", reqBody)
 }
 
 func (t *HTTPTransport) UpdateEnergyLimit(ctx context.Context, contract *core.UpdateEnergyLimitContract) (*api.TransactionExtention, error) {
@@ -956,12 +1082,7 @@ func (t *HTTPTransport) UpdateEnergyLimit(ctx context.Context, contract *core.Up
 		"visible":             true,
 	}
 
-	result := &api.TransactionExtention{}
-	if err := t.doRequest(ctx, "/wallet/updateenergylimit", reqBody, result); err != nil {
-		return nil, err
-	}
-
-	return result, nil
+	return t.doTxRequest(ctx, "/wallet/updateenergylimit", reqBody)
 }
 
 // Resource operations
@@ -1057,12 +1178,7 @@ func (t *HTTPTransport) DelegateResource(ctx context.Context, contract *core.Del
 		reqBody["lock_period"] = contract.LockPeriod
 	}
 
-	result := &api.TransactionExtention{}
-	if err := t.doRequest(ctx, "/wallet/delegateresource", reqBody, result); err != nil {
-		return nil, err
-	}
-
-	return result, nil
+	return t.doTxRequest(ctx, "/wallet/delegateresource", reqBody)
 }
 
 func (t *HTTPTransport) UnDelegateResource(ctx context.Context, contract *core.UnDelegateResourceContract) (*api.TransactionExtention, error) {
@@ -1074,12 +1190,201 @@ func (t *HTTPTransport) UnDelegateResource(ctx context.Context, contract *core.U
 		"visible":          true,
 	}
 
-	result := &api.TransactionExtention{}
-	if err := t.doRequest(ctx, "/wallet/undelegateresource", reqBody, result); err != nil {
+	return t.doTxRequest(ctx, "/wallet/undelegateresource", reqBody)
+}
+
+// Staking operations (Stake 2.0)
+
+func (t *HTTPTransport) FreezeBalanceV2(ctx context.Context, contract *core.FreezeBalanceV2Contract) (*api.TransactionExtention, error) {
+	reqBody := map[string]any{
+		"owner_address":  tronutils.EncodeCheck(contract.OwnerAddress),
+		"frozen_balance": contract.FrozenBalance,
+		"resource":       contract.Resource.String(),
+		"visible":        true,
+	}
+
+	return t.doTxRequest(ctx, "/wallet/freezebalancev2", reqBody)
+}
+
+func (t *HTTPTransport) UnfreezeBalanceV2(ctx context.Context, contract *core.UnfreezeBalanceV2Contract) (*api.TransactionExtention, error) {
+	reqBody := map[string]any{
+		"owner_address":    tronutils.EncodeCheck(contract.OwnerAddress),
+		"unfreeze_balance": contract.UnfreezeBalance,
+		"resource":         contract.Resource.String(),
+		"visible":          true,
+	}
+
+	return t.doTxRequest(ctx, "/wallet/unfreezebalancev2", reqBody)
+}
+
+func (t *HTTPTransport) WithdrawExpireUnfreeze(ctx context.Context, contract *core.WithdrawExpireUnfreezeContract) (*api.TransactionExtention, error) {
+	reqBody := map[string]any{
+		"owner_address": tronutils.EncodeCheck(contract.OwnerAddress),
+		"visible":       true,
+	}
+
+	return t.doTxRequest(ctx, "/wallet/withdrawexpireunfreeze", reqBody)
+}
+
+func (t *HTTPTransport) CancelAllUnfreezeV2(ctx context.Context, contract *core.CancelAllUnfreezeV2Contract) (*api.TransactionExtention, error) {
+	reqBody := map[string]any{
+		"owner_address": tronutils.EncodeCheck(contract.OwnerAddress),
+		"visible":       true,
+	}
+
+	return t.doTxRequest(ctx, "/wallet/cancelallunfreezev2", reqBody)
+}
+
+func (t *HTTPTransport) GetAvailableUnfreezeCount(ctx context.Context, msg *api.GetAvailableUnfreezeCountRequestMessage) (*api.GetAvailableUnfreezeCountResponseMessage, error) {
+	reqBody := map[string]any{
+		"owner_address": tronutils.EncodeCheck(msg.OwnerAddress),
+		"visible":       true,
+	}
+
+	result := &api.GetAvailableUnfreezeCountResponseMessage{}
+	if err := t.doRequest(ctx, "/wallet/getavailableunfreezecount", reqBody, result); err != nil {
 		return nil, err
 	}
 
 	return result, nil
+}
+
+func (t *HTTPTransport) GetCanWithdrawUnfreezeAmount(ctx context.Context, msg *api.CanWithdrawUnfreezeAmountRequestMessage) (*api.CanWithdrawUnfreezeAmountResponseMessage, error) {
+	reqBody := map[string]any{
+		"owner_address": tronutils.EncodeCheck(msg.OwnerAddress),
+		"timestamp":     msg.Timestamp,
+		"visible":       true,
+	}
+
+	result := &api.CanWithdrawUnfreezeAmountResponseMessage{}
+	if err := t.doRequest(ctx, "/wallet/getcanwithdrawunfreezeamount", reqBody, result); err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
+// Witness operations
+
+func (t *HTTPTransport) VoteWitnessAccount(ctx context.Context, contract *core.VoteWitnessContract) (*api.TransactionExtention, error) {
+	votes := make([]map[string]any, len(contract.Votes))
+	for i, vote := range contract.Votes {
+		votes[i] = map[string]any{
+			"vote_address": tronutils.EncodeCheck(vote.VoteAddress),
+			"vote_count":   vote.VoteCount,
+		}
+	}
+
+	reqBody := map[string]any{
+		"owner_address": tronutils.EncodeCheck(contract.OwnerAddress),
+		"votes":         votes,
+		"visible":       true,
+	}
+
+	return t.doTxRequest(ctx, "/wallet/votewitnessaccount", reqBody)
+}
+
+func (t *HTTPTransport) WithdrawBalance(ctx context.Context, contract *core.WithdrawBalanceContract) (*api.TransactionExtention, error) {
+	reqBody := map[string]any{
+		"owner_address": tronutils.EncodeCheck(contract.OwnerAddress),
+		"visible":       true,
+	}
+
+	return t.doTxRequest(ctx, "/wallet/withdrawbalance", reqBody)
+}
+
+// httpWitness is a helper struct for parsing HTTP API witness list response.
+// /wallet/listwitnesses ignores "visible" and always returns hex addresses.
+type httpWitness struct {
+	Address        string `json:"address"`
+	VoteCount      int64  `json:"voteCount"`
+	URL            string `json:"url"`
+	TotalProduced  int64  `json:"totalProduced"`
+	TotalMissed    int64  `json:"totalMissed"`
+	LatestBlockNum int64  `json:"latestBlockNum"`
+	LatestSlotNum  int64  `json:"latestSlotNum"`
+	IsJobs         bool   `json:"isJobs"`
+}
+
+func (t *HTTPTransport) ListWitnesses(ctx context.Context) (*api.WitnessList, error) {
+	respBody, err := t.doRequestRaw(ctx, "/wallet/listwitnesses", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp struct {
+		Witnesses []httpWitness `json:"witnesses"`
+	}
+	if err := json.Unmarshal(respBody, &resp); err != nil {
+		return nil, fmt.Errorf("unmarshal witness list: %w", err)
+	}
+
+	result := &api.WitnessList{Witnesses: make([]*core.Witness, 0, len(resp.Witnesses))}
+	for _, w := range resp.Witnesses {
+		addr, err := hex.DecodeString(w.Address)
+		if err != nil {
+			return nil, fmt.Errorf("decode witness address %q: %w", w.Address, err)
+		}
+
+		result.Witnesses = append(result.Witnesses, &core.Witness{
+			Address:        addr,
+			VoteCount:      w.VoteCount,
+			Url:            w.URL,
+			TotalProduced:  w.TotalProduced,
+			TotalMissed:    w.TotalMissed,
+			LatestBlockNum: w.LatestBlockNum,
+			LatestSlotNum:  w.LatestSlotNum,
+			IsJobs:         w.IsJobs,
+		})
+	}
+
+	return result, nil
+}
+
+// GetRewardInfo uses the camelCase /wallet/getReward endpoint (the lowercase path
+// returns HTTP 405) and its response field is "reward", not NumberMessage's "num".
+func (t *HTTPTransport) GetRewardInfo(ctx context.Context, address []byte) (*api.NumberMessage, error) {
+	reqBody := map[string]any{
+		"address": tronutils.EncodeCheck(address),
+		"visible": true,
+	}
+
+	respBody, err := t.doRequestRaw(ctx, "/wallet/getReward", reqBody)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp struct {
+		Reward int64 `json:"reward"`
+	}
+	if err := json.Unmarshal(respBody, &resp); err != nil {
+		return nil, fmt.Errorf("unmarshal reward: %w", err)
+	}
+
+	return &api.NumberMessage{Num: resp.Reward}, nil
+}
+
+// GetBrokerageInfo uses the camelCase /wallet/getBrokerage endpoint (the lowercase
+// path returns HTTP 405) and its response field is "brokerage", not "num".
+func (t *HTTPTransport) GetBrokerageInfo(ctx context.Context, address []byte) (*api.NumberMessage, error) {
+	reqBody := map[string]any{
+		"address": tronutils.EncodeCheck(address),
+		"visible": true,
+	}
+
+	respBody, err := t.doRequestRaw(ctx, "/wallet/getBrokerage", reqBody)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp struct {
+		Brokerage int64 `json:"brokerage"`
+	}
+	if err := json.Unmarshal(respBody, &resp); err != nil {
+		return nil, fmt.Errorf("unmarshal brokerage: %w", err)
+	}
+
+	return &api.NumberMessage{Num: resp.Brokerage}, nil
 }
 
 // Asset operations

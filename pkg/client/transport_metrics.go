@@ -246,6 +246,87 @@ func (t *MetricsTransport) UnDelegateResource(ctx context.Context, contract *cor
 	return result, err
 }
 
+// Staking operations (Stake 2.0)
+
+func (t *MetricsTransport) FreezeBalanceV2(ctx context.Context, contract *core.FreezeBalanceV2Contract) (*api.TransactionExtention, error) {
+	start := time.Now()
+	result, err := t.transport.FreezeBalanceV2(ctx, contract)
+	t.after("FreezeBalanceV2", start, err)
+	return result, err
+}
+
+func (t *MetricsTransport) UnfreezeBalanceV2(ctx context.Context, contract *core.UnfreezeBalanceV2Contract) (*api.TransactionExtention, error) {
+	start := time.Now()
+	result, err := t.transport.UnfreezeBalanceV2(ctx, contract)
+	t.after("UnfreezeBalanceV2", start, err)
+	return result, err
+}
+
+func (t *MetricsTransport) WithdrawExpireUnfreeze(ctx context.Context, contract *core.WithdrawExpireUnfreezeContract) (*api.TransactionExtention, error) {
+	start := time.Now()
+	result, err := t.transport.WithdrawExpireUnfreeze(ctx, contract)
+	t.after("WithdrawExpireUnfreeze", start, err)
+	return result, err
+}
+
+func (t *MetricsTransport) CancelAllUnfreezeV2(ctx context.Context, contract *core.CancelAllUnfreezeV2Contract) (*api.TransactionExtention, error) {
+	start := time.Now()
+	result, err := t.transport.CancelAllUnfreezeV2(ctx, contract)
+	t.after("CancelAllUnfreezeV2", start, err)
+	return result, err
+}
+
+func (t *MetricsTransport) GetAvailableUnfreezeCount(ctx context.Context, msg *api.GetAvailableUnfreezeCountRequestMessage) (*api.GetAvailableUnfreezeCountResponseMessage, error) {
+	start := time.Now()
+	result, err := t.transport.GetAvailableUnfreezeCount(ctx, msg)
+	t.after("GetAvailableUnfreezeCount", start, err)
+	return result, err
+}
+
+func (t *MetricsTransport) GetCanWithdrawUnfreezeAmount(ctx context.Context, msg *api.CanWithdrawUnfreezeAmountRequestMessage) (*api.CanWithdrawUnfreezeAmountResponseMessage, error) {
+	start := time.Now()
+	result, err := t.transport.GetCanWithdrawUnfreezeAmount(ctx, msg)
+	t.after("GetCanWithdrawUnfreezeAmount", start, err)
+	return result, err
+}
+
+// Witness operations
+
+func (t *MetricsTransport) VoteWitnessAccount(ctx context.Context, contract *core.VoteWitnessContract) (*api.TransactionExtention, error) {
+	start := time.Now()
+	result, err := t.transport.VoteWitnessAccount(ctx, contract)
+	t.after("VoteWitnessAccount", start, err)
+	return result, err
+}
+
+func (t *MetricsTransport) WithdrawBalance(ctx context.Context, contract *core.WithdrawBalanceContract) (*api.TransactionExtention, error) {
+	start := time.Now()
+	result, err := t.transport.WithdrawBalance(ctx, contract)
+	t.after("WithdrawBalance", start, err)
+	return result, err
+}
+
+func (t *MetricsTransport) ListWitnesses(ctx context.Context) (*api.WitnessList, error) {
+	start := time.Now()
+	result, err := t.transport.ListWitnesses(ctx)
+	t.after("ListWitnesses", start, err)
+	return result, err
+}
+
+func (t *MetricsTransport) GetRewardInfo(ctx context.Context, address []byte) (*api.NumberMessage, error) {
+	start := time.Now()
+	result, err := t.transport.GetRewardInfo(ctx, address)
+	t.after("GetRewardInfo", start, err)
+	return result, err
+}
+
+func (t *MetricsTransport) GetBrokerageInfo(ctx context.Context, address []byte) (*api.NumberMessage, error) {
+	start := time.Now()
+	result, err := t.transport.GetBrokerageInfo(ctx, address)
+	t.after("GetBrokerageInfo", start, err)
+	return result, err
+}
+
 // Asset operations
 
 func (t *MetricsTransport) GetAssetIssueById(ctx context.Context, id []byte) (*core.AssetIssueContract, error) {

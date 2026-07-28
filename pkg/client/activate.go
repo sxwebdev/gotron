@@ -5,14 +5,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/shopspring/decimal"
 	"github.com/sxwebdev/gotron/schema/pb/core"
 	"google.golang.org/protobuf/proto"
 )
 
 // EstimateActivationFee estimates the activation fee for a Tron address.
 // It checks the available bandwidth and adds the activation fee accordingly.
-// The fee is returned in TRX (1 TRX = 1_000_000 SUN).
+// The fee is returned in SUN.
 // We assume that fromAddress is ALWAYS activated, being it processing address.
 // Simple swap of arg to BlackHoleAddress on fakeTx creation will always return valid tx.
 func (t *Client) EstimateActivationFee(ctx context.Context, fromAddress, toAddress string) (*EstimateResult, error) {
@@ -33,7 +32,7 @@ func (t *Client) EstimateActivationFee(ctx context.Context, fromAddress, toAddre
 	}
 
 	// Add activation constant fee
-	estimate.Trx = estimate.Trx.Add(decimal.NewFromInt(chainParams.CreateNewAccountFeeInSystemContract))
+	estimate.Fee += SUN(chainParams.CreateNewAccountFeeInSystemContract)
 
 	accountResources, err := t.AvailableForDelegateResources(ctx, fromAddress)
 	if err != nil {
@@ -56,13 +55,10 @@ func (t *Client) EstimateActivationFee(ctx context.Context, fromAddress, toAddre
 	// do NOT count. If the caller has no own staked bandwidth (or not enough
 	// of it) to cover the activation transaction, 0.1 TRX is burned.
 	if accountResources.Bandwidth.LessThan(estimatedBandwidth) {
-		estimate.Trx = estimate.Trx.Add(decimal.NewFromInt(chainParams.CreateAccountFee))
+		estimate.Fee += SUN(chainParams.CreateAccountFee)
 	} else {
 		estimate.Bandwidth = estimate.Bandwidth.Add(estimatedBandwidth)
 	}
-
-	// Convert from SUN to TRX
-	estimate.Trx = estimate.Trx.Div(decimal.NewFromInt(1e6))
 
 	return estimate, nil
 }
@@ -70,7 +66,7 @@ func (t *Client) EstimateActivationFee(ctx context.Context, fromAddress, toAddre
 // EstimateSystemContractActivation estimates the activation fee for a Tron address
 // by building a real CreateAccount transaction via the node API (instead of the
 // local fake transaction used by EstimateActivationFee).
-// The fee is returned in TRX (1 TRX = 1_000_000 SUN).
+// The fee is returned in SUN.
 func (t *Client) EstimateSystemContractActivation(ctx context.Context, caller string, receiver string) (*EstimateResult, error) {
 	estimate := &EstimateResult{}
 
@@ -89,7 +85,7 @@ func (t *Client) EstimateSystemContractActivation(ctx context.Context, caller st
 	}
 
 	// Add activation constant fee
-	estimate.Trx = estimate.Trx.Add(decimal.NewFromInt(chainParams.CreateNewAccountFeeInSystemContract))
+	estimate.Fee += SUN(chainParams.CreateNewAccountFeeInSystemContract)
 
 	accountResources, err := t.AvailableForDelegateResources(ctx, caller)
 	if err != nil {
@@ -127,13 +123,10 @@ func (t *Client) EstimateSystemContractActivation(ctx context.Context, caller st
 	// do NOT count. If the caller has no own staked bandwidth (or not enough
 	// of it) to cover the activation transaction, 0.1 TRX is burned.
 	if accountResources.Bandwidth.LessThan(estimatedBandwidth) {
-		estimate.Trx = estimate.Trx.Add(decimal.NewFromInt(chainParams.CreateAccountFee))
+		estimate.Fee += SUN(chainParams.CreateAccountFee)
 	} else {
 		estimate.Bandwidth = estimate.Bandwidth.Add(estimatedBandwidth)
 	}
-
-	// Convert from SUN to TRX
-	estimate.Trx = estimate.Trx.Div(decimal.NewFromInt(1e6))
 
 	return estimate, nil
 }

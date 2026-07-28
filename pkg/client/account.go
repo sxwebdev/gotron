@@ -40,14 +40,15 @@ func (c *Client) GetAccount(ctx context.Context, addr string) (*core.Account, er
 	return acc, nil
 }
 
-// GetAccountBalance retrieves the TRX balance of the specified address
-func (c *Client) GetAccountBalance(ctx context.Context, address string) (decimal.Decimal, error) {
+// GetAccountBalance retrieves the TRX balance of the specified address.
+// Render it for humans with SUN.TRX().
+func (c *Client) GetAccountBalance(ctx context.Context, address string) (SUN, error) {
 	res, err := c.GetAccount(ctx, address)
 	if err != nil {
-		return decimal.Zero, err
+		return 0, err
 	}
 
-	return decimal.New(res.GetBalance(), -TrxDecimals), nil
+	return SUN(res.GetBalance()), nil
 }
 
 // IsAccountActivated checks if the account with the given address is activated
@@ -97,12 +98,12 @@ func (c *Client) CreateAccount(ctx context.Context, from, addr string, accountTy
 type EstimateActivateAccountResult struct {
 	Energy    decimal.Decimal `json:"energy"`
 	Bandwidth decimal.Decimal `json:"bandwidth"`
-	Trx       decimal.Decimal `json:"trx"`
+	Fee       SUN             `json:"fee"`
 }
 
 // EstimateActivateAccount estimates the activation fee for a Tron address.
 // It checks the available bandwidth and adds the activation fee accordingly.
-// The fee is returned in TRX (1 TRX = 1_000_000 SUN).
+// The fee is returned in SUN.
 // We assume that fromAddress is ALWAYS activated, being it processing address.
 // Simple swap of arg to BlackHoleAddress on fakeTx creation will always return valid tx.
 func (c *Client) EstimateActivateAccount(ctx context.Context, fromAddress, toAddress string) (*EstimateActivateAccountResult, error) {
@@ -123,7 +124,7 @@ func (c *Client) EstimateActivateAccount(ctx context.Context, fromAddress, toAdd
 	}
 
 	// Add activation constant fee
-	estimate.Trx = estimate.Trx.Add(decimal.NewFromInt(chainParams.CreateNewAccountFeeInSystemContract))
+	estimate.Fee += SUN(chainParams.CreateNewAccountFeeInSystemContract)
 
 	accountResources, err := c.AvailableForDelegateResources(ctx, fromAddress)
 	if err != nil {
@@ -145,14 +146,11 @@ func (c *Client) EstimateActivateAccount(ctx context.Context, fromAddress, toAdd
 	// Add 0.1 TRX when address does not have any staked bandwidth, nor does it have enough to activate account.
 	// Or add actual bandwidth required if enough bandwidth
 	if accountResources.Bandwidth.LessThan(estimatedBandwidth) {
-		estimate.Trx = estimate.Trx.Add(decimal.NewFromInt(chainParams.CreateAccountFee))
+		estimate.Fee += SUN(chainParams.CreateAccountFee)
 	} else {
 		// We add coefficient to be safe.
 		estimate.Bandwidth = estimate.Bandwidth.Add(estimatedBandwidth)
 	}
-
-	// Convert from SUN to TRX
-	estimate.Trx = estimate.Trx.Div(decimal.NewFromInt(1e6))
 
 	return estimate, nil
 }

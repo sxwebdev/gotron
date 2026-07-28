@@ -232,6 +232,59 @@ func (t *GRPCTransport) UnDelegateResource(ctx context.Context, contract *core.U
 	return t.walletClient.UnDelegateResource(ctx, contract)
 }
 
+// Staking operations (Stake 2.0)
+
+func (t *GRPCTransport) FreezeBalanceV2(ctx context.Context, contract *core.FreezeBalanceV2Contract) (*api.TransactionExtention, error) {
+	return t.walletClient.FreezeBalanceV2(ctx, contract)
+}
+
+func (t *GRPCTransport) UnfreezeBalanceV2(ctx context.Context, contract *core.UnfreezeBalanceV2Contract) (*api.TransactionExtention, error) {
+	return t.walletClient.UnfreezeBalanceV2(ctx, contract)
+}
+
+func (t *GRPCTransport) WithdrawExpireUnfreeze(ctx context.Context, contract *core.WithdrawExpireUnfreezeContract) (*api.TransactionExtention, error) {
+	return t.walletClient.WithdrawExpireUnfreeze(ctx, contract)
+}
+
+func (t *GRPCTransport) CancelAllUnfreezeV2(ctx context.Context, contract *core.CancelAllUnfreezeV2Contract) (*api.TransactionExtention, error) {
+	return t.walletClient.CancelAllUnfreezeV2(ctx, contract)
+}
+
+func (t *GRPCTransport) GetAvailableUnfreezeCount(ctx context.Context, msg *api.GetAvailableUnfreezeCountRequestMessage) (*api.GetAvailableUnfreezeCountResponseMessage, error) {
+	return t.walletClient.GetAvailableUnfreezeCount(ctx, msg)
+}
+
+func (t *GRPCTransport) GetCanWithdrawUnfreezeAmount(ctx context.Context, msg *api.CanWithdrawUnfreezeAmountRequestMessage) (*api.CanWithdrawUnfreezeAmountResponseMessage, error) {
+	return t.walletClient.GetCanWithdrawUnfreezeAmount(ctx, msg)
+}
+
+// Witness operations
+
+// VoteWitnessAccount uses the 2-suffixed RPC: the base VoteWitnessAccount returns
+// a bare core.Transaction instead of a TransactionExtention.
+func (t *GRPCTransport) VoteWitnessAccount(ctx context.Context, contract *core.VoteWitnessContract) (*api.TransactionExtention, error) {
+	return t.walletClient.VoteWitnessAccount2(ctx, contract)
+}
+
+// WithdrawBalance uses the 2-suffixed RPC for the same reason as VoteWitnessAccount.
+func (t *GRPCTransport) WithdrawBalance(ctx context.Context, contract *core.WithdrawBalanceContract) (*api.TransactionExtention, error) {
+	return t.walletClient.WithdrawBalance2(ctx, contract)
+}
+
+func (t *GRPCTransport) ListWitnesses(ctx context.Context) (*api.WitnessList, error) {
+	return t.walletClient.ListWitnesses(ctx, new(api.EmptyMessage))
+}
+
+func (t *GRPCTransport) GetRewardInfo(ctx context.Context, address []byte) (*api.NumberMessage, error) {
+	req := &api.BytesMessage{Value: address}
+	return t.walletClient.GetRewardInfo(ctx, req)
+}
+
+func (t *GRPCTransport) GetBrokerageInfo(ctx context.Context, address []byte) (*api.NumberMessage, error) {
+	req := &api.BytesMessage{Value: address}
+	return t.walletClient.GetBrokerageInfo(ctx, req)
+}
+
 // Asset operations
 
 func (t *GRPCTransport) GetAssetIssueById(ctx context.Context, id []byte) (*core.AssetIssueContract, error) {

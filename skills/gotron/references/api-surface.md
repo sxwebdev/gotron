@@ -11,12 +11,15 @@
   - [Transaction operations](#transaction-operations)
   - [TRC20 token operations](#trc20-token-operations)
   - [Resource operations](#resource-operations)
+  - [Staking operations](#staking-operations)
+  - [Witness and reward operations](#witness-and-reward-operations)
   - [Estimate operations](#estimate-operations)
   - [Contract operations](#contract-operations)
   - [Network operations](#network-operations)
   - [Chain parameters](#chain-parameters)
   - [Common types](#common-types)
 - [Package pkg/address](#package-pkgaddress)
+- [Package pkg/units](#package-pkgunits)
 - [Package pkg/tronutils](#package-pkgtronutils)
 
 ---
@@ -41,7 +44,20 @@ Nile    = client.NetworkNile
 Bandwidth = client.ResourceTypeBandwidth
 Energy    = client.ResourceTypeEnergy
 TrxDecimals = client.TrxDecimals  // 6
+SunPerTRX   = units.SunPerTRX     // 1_000_000
 Trc20TransferEventSignature = client.Trc20TransferEventSignature
+```
+
+**Amount types and constructors (re-exported from client/units):**
+
+```go
+type SUN = client.SUN
+type TokenAmount = client.TokenAmount
+
+var FromTRX          = client.FromTRX
+var MustFromTRX      = client.MustFromTRX
+var FromTokenUnits   = client.FromTokenUnits
+var FromTokenDecimal = client.FromTokenDecimal
 ```
 
 ---
@@ -112,7 +128,7 @@ type Logger interface {
 
 ```go
 func (c *Client) GetAccount(ctx context.Context, addr string) (*core.Account, error)
-func (c *Client) GetAccountBalance(ctx context.Context, address string) (decimal.Decimal, error)
+func (c *Client) GetAccountBalance(ctx context.Context, address string) (SUN, error)
 func (c *Client) IsAccountActivated(ctx context.Context, address string) (bool, error)
 func (c *Client) CreateAccount(ctx context.Context, from, addr string, accountType core.AccountType) (*api.TransactionExtention, error)
 func (c *Client) EstimateActivateAccount(ctx context.Context, fromAddress, toAddress string) (*EstimateActivateAccountResult, error)
@@ -124,7 +140,7 @@ func (c *Client) EstimateActivateAccount(ctx context.Context, fromAddress, toAdd
 type EstimateActivateAccountResult struct {
     Energy    decimal.Decimal `json:"energy"`
     Bandwidth decimal.Decimal `json:"bandwidth"`
-    Trx       decimal.Decimal `json:"trx"`
+    Fee       SUN             `json:"fee"`
 }
 ```
 
@@ -181,8 +197,7 @@ func (c *Client) SignTransaction(tx *core.Transaction, privateKey *ecdsa.Private
 **File:** `transfer.go`
 
 ```go
-// amount is in TRX (auto-converted to SUN internally)
-func (c *Client) CreateTransferTransaction(ctx context.Context, from, to string, amount decimal.Decimal) (*api.TransactionExtention, error)
+func (c *Client) CreateTransferTransaction(ctx context.Context, from, to string, amount SUN) (*api.TransactionExtention, error)
 ```
 
 ### TRC20 token operations
@@ -190,14 +205,17 @@ func (c *Client) CreateTransferTransaction(ctx context.Context, from, to string,
 **File:** `trc20.go`
 
 ```go
-func (c *Client) TRC20Call(ctx context.Context, from, contractAddress, data string, constant bool, feeLimit int64) (*api.TransactionExtention, error)
+// Every amount is a TokenAmount (the token's own minimal units) and every fee
+// limit is a SUN. Build a TokenAmount with FromTokenDecimal (using the decimals
+// TRC20GetDecimals reports) or FromTokenUnits.
+func (c *Client) TRC20Call(ctx context.Context, from, contractAddress, data string, constant bool, feeLimit SUN) (*api.TransactionExtention, error)
 func (c *Client) TRC20GetName(ctx context.Context, contractAddress string) (string, error)
 func (c *Client) TRC20GetSymbol(ctx context.Context, contractAddress string) (string, error)
 func (c *Client) TRC20GetDecimals(ctx context.Context, contractAddress string) (*big.Int, error)
-func (c *Client) TRC20ContractBalance(ctx context.Context, addr, contractAddress string) (*big.Int, error)
-func (c *Client) TRC20Send(ctx context.Context, from, to, contract string, amount decimal.Decimal, feeLimit int64) (*api.TransactionExtention, error)
-func (c *Client) TRC20Approve(ctx context.Context, from, to, contract string, amount decimal.Decimal, feeLimit int64) (*api.TransactionExtention, error)
-func (c *Client) TRC20TransferFrom(ctx context.Context, owner, from, to, contract string, amount *big.Int, feeLimit int64) (*api.TransactionExtention, error)
+func (c *Client) TRC20ContractBalance(ctx context.Context, addr, contractAddress string) (TokenAmount, error)
+func (c *Client) TRC20Send(ctx context.Context, from, to, contract string, amount TokenAmount, feeLimit SUN) (*api.TransactionExtention, error)
+func (c *Client) TRC20Approve(ctx context.Context, from, to, contract string, amount TokenAmount, feeLimit SUN) (*api.TransactionExtention, error)
+func (c *Client) TRC20TransferFrom(ctx context.Context, owner, from, to, contract string, amount TokenAmount, feeLimit SUN) (*api.TransactionExtention, error)
 func (c *Client) ParseTRC20NumericProperty(data string) (*big.Int, error)
 func (c *Client) ParseTRC20StringProperty(data string) (string, error)
 ```
@@ -211,8 +229,8 @@ func (c *Client) GetAccountResource(ctx context.Context, addr string) (*api.Acco
 func (c *Client) GetDelegatedResources(ctx context.Context, address string) ([]*api.DelegatedResourceList, error)
 func (c *Client) GetDelegatedResourcesV2(ctx context.Context, address string) ([]*api.DelegatedResourceList, error)
 func (c *Client) GetCanDelegatedMaxSize(ctx context.Context, address string, resource int32) (*api.CanDelegatedMaxSizeResponseMessage, error)
-func (c *Client) DelegateResource(ctx context.Context, owner, receiver string, resource ResourceType, delegateBalance int64, lock bool, lockPeriod int64) (*api.TransactionExtention, error)
-func (c *Client) ReclaimResource(ctx context.Context, owner, receiver string, resource ResourceType, delegateBalance int64) (*api.TransactionExtention, error)
+func (c *Client) DelegateResource(ctx context.Context, owner, receiver string, resource ResourceType, delegateBalance SUN, lock bool, lockPeriod int64) (*api.TransactionExtention, error)
+func (c *Client) ReclaimResource(ctx context.Context, owner, receiver string, resource ResourceType, delegateBalance SUN) (*api.TransactionExtention, error)
 func (c *Client) AvailableForDelegateResources(ctx context.Context, addr string) (*AvailableResources, error)
 func (c *Client) TotalAvailableResources(ctx context.Context, addr string) (*AvailableResources, error)
 func (c *Client) AvailableEnergy(res *api.AccountResourceMessage) decimal.Decimal
@@ -234,6 +252,73 @@ type AvailableResources struct {
 }
 ```
 
+### Staking operations
+
+Tron Stake 2.0. All amounts are in SUN. Legacy Stake 1.0 (FreezeBalance/UnfreezeBalance) is
+deliberately not implemented.
+
+**File:** `staking.go`
+
+```go
+func (c *Client) Stake(ctx context.Context, owner string, resource ResourceType, amount SUN) (*api.TransactionExtention, error)
+func (c *Client) Unstake(ctx context.Context, owner string, resource ResourceType, amount SUN) (*api.TransactionExtention, error)
+func (c *Client) WithdrawUnstaked(ctx context.Context, owner string) (*api.TransactionExtention, error)
+func (c *Client) CancelAllUnstakes(ctx context.Context, owner string) (*api.TransactionExtention, error)
+func (c *Client) GetAvailableUnstakeCount(ctx context.Context, owner string) (int64, error)
+func (c *Client) GetWithdrawableUnstaked(ctx context.Context, owner string) (SUN, error)
+func (c *Client) GetStakeInfo(ctx context.Context, addr string) (*StakeInfo, error)
+```
+
+`GetStakeInfo` reads `core.Account.FrozenV2` / `UnfrozenV2` in a single `GetAccount` call.
+`TRON_POWER` entries in `FrozenV2` are always present and are skipped — summing them would double
+the total. `UnfreezeExpireTime` is in Unix **milliseconds**.
+
+`GetWithdrawableUnstaked` is the node's answer (`GetCanWithdrawUnfreezeAmount` with the current
+timestamp); `StakeInfo.WithdrawableNow` is the same figure computed locally without a second
+round-trip.
+
+```go
+// PendingUnstake is one in-flight unstake entry.
+type PendingUnstake struct {
+    Resource   ResourceType `json:"resource"`
+    Amount     SUN          `json:"amount"`
+    ExpireTime time.Time    `json:"expire_time"`
+}
+
+// StakeInfo aggregates an account's Stake 2.0 position. All amounts in SUN.
+type StakeInfo struct {
+    StakedBandwidth SUN              `json:"staked_bandwidth"`
+    StakedEnergy    SUN              `json:"staked_energy"`
+    TotalStaked     SUN              `json:"total_staked"`
+    UnstakingTotal  SUN              `json:"unstaking_total"`
+    WithdrawableNow SUN              `json:"withdrawable_now"`
+    PendingUnstakes []PendingUnstake `json:"pending_unstakes"`
+}
+```
+
+### Witness and reward operations
+
+**File:** `witness.go`
+
+```go
+func (c *Client) VoteWitnesses(ctx context.Context, owner string, votes []Vote) (*api.TransactionExtention, error)
+func (c *Client) ClaimRewards(ctx context.Context, owner string) (*api.TransactionExtention, error)
+func (c *Client) ListWitnesses(ctx context.Context) (*api.WitnessList, error)
+func (c *Client) GetUnclaimedReward(ctx context.Context, addr string) (SUN, error)
+func (c *Client) GetWitnessBrokerage(ctx context.Context, witness string) (int64, error)
+```
+
+`VoteWitnesses` replaces the account's **entire** vote set, so always pass the full desired list.
+`[]Vote` is a slice rather than a map so the resulting transaction bytes are reproducible.
+
+```go
+// Vote counts are in TRON POWER (1 per staked TRX), not SUN.
+type Vote struct {
+    WitnessAddress string `json:"witness_address"`
+    Count          int64  `json:"count"`
+}
+```
+
 ### Estimate operations
 
 Cost estimators for transactions and transfers. Use these to compute fees before broadcasting.
@@ -246,7 +331,7 @@ Cost estimators for transactions and transfers. Use these to compute fees before
 func (c *Client) EstimateBandwidth(tx *core.Transaction) (decimal.Decimal, error)
 
 // EstimateEnergy queries the node's /wallet/estimateenergy or gRPC EstimateEnergy
-// for a contract call. Used internally by EstimateTransfer for TRC20 paths.
+// for a contract call.
 func (c *Client) EstimateEnergy(
     ctx context.Context,
     from, contractAddress, method, jsonString string,
@@ -257,23 +342,26 @@ func (c *Client) EstimateEnergy(
 **File:** `estimate_transfer.go`
 
 ```go
-// EstimateTransfer estimates the full cost of a TRX or TRC20 transfer,
-// broken down into:
+// TRX and TRC20 estimates are separate entry points because their amounts sit
+// on different scales — a single function would take one parameter meaning two
+// different things depending on the asset. Both break the cost down into:
 //   - Transfer:   the cost of the transfer transaction itself
 //   - Activation: the cost of activating toAddress (zero if already activated)
 //   - Total:      Transfer + Activation per resource (conservative upper bound)
 //
-// For TRX transfers pass contractAddress = TrxAssetIdentifier and decimals = TrxDecimals.
-// For TRC20 pass the token contract address and the token's decimals.
-//
 // Note: when sending to an unactivated address Tron consumes the activation fee
 // inside the transfer tx itself — Total slightly overestimates. Choose your own
-// merge policy if you need a single number (e.g. max(Transfer.Trx, Activation.Trx)).
-func (c *Client) EstimateTransfer(
+// merge policy if you need a single number (e.g. max(Transfer.Fee, Activation.Fee)).
+func (c *Client) EstimateTRXTransfer(
+    ctx context.Context,
+    fromAddress, toAddress string,
+    amount SUN,
+) (*EstimateTransferResult, error)
+
+func (c *Client) EstimateTRC20Transfer(
     ctx context.Context,
     fromAddress, toAddress, contractAddress string,
-    amount decimal.Decimal,
-    decimals int64,
+    amount TokenAmount,
 ) (*EstimateTransferResult, error)
 ```
 
@@ -350,13 +438,14 @@ Generic resource cost type used across activation and transfer estimators.
 
 ```go
 // EstimateResult is the canonical result shape for any "how much does this cost"
-// query — Energy and Bandwidth in raw points, Trx in TRX units (not SUN).
+// query — Energy and Bandwidth in raw resource points, Fee in SUN (what those
+// resources cost when they have to be burned).
 // Reused by EstimateActivationFee, EstimateSystemContractActivation, and as the
 // value type for fields of EstimateTransferResult (Total/Transfer/Activation).
 type EstimateResult struct {
     Energy    decimal.Decimal `json:"energy"`
     Bandwidth decimal.Decimal `json:"bandwidth"`
-    Trx       decimal.Decimal `json:"trx"`
+    Fee       SUN             `json:"fee"`
 }
 ```
 
@@ -391,45 +480,117 @@ func NewGenerator(mnemonic, passphrase string) *Generator
 func (g *Generator) SetBipPurpose(purpose uint32) *Generator
 func (g *Generator) SetCoinType(coinType uint32) *Generator
 func (g *Generator) SetAccount(account uint32) *Generator
-func (g *Generator) SetNetwork(net *chaincfg.Params) *Generator
 func (g *Generator) Generate(index uint32) (*Address, error)
 ```
 
-Default BIP44 path: `m/44'/195'/0'/0/{index}`
+Default BIP44 path: `m/44'/195'/0'/0/{index}`. The HD key versions are fixed to
+mainnet — there is no network selector.
+
+---
+
+## Package pkg/units
+
+**File:** `units.go`
+
+Amount types. Tron has two unrelated amount scales, so each gets its own type and the unit is part
+of every signature rather than of a doc comment.
+
+```go
+const SunPerTRX = 1_000_000
+
+// ErrInvalidAmount marks every amount the constructors refuse to build.
+// client.ErrInvalidAmount and gotron.ErrInvalidAmount are this same variable,
+// so one errors.Is covers both layers.
+var ErrInvalidAmount = errors.New("invalid amount")
+
+// SUN is every TRX-denominated value: transfers, balances, stake, fee limits, rewards.
+type SUN int64
+
+func FromTRX(trx decimal.Decimal) (SUN, error)  // rejects sub-SUN precision and out-of-int64
+func MustFromTRX(trx decimal.Decimal) SUN       // panics; constants and tests only
+func (s SUN) TRX() decimal.Decimal
+func (s SUN) Int64() int64
+func (s SUN) String() string                    // e.g. "1.5 TRX"
+
+// TokenAmount is every TRC20 amount, in the token's own minimal units.
+// The zero value is a valid zero amount.
+type TokenAmount struct{ /* ... */ }
+
+func FromTokenUnits(units *big.Int) (TokenAmount, error)                       // rejects nil, negative, >32 bytes
+func FromTokenDecimal(amount decimal.Decimal, decimals int32) (TokenAmount, error) // rejects finer-than-decimals, decimals outside 0..78
+func (a TokenAmount) TokenUnits() *big.Int      // copy
+func (a TokenAmount) Decimal(decimals int32) decimal.Decimal
+func (a TokenAmount) IsZero() bool
+func (a TokenAmount) IsPositive() bool
+```
+
+Both types are re-exported as `client.SUN` / `client.TokenAmount` (and `gotron.*`) along with their
+constructors, so building an amount needs no extra import.
+
+Resource pricing helpers. `getEnergyFee` and `getTransactionFee` are quoted in SUN per unit, so
+both conversions multiply:
+
+```go
+func NewEnergy(value decimal.Decimal) Energy
+func (e Energy) ToSUN(energyFee int64) SUN        // rounds up
+func NewBandwidth(value decimal.Decimal) Bandwidth
+func (b Bandwidth) ToSUN(transactionFee int64) SUN // rounds up
+
+// CeilToSUN is what those helpers (and the client's Convert*ToStaked pair) use
+// to land on int64: it rounds up and saturates at the int64 bounds. Never reach
+// for decimal.IntPart here — it keeps only the low 64 bits, so an impossible
+// amount comes back as a plausible, often negative, one.
+func CeilToSUN(d decimal.Decimal) SUN
+```
 
 ---
 
 ## Package pkg/tronutils
 
-**Files:** `address.go`, `hex.go`, `number.go`, `encoding.go`
+**Files:** `address.go`, `base58.go`, `hash.go`, `hexutils.go`
 
-**Address utilities:**
+**Address utilities** (`address.go`, `base58.go`):
 
 ```go
-func DecodeCheck(addr string) ([]byte, error)   // base58 -> bytes (with checksum verify)
-func EncodeCheck(data []byte) string             // bytes -> base58 (with checksum)
+type Address []byte
+
+func DecodeCheck(input string) ([]byte, error)  // base58 -> bytes (with checksum verify)
+func EncodeCheck(input []byte) string           // bytes -> base58 (with checksum)
+func Decode(input string) ([]byte, error)       // base58, no checksum
+func Encode(input []byte) string                // base58, no checksum
 func Base58ToAddress(s string) (Address, error)
 func Base64ToAddress(s string) (Address, error)
 func HexToAddress(s string) Address
 func BigToAddress(b *big.Int) Address
+func PubkeyToAddress(p ecdsa.PublicKey) Address
 ```
 
-**Hex utilities:**
+**Hex utilities** (`hexutils.go`):
 
 ```go
-func BytesToHexString(bytes []byte) string  // "0x..." prefixed
-func FromHex(s string) ([]byte, error)      // supports "0x" prefix
+func BytesToHexString(bytes []byte) string      // "0x..." prefixed
+func HexStringToBytes(input string) ([]byte, error)
+func ToHex(b []byte) string
+func ToHexArray(b [][]byte) []string
+func FromHex(s string) ([]byte, error)          // supports "0x" prefix
 func Has0xPrefix(str string) bool
 func IsHex(str string) bool
-func Bytes2Hex(d []byte) string             // no prefix
-func Hex2Bytes(str string) ([]byte, error)  // no prefix
+func Bytes2Hex(d []byte) string                 // no prefix
+func Hex2Bytes(str string) ([]byte, error)      // no prefix
+func Hex2BytesFixed(str string, flen int) []byte
 func LeftPadBytes(slice []byte, l int) []byte
 func RightPadBytes(slice []byte, l int) []byte
+func TrimLeftZeroes(s []byte) []byte
+func CopyBytes(b []byte) []byte
 ```
 
-**Number utilities:**
+**Hash utilities** (`hash.go`):
 
 ```go
-func FormatPrecisionNumber(value, decimals int) string
-func DoubleSHA256(data []byte) []byte
+type Hash [32]byte
+
+func Keccak256(msg []byte) []byte
+func BytesToHash(b []byte) Hash
+func BigToHash(b *big.Int) Hash
+func HexToHash(s string) (Hash, error)
 ```

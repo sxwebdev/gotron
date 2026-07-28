@@ -9,6 +9,7 @@ import (
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/sxwebdev/gotron/pkg/client"
 )
 
 // Comparison tests verify that gRPC and HTTP transports return identical data
@@ -79,10 +80,13 @@ func TestCompare_AccountBalance(t *testing.T) {
 	require.NoError(t, err)
 
 	// Balances should be very close (may differ slightly due to timing)
-	diff := grpcBalance.Sub(httpBalance).Abs()
-	assert.True(t, diff.LessThan(decimal.NewFromInt(1)), "Balance difference should be < 1 TRX")
+	diff := grpcBalance - httpBalance
+	if diff < 0 {
+		diff = -diff
+	}
+	assert.Less(t, diff, client.MustFromTRX(decimal.NewFromInt(1)), "Balance difference should be < 1 TRX")
 
-	t.Logf("gRPC balance: %s TRX, HTTP balance: %s TRX", grpcBalance.String(), httpBalance.String())
+	t.Logf("gRPC balance: %s, HTTP balance: %s", grpcBalance, httpBalance)
 }
 
 func TestCompare_BlockByNum(t *testing.T) {
@@ -334,4 +338,91 @@ func TestCompare_AssetIssue(t *testing.T) {
 	t.Logf("gRPC Asset: name=%s, abbr=%s", string(grpcAsset.GetName()), string(grpcAsset.GetAbbr()))
 	t.Logf("HTTP Asset: name=%s, abbr=%s", string(httpAsset.GetName()), string(httpAsset.GetAbbr()))
 	t.Logf("Asset %s: ID, TotalSupply, Precision match between gRPC and HTTP", grpcAsset.GetId())
+}
+
+// TestCompare_StakeInfo guards the HTTP account mapping of frozenV2/unfrozenV2.
+// A missing mapping makes HTTP report an all-zero stake while gRPC reports the
+// real one, which a single-transport test would not notice.
+func TestCompare_StakeInfo(t *testing.T) {
+	grpcClient := newGRPCClient(t)
+	defer func() { _ = grpcClient.Close() }()
+
+	httpClient := newHTTPClient(t)
+	defer func() { _ = httpClient.Close() }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	grpcInfo, err := grpcClient.GetStakeInfo(ctx, stakedAddress)
+	require.NoError(t, err)
+
+	httpInfo, err := httpClient.GetStakeInfo(ctx, stakedAddress)
+	require.NoError(t, err)
+
+	assert.Equal(t, grpcInfo.StakedBandwidth, httpInfo.StakedBandwidth, "Staked bandwidth mismatch")
+	assert.Equal(t, grpcInfo.StakedEnergy, httpInfo.StakedEnergy, "Staked energy mismatch")
+	assert.Equal(t, grpcInfo.TotalStaked, httpInfo.TotalStaked, "Total staked mismatch")
+	assert.Equal(t, grpcInfo.UnstakingTotal, httpInfo.UnstakingTotal, "Unstaking total mismatch")
+	assert.Equal(t, len(grpcInfo.PendingUnstakes), len(httpInfo.PendingUnstakes), "Pending unstake count mismatch")
+
+	t.Logf("Stake info matches between gRPC and HTTP: total=%d SUN, unstaking=%d SUN",
+		grpcInfo.TotalStaked, grpcInfo.UnstakingTotal)
+}
+
+// TestCompare_ListWitnesses compares address sets, not slices: the node returns
+// witnesses in an unstable order between consecutive calls.
+func TestCompare_ListWitnesses(t *testing.T) {
+	grpcClient := newGRPCClient(t)
+	defer func() { _ = grpcClient.Close() }()
+
+	httpClient := newHTTPClient(t)
+	defer func() { _ = httpClient.Close() }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	grpcList, err := grpcClient.ListWitnesses(ctx)
+	require.NoError(t, err)
+
+	httpList, err := httpClient.ListWitnesses(ctx)
+	require.NoError(t, err)
+
+	assert.Equal(t, witnessAddressSet(t, grpcList), witnessAddressSet(t, httpList),
+		"witness address sets must match between gRPC and HTTP")
+
+	t.Logf("Witness sets match between gRPC and HTTP: %d witnesses", len(grpcList.GetWitnesses()))
+}
+
+// TestCompare_Rewards guards the camelCase /wallet/getReward and
+// /wallet/getBrokerage endpoints and their non-standard response field names.
+// An HTTP-only test would read the silently-discarded value as 0 and pass.
+func TestCompare_Rewards(t *testing.T) {
+	grpcClient := newGRPCClient(t)
+	defer func() { _ = grpcClient.Close() }()
+
+	httpClient := newHTTPClient(t)
+	defer func() { _ = httpClient.Close() }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	grpcBrokerage, err := grpcClient.GetWitnessBrokerage(ctx, stakedAddress)
+	require.NoError(t, err)
+
+	httpBrokerage, err := httpClient.GetWitnessBrokerage(ctx, stakedAddress)
+	require.NoError(t, err)
+
+	assert.Equal(t, grpcBrokerage, httpBrokerage, "Brokerage mismatch")
+	// A zero on both sides would not prove the HTTP field name is right.
+	assert.Greater(t, grpcBrokerage, int64(0), "fixture account is expected to report a non-zero brokerage")
+
+	grpcReward, err := grpcClient.GetUnclaimedReward(ctx, stakedAddress)
+	require.NoError(t, err)
+
+	httpReward, err := httpClient.GetUnclaimedReward(ctx, stakedAddress)
+	require.NoError(t, err)
+
+	assert.Equal(t, grpcReward, httpReward, "Unclaimed reward mismatch")
+
+	t.Logf("Rewards match between gRPC and HTTP: brokerage=%d%%, reward=%d SUN", grpcBrokerage, grpcReward)
 }

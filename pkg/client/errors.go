@@ -3,6 +3,9 @@ package client
 import (
 	"errors"
 	"fmt"
+
+	"github.com/sxwebdev/gotron/pkg/units"
+	"github.com/sxwebdev/gotron/schema/pb/api"
 )
 
 // TransportError represents an error from a transport-level RPC call.
@@ -46,6 +49,30 @@ func (e *HTTPStatusError) Error() string {
 	return fmt.Sprintf("http status %d: %s", e.Code, e.Body)
 }
 
+// BroadcastError is returned by Client.BroadcastTransaction when the node
+// rejects a transaction.
+//
+// The node routinely answers with Result=false and an empty Message while the
+// only diagnostic is Code (DUP_TRANSACTION_ERROR, SIGERROR, BANDWITH_ERROR,
+// TAPOS_ERROR, ...). Code is therefore always rendered, so the message never
+// degrades to a bare "result error:". Callers should branch on Code via
+// errors.As rather than matching on the message text.
+type BroadcastError struct {
+	// Code is the node's response code. Note that a rejection can carry
+	// Return_SUCCESS (0) when the node reports failure through Result=false
+	// alone, so a zero Code does not mean the broadcast succeeded.
+	Code api.ReturnResponseCode
+	// Message is the node's human-readable reason. Frequently empty.
+	Message string
+}
+
+func (e *BroadcastError) Error() string {
+	if e.Message == "" {
+		return fmt.Sprintf("broadcast rejected: code=%s", e.Code)
+	}
+	return fmt.Sprintf("broadcast rejected: code=%s: %s", e.Code, e.Message)
+}
+
 var (
 	// Common errors
 	ErrInvalidConfig = errors.New("invalid client configuration")
@@ -59,7 +86,12 @@ var (
 	ErrAccountNotActivated = errors.New("account is not activated")
 
 	// Transaction errors
-	ErrInvalidAmount           = errors.New("invalid amount")
+	//
+	// ErrInvalidAmount is units.ErrInvalidAmount rather than a second sentinel
+	// with the same text: the amount constructors live in pkg/units, which
+	// cannot import this package, and a caller must not have to know which
+	// layer rejected the amount.
+	ErrInvalidAmount           = units.ErrInvalidAmount
 	ErrInvalidTransaction      = errors.New("invalid transaction")
 	ErrInvalidPrivateKey       = errors.New("invalid private key")
 	ErrTransactionNotFound     = errors.New("transaction not found")

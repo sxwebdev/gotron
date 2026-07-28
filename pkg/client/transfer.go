@@ -4,17 +4,17 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/shopspring/decimal"
 	"github.com/sxwebdev/gotron/pkg/tronutils"
 	"github.com/sxwebdev/gotron/schema/pb/api"
 	"github.com/sxwebdev/gotron/schema/pb/core"
 	"google.golang.org/protobuf/proto"
 )
 
-// CreateTransferTransaction creates a TRX transfer transaction
+// CreateTransferTransaction creates a TRX transfer transaction.
 //
-// Important! The amount is specified in TRX.
-func (c *Client) CreateTransferTransaction(ctx context.Context, from, to string, amount decimal.Decimal) (*api.TransactionExtention, error) {
+// The amount is in SUN. Convert from human-facing TRX with units.FromTRX, which
+// rejects values that cannot be represented exactly.
+func (c *Client) CreateTransferTransaction(ctx context.Context, from, to string, amount SUN) (*api.TransactionExtention, error) {
 	if from == "" {
 		return nil, fmt.Errorf("%w: from address is required", ErrInvalidAddress)
 	}
@@ -23,12 +23,9 @@ func (c *Client) CreateTransferTransaction(ctx context.Context, from, to string,
 		return nil, fmt.Errorf("%w: to address is required", ErrInvalidAddress)
 	}
 
-	if amount.LessThanOrEqual(decimal.Zero) {
+	if amount <= 0 {
 		return nil, fmt.Errorf("%w: amount must be greater than zero", ErrInvalidAmount)
 	}
-
-	// Convert TRX to SUN
-	amount = amount.Mul(decimal.NewFromInt(1e6))
 
 	var err error
 	contract := &core.TransferContract{}
@@ -40,7 +37,7 @@ func (c *Client) CreateTransferTransaction(ctx context.Context, from, to string,
 		return nil, err
 	}
 
-	contract.Amount = amount.IntPart()
+	contract.Amount = amount.Int64()
 
 	// Create the transaction
 	tx, err := c.transport.CreateTransaction(ctx, contract)

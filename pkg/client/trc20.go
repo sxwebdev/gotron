@@ -9,8 +9,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/shopspring/decimal"
 	"github.com/sxwebdev/gotron/pkg/tronutils"
+	"github.com/sxwebdev/gotron/pkg/units"
 	"github.com/sxwebdev/gotron/schema/pb/api"
 	"github.com/sxwebdev/gotron/schema/pb/core"
 )
@@ -26,7 +26,7 @@ const (
 	Trc20TransferFromMethodSignature = "0x23b872dd"
 )
 
-func (c *Client) TRC20Call(ctx context.Context, from, contractAddress, data string, constant bool, feeLimit int64) (*api.TransactionExtention, error) {
+func (c *Client) TRC20Call(ctx context.Context, from, contractAddress, data string, constant bool, feeLimit SUN) (*api.TransactionExtention, error) {
 	var err error
 	fromDesc, err := tronutils.FromHex("410000000000000000000000000000000000000000")
 	if err != nil {
@@ -57,7 +57,7 @@ func (c *Client) TRC20Call(ctx context.Context, from, contractAddress, data stri
 	if constant {
 		result, err = c.TriggerConstantContract(ctx, ct)
 	} else {
-		result, err = c.triggerContract(ctx, ct, feeLimit)
+		result, err = c.triggerContract(ctx, ct, feeLimit.Int64())
 	}
 	if err != nil {
 		return nil, err
@@ -68,13 +68,30 @@ func (c *Client) TRC20Call(ctx context.Context, from, contractAddress, data stri
 	return result, nil
 }
 
+// firstConstantResult returns the first constant_result entry as a hex string.
+//
+// TRC20Call reports success whenever the result code is zero, which a degraded
+// node also does while returning no constant_result at all. Indexing [0] blindly
+// panics there, and because balances are typically fetched concurrently the
+// panic takes down the whole process rather than a single call.
+func firstConstantResult(result *api.TransactionExtention, contractAddress string) (string, error) {
+	constantResult := result.GetConstantResult()
+	if len(constantResult) == 0 {
+		return "", fmt.Errorf("contract address %s: %w: empty constant_result", contractAddress, ErrNilResponse)
+	}
+	return tronutils.BytesToHexString(constantResult[0]), nil
+}
+
 // TRC20GetName get token name
 func (c *Client) TRC20GetName(ctx context.Context, contractAddress string) (string, error) {
 	result, err := c.TRC20Call(ctx, "", contractAddress, trc20NameSignature, true, 0)
 	if err != nil {
 		return "", err
 	}
-	data := tronutils.BytesToHexString(result.GetConstantResult()[0])
+	data, err := firstConstantResult(result, contractAddress)
+	if err != nil {
+		return "", err
+	}
 	return c.ParseTRC20StringProperty(data)
 }
 
@@ -84,7 +101,10 @@ func (c *Client) TRC20GetSymbol(ctx context.Context, contractAddress string) (st
 	if err != nil {
 		return "", err
 	}
-	data := tronutils.BytesToHexString(result.GetConstantResult()[0])
+	data, err := firstConstantResult(result, contractAddress)
+	if err != nil {
+		return "", err
+	}
 	return c.ParseTRC20StringProperty(data)
 }
 
@@ -94,7 +114,10 @@ func (c *Client) TRC20GetDecimals(ctx context.Context, contractAddress string) (
 	if err != nil {
 		return nil, err
 	}
-	data := tronutils.BytesToHexString(result.GetConstantResult()[0])
+	data, err := firstConstantResult(result, contractAddress)
+	if err != nil {
+		return nil, err
+	}
 	return c.ParseTRC20NumericProperty(data)
 }
 
@@ -111,8 +134,11 @@ func (c *Client) ParseTRC20NumericProperty(data string) (*big.Int, error) {
 		}
 	}
 
+	// An empty payload is a failed call, not the value zero. Reporting it as
+	// zero makes TRC20GetDecimals answer 0 for a token that has 6 decimals, and
+	// the caller then scales every amount by a factor of a million.
 	if len(data) == 0 {
-		return big.NewInt(0), nil
+		return nil, fmt.Errorf("%w: empty numeric property", ErrNilResponse)
 	}
 
 	return nil, fmt.Errorf("cannot parse %s", data)
@@ -151,28 +177,33 @@ func (c *Client) ParseTRC20StringProperty(data string) (string, error) {
 }
 
 // TRC20ContractBalance get Address balance
-func (c *Client) TRC20ContractBalance(ctx context.Context, addr, contractAddress string) (*big.Int, error) {
+func (c *Client) TRC20ContractBalance(ctx context.Context, addr, contractAddress string) (TokenAmount, error) {
 	addrB, err := tronutils.DecodeCheck(addr)
 	if err != nil {
-		return nil, fmt.Errorf("invalid address %s: %w", addr, err)
+		return TokenAmount{}, fmt.Errorf("invalid address %s: %w", addr, err)
 	}
 	req := trc20BalanceOf + "0000000000000000000000000000000000000000000000000000000000000000"[len(tronutils.BytesToHexString(addrB[:]))-2:] + tronutils.BytesToHexString(addrB[:])[2:]
 	result, err := c.TRC20Call(ctx, "", contractAddress, req, true, 0)
 	if err != nil {
-		return nil, err
+		return TokenAmount{}, err
 	}
-	data := tronutils.BytesToHexString(result.GetConstantResult()[0])
+	data, err := firstConstantResult(result, contractAddress)
+	if err != nil {
+		return TokenAmount{}, err
+	}
 	r, err := c.ParseTRC20NumericProperty(data)
 	if err != nil {
-		return nil, fmt.Errorf("contract address %s: %v", contractAddress, err)
+		return TokenAmount{}, fmt.Errorf("contract address %s: %w", contractAddress, err)
 	}
-	if r == nil {
-		return nil, fmt.Errorf("contract address %s: invalid balance of %s", contractAddress, addr)
+
+	balance, err := units.FromTokenUnits(r)
+	if err != nil {
+		return TokenAmount{}, fmt.Errorf("contract address %s: balance of %s: %w", contractAddress, addr, err)
 	}
-	return r, nil
+	return balance, nil
 }
 
-func (c *Client) TRC20Send(ctx context.Context, from, to, contract string, amount decimal.Decimal, feeLimit int64) (*api.TransactionExtention, error) {
+func (c *Client) TRC20Send(ctx context.Context, from, to, contract string, amount TokenAmount, feeLimit SUN) (*api.TransactionExtention, error) {
 	if contract == "" {
 		return nil, fmt.Errorf("%w: contract address is required", ErrInvalidAddress)
 	}
@@ -185,7 +216,7 @@ func (c *Client) TRC20Send(ctx context.Context, from, to, contract string, amoun
 		return nil, fmt.Errorf("%w: to address is required", ErrInvalidAddress)
 	}
 
-	if amount.LessThanOrEqual(decimal.Zero) {
+	if !amount.IsPositive() {
 		return nil, fmt.Errorf("%w: amount must be greater than zero", ErrInvalidAmount)
 	}
 
@@ -197,13 +228,20 @@ func (c *Client) TRC20Send(ctx context.Context, from, to, contract string, amoun
 	if err != nil {
 		return nil, err
 	}
-	ab := common.LeftPadBytes(amount.BigInt().Bytes(), 32)
+	ab := common.LeftPadBytes(amount.TokenUnits().Bytes(), 32)
 	req := trc20TransferMethodSignature + "0000000000000000000000000000000000000000000000000000000000000000"[len(tronutils.BytesToHexString(addrB[:]))-4:] + tronutils.BytesToHexString(addrB[:])[4:]
 	req += common.Bytes2Hex(ab)
 	return c.TRC20Call(ctx, from, contract, req, false, feeLimit)
 }
 
-func (c *Client) TRC20TransferFrom(ctx context.Context, owner, from, to, contract string, amount *big.Int, feeLimit int64) (*api.TransactionExtention, error) {
+func (c *Client) TRC20TransferFrom(ctx context.Context, owner, from, to, contract string, amount TokenAmount, feeLimit SUN) (*api.TransactionExtention, error) {
+	// The TokenAmount constructors rule out negative and oversized amounts, but
+	// zero is a perfectly constructible amount, and a transfer of nothing still
+	// burns energy and bandwidth.
+	if !amount.IsPositive() {
+		return nil, fmt.Errorf("%w: amount must be greater than zero", ErrInvalidAmount)
+	}
+
 	addrA, err := tronutils.DecodeCheck(from)
 	if err != nil {
 		return nil, err
@@ -212,7 +250,7 @@ func (c *Client) TRC20TransferFrom(ctx context.Context, owner, from, to, contrac
 	if err != nil {
 		return nil, err
 	}
-	ab := common.LeftPadBytes(amount.Bytes(), 32)
+	ab := common.LeftPadBytes(amount.TokenUnits().Bytes(), 32)
 	req := "0x23b872dd" +
 		"0000000000000000000000000000000000000000000000000000000000000000"[len(tronutils.BytesToHexString(addrA[:]))-4:] + tronutils.BytesToHexString(addrA[:])[4:] +
 		"0000000000000000000000000000000000000000000000000000000000000000"[len(tronutils.BytesToHexString(addrB[:]))-4:] + tronutils.BytesToHexString(addrB[:])[4:]
@@ -221,7 +259,7 @@ func (c *Client) TRC20TransferFrom(ctx context.Context, owner, from, to, contrac
 }
 
 // TRC20Approve approve token to address
-func (c *Client) TRC20Approve(ctx context.Context, from, to, contract string, amount decimal.Decimal, feeLimit int64) (*api.TransactionExtention, error) {
+func (c *Client) TRC20Approve(ctx context.Context, from, to, contract string, amount TokenAmount, feeLimit SUN) (*api.TransactionExtention, error) {
 	if contract == "" {
 		return nil, fmt.Errorf("%w: contract address is required", ErrInvalidAddress)
 	}
@@ -234,7 +272,7 @@ func (c *Client) TRC20Approve(ctx context.Context, from, to, contract string, am
 		return nil, fmt.Errorf("%w: to address is required", ErrInvalidAddress)
 	}
 
-	if amount.LessThanOrEqual(decimal.Zero) {
+	if !amount.IsPositive() {
 		return nil, fmt.Errorf("%w: amount must be greater than zero", ErrInvalidAmount)
 	}
 
@@ -246,7 +284,7 @@ func (c *Client) TRC20Approve(ctx context.Context, from, to, contract string, am
 	if err != nil {
 		return nil, err
 	}
-	ab := common.LeftPadBytes(amount.BigInt().Bytes(), 32)
+	ab := common.LeftPadBytes(amount.TokenUnits().Bytes(), 32)
 	req := trc20ApproveMethodSignature + "0000000000000000000000000000000000000000000000000000000000000000"[len(tronutils.BytesToHexString(addrB[:]))-4:] + tronutils.BytesToHexString(addrB[:])[4:]
 	req += common.Bytes2Hex(ab)
 	return c.TRC20Call(ctx, from, contract, req, false, feeLimit)

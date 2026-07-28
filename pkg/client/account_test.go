@@ -5,7 +5,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
 	"github.com/sxwebdev/gotron/schema/pb/core"
 )
@@ -80,8 +79,8 @@ func TestGetAccountBalance(t *testing.T) {
 	})
 	bal, err := c.GetAccountBalance(context.Background(), testAddr)
 	require.NoError(t, err)
-	// 5_000_000 SUN = 5 TRX
-	require.True(t, bal.Equal(decimal.NewFromInt(5)), "got %s", bal)
+	require.Equal(t, SUN(5_000_000), bal)
+	require.Equal(t, "5", bal.TRX().String())
 }
 
 func TestIsAccountActivated(t *testing.T) {

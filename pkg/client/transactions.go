@@ -83,11 +83,14 @@ func (c *Client) BroadcastTransaction(ctx context.Context, tx *core.Transaction)
 	if err != nil {
 		return nil, err
 	}
-	if !result.GetResult() {
-		return result, fmt.Errorf("result error: %s", result.GetMessage())
-	}
-	if result.GetCode() != api.Return_SUCCESS {
-		return result, fmt.Errorf("result error(%s): %s", result.GetCode(), result.GetMessage())
+	// Both rejection shapes carry the same diagnostic value, so they produce the
+	// same typed error: a node may signal failure through Result=false, through
+	// a non-SUCCESS Code, or through both.
+	if !result.GetResult() || result.GetCode() != api.Return_SUCCESS {
+		return result, &BroadcastError{
+			Code:    result.GetCode(),
+			Message: string(result.GetMessage()),
+		}
 	}
 	return result, nil
 }
