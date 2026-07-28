@@ -17,7 +17,7 @@ func TestDelegateResourceValidation(t *testing.T) {
 		name            string
 		owner, receiver string
 		resource        ResourceType
-		balance         int64
+		balance         SUN
 	}{
 		{"invalid owner", "bad!", testAddr2, ResourceTypeEnergy, 1},
 		{"invalid receiver", testAddr, "bad!", ResourceTypeEnergy, 1},

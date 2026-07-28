@@ -96,8 +96,8 @@ func (c *Client) ListWitnesses(ctx context.Context) (*api.WitnessList, error) {
 	return c.transport.ListWitnesses(ctx)
 }
 
-// GetUnclaimedReward returns the account's unclaimed reward in SUN.
-func (c *Client) GetUnclaimedReward(ctx context.Context, addr string) (int64, error) {
+// GetUnclaimedReward returns the account's unclaimed reward.
+func (c *Client) GetUnclaimedReward(ctx context.Context, addr string) (SUN, error) {
 	addrBytes, err := tronutils.DecodeCheck(addr)
 	if err != nil {
 		return 0, err
@@ -108,7 +108,7 @@ func (c *Client) GetUnclaimedReward(ctx context.Context, addr string) (int64, er
 		return 0, err
 	}
 
-	return res.GetNum(), nil
+	return SUN(res.GetNum()), nil
 }
 
 // GetWitnessBrokerage returns the witness commission rate as a percentage (0-100).

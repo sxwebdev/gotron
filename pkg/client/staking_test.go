@@ -17,7 +17,7 @@ func TestStakeValidation(t *testing.T) {
 		name     string
 		owner    string
 		resource ResourceType
-		amount   int64
+		amount   SUN
 		wantErr  error
 	}{
 		{"invalid owner", "bad!", ResourceTypeEnergy, 1, ErrInvalidAddress},

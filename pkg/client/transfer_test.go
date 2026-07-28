@@ -7,6 +7,7 @@ import (
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
 	"github.com/sxwebdev/gotron/pkg/tronutils"
+	"github.com/sxwebdev/gotron/pkg/units"
 	"github.com/sxwebdev/gotron/schema/pb/api"
 	"github.com/sxwebdev/gotron/schema/pb/core"
 )
@@ -18,17 +19,17 @@ func TestCreateTransferTransactionValidation(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
-		name           string
-		from, to       string
-		amount         decimal.Decimal
-		expect         string
+		name     string
+		from, to string
+		amount   SUN
+		expect   string
 	}{
-		{"empty from", "", testAddr2, decimal.NewFromInt(1), "from address is required"},
-		{"empty to", testAddr, "", decimal.NewFromInt(1), "to address is required"},
-		{"zero amount", testAddr, testAddr2, decimal.Zero, "amount must be greater than zero"},
-		{"negative amount", testAddr, testAddr2, decimal.NewFromInt(-1), "amount must be greater than zero"},
-		{"invalid from", "bad!", testAddr2, decimal.NewFromInt(1), ""},
-		{"invalid to", testAddr, "bad!", decimal.NewFromInt(1), ""},
+		{"empty from", "", testAddr2, 1, "from address is required"},
+		{"empty to", testAddr, "", 1, "to address is required"},
+		{"zero amount", testAddr, testAddr2, 0, "amount must be greater than zero"},
+		{"negative amount", testAddr, testAddr2, -1, "amount must be greater than zero"},
+		{"invalid from", "bad!", testAddr2, 1, ""},
+		{"invalid to", testAddr, "bad!", 1, ""},
 	}
 
 	for _, tt := range tests {
@@ -42,7 +43,7 @@ func TestCreateTransferTransactionValidation(t *testing.T) {
 	}
 }
 
-func TestCreateTransferTransactionConvertsToSUN(t *testing.T) {
+func TestCreateTransferTransactionPassesAmountThrough(t *testing.T) {
 	var gotAmount int64
 	var gotFrom, gotTo []byte
 	c := newTestClient(&fakeTransport{
@@ -52,10 +53,14 @@ func TestCreateTransferTransactionConvertsToSUN(t *testing.T) {
 		},
 	})
 
-	_, err := c.CreateTransferTransaction(context.Background(), testAddr, testAddr2, decimal.RequireFromString("1.5"))
+	// The amount is already in the chain's unit, so nothing is scaled here; the
+	// TRX -> SUN conversion and its overflow guard live in units.FromTRX.
+	amount, err := units.FromTRX(decimal.RequireFromString("1.5"))
 	require.NoError(t, err)
 
-	// 1.5 TRX = 1_500_000 SUN
+	_, err = c.CreateTransferTransaction(context.Background(), testAddr, testAddr2, amount)
+	require.NoError(t, err)
+
 	require.Equal(t, int64(1_500_000), gotAmount)
 
 	wantFrom, _ := tronutils.DecodeCheck(testAddr)
@@ -70,7 +75,7 @@ func TestCreateTransferTransactionEmptyResult(t *testing.T) {
 			return &api.TransactionExtention{}, nil // proto.Size == 0
 		},
 	})
-	_, err := c.CreateTransferTransaction(context.Background(), testAddr, testAddr2, decimal.NewFromInt(1))
+	_, err := c.CreateTransferTransaction(context.Background(), testAddr, testAddr2, 1)
 	require.ErrorIs(t, err, ErrInvalidTransaction)
 }
 
@@ -82,7 +87,7 @@ func TestCreateTransferTransactionResultCodeError(t *testing.T) {
 			}, nil
 		},
 	})
-	_, err := c.CreateTransferTransaction(context.Background(), testAddr, testAddr2, decimal.NewFromInt(1))
+	_, err := c.CreateTransferTransaction(context.Background(), testAddr, testAddr2, 1)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "validation failed")
 }

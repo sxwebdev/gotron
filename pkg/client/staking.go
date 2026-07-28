@@ -14,8 +14,8 @@ import (
 
 // Stake freezes TRX to obtain bandwidth or energy (Stake 2.0, FreezeBalanceV2).
 //
-// Important! The amount is specified in SUN.
-func (c *Client) Stake(ctx context.Context, owner string, resource ResourceType, amount int64) (*api.TransactionExtention, error) {
+// The amount is in SUN. Convert from human-facing TRX with units.FromTRX.
+func (c *Client) Stake(ctx context.Context, owner string, resource ResourceType, amount SUN) (*api.TransactionExtention, error) {
 	if err := address.Validate(owner); err != nil {
 		return nil, fmt.Errorf("%w: owner address is required", ErrInvalidAddress)
 	}
@@ -35,7 +35,7 @@ func (c *Client) Stake(ctx context.Context, owner string, resource ResourceType,
 
 	contract := &core.FreezeBalanceV2Contract{
 		OwnerAddress:  ownerBytes,
-		FrozenBalance: amount,
+		FrozenBalance: amount.Int64(),
 		Resource:      resource.ToProto(),
 	}
 
@@ -54,8 +54,8 @@ func (c *Client) Stake(ctx context.Context, owner string, resource ResourceType,
 // Unstake begins the unfreeze period for staked TRX (UnfreezeBalanceV2). The TRX
 // becomes withdrawable via WithdrawUnstaked once the network's unfreeze delay passes.
 //
-// Important! The amount is specified in SUN.
-func (c *Client) Unstake(ctx context.Context, owner string, resource ResourceType, amount int64) (*api.TransactionExtention, error) {
+// The amount is in SUN. Convert from human-facing TRX with units.FromTRX.
+func (c *Client) Unstake(ctx context.Context, owner string, resource ResourceType, amount SUN) (*api.TransactionExtention, error) {
 	if err := address.Validate(owner); err != nil {
 		return nil, fmt.Errorf("%w: owner address is required", ErrInvalidAddress)
 	}
@@ -75,7 +75,7 @@ func (c *Client) Unstake(ctx context.Context, owner string, resource ResourceTyp
 
 	contract := &core.UnfreezeBalanceV2Contract{
 		OwnerAddress:    ownerBytes,
-		UnfreezeBalance: amount,
+		UnfreezeBalance: amount.Int64(),
 		Resource:        resource.ToProto(),
 	}
 
@@ -164,7 +164,7 @@ func (c *Client) GetAvailableUnstakeCount(ctx context.Context, owner string) (in
 // GetWithdrawableUnstaked returns the amount in SUN that WithdrawUnstaked would
 // release right now, as reported by the node. It should agree with
 // StakeInfo.WithdrawableNow, which is computed locally without an extra round-trip.
-func (c *Client) GetWithdrawableUnstaked(ctx context.Context, owner string) (int64, error) {
+func (c *Client) GetWithdrawableUnstaked(ctx context.Context, owner string) (SUN, error) {
 	ownerBytes, err := tronutils.DecodeCheck(owner)
 	if err != nil {
 		return 0, err
@@ -180,7 +180,7 @@ func (c *Client) GetWithdrawableUnstaked(ctx context.Context, owner string) (int
 		return 0, err
 	}
 
-	return res.GetAmount(), nil
+	return SUN(res.GetAmount()), nil
 }
 
 // GetStakeInfo returns an aggregated view of an account's Stake 2.0 position:
@@ -202,15 +202,15 @@ func (c *Client) GetStakeInfo(ctx context.Context, addr string) (*StakeInfo, err
 		// counting them would double the total.
 		switch item.GetType() {
 		case core.ResourceCode_BANDWIDTH:
-			info.StakedBandwidth += item.GetAmount()
+			info.StakedBandwidth += SUN(item.GetAmount())
 		case core.ResourceCode_ENERGY:
-			info.StakedEnergy += item.GetAmount()
+			info.StakedEnergy += SUN(item.GetAmount())
 		}
 	}
 	info.TotalStaked = info.StakedBandwidth + info.StakedEnergy
 
 	for _, item := range account.GetUnfrozenV2() {
-		amount := item.GetUnfreezeAmount()
+		amount := SUN(item.GetUnfreezeAmount())
 		if amount <= 0 {
 			continue
 		}

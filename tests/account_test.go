@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/sxwebdev/gotron/pkg/client"
 )
 
 func TestGetAccount_GRPC(t *testing.T) {
@@ -47,9 +47,9 @@ func TestGetAccountBalance_GRPC(t *testing.T) {
 
 	balance, err := c.GetAccountBalance(ctx, testAddress)
 	require.NoError(t, err)
-	assert.True(t, balance.GreaterThanOrEqual(decimal.Zero))
+	assert.GreaterOrEqual(t, balance, client.SUN(0))
 
-	t.Logf("gRPC: Account balance: %s TRX", balance.String())
+	t.Logf("gRPC: Account balance: %s", balance)
 }
 
 func TestGetAccountBalance_HTTP(t *testing.T) {
@@ -61,9 +61,9 @@ func TestGetAccountBalance_HTTP(t *testing.T) {
 
 	balance, err := c.GetAccountBalance(ctx, testAddress)
 	require.NoError(t, err)
-	assert.True(t, balance.GreaterThanOrEqual(decimal.Zero))
+	assert.GreaterOrEqual(t, balance, client.SUN(0))
 
-	t.Logf("HTTP: Account balance: %s TRX", balance.String())
+	t.Logf("HTTP: Account balance: %s", balance)
 }
 
 func TestGetAccountResource_GRPC(t *testing.T) {

@@ -98,7 +98,7 @@ func (c *Client) GetCanDelegatedMaxSize(ctx context.Context, address string, res
 }
 
 // DelegateResource delegates a resource from one account to another
-func (c *Client) DelegateResource(ctx context.Context, owner, receiver string, resource ResourceType, delegateBalance int64, lock bool, lockPeriod int64) (*api.TransactionExtention, error) {
+func (c *Client) DelegateResource(ctx context.Context, owner, receiver string, resource ResourceType, delegateBalance SUN, lock bool, lockPeriod int64) (*api.TransactionExtention, error) {
 	if err := address.Validate(owner); err != nil {
 		return nil, fmt.Errorf("%w: owner address is required", ErrInvalidAddress)
 	}
@@ -130,7 +130,7 @@ func (c *Client) DelegateResource(ctx context.Context, owner, receiver string, r
 	contract.Resource = resource.ToProto()
 	contract.OwnerAddress = addrFromBytes
 	contract.ReceiverAddress = addrToBytes
-	contract.Balance = delegateBalance
+	contract.Balance = delegateBalance.Int64()
 	contract.Lock = lock
 	contract.LockPeriod = lockPeriod
 
@@ -147,7 +147,7 @@ func (c *Client) DelegateResource(ctx context.Context, owner, receiver string, r
 }
 
 // ReclaimResource reclaims a delegated resource from one account to another
-func (c *Client) ReclaimResource(ctx context.Context, owner, receiver string, resource ResourceType, delegateBalance int64) (*api.TransactionExtention, error) {
+func (c *Client) ReclaimResource(ctx context.Context, owner, receiver string, resource ResourceType, delegateBalance SUN) (*api.TransactionExtention, error) {
 	if err := address.Validate(owner); err != nil {
 		return nil, fmt.Errorf("%w: owner address is required", ErrInvalidAddress)
 	}
@@ -179,7 +179,7 @@ func (c *Client) ReclaimResource(ctx context.Context, owner, receiver string, re
 	contract.Resource = resource.ToProto()
 	contract.OwnerAddress = addrOwnerBytes
 	contract.ReceiverAddress = addrReceiverBytes
-	contract.Balance = delegateBalance
+	contract.Balance = delegateBalance.Int64()
 
 	response, err := c.transport.UnDelegateResource(ctx, contract)
 	if err != nil {
@@ -212,10 +212,10 @@ func (c *Client) AvailableForDelegateResources(ctx context.Context, addr string)
 	stackedEnergy, stackedBandwidth := decimal.Zero, decimal.Zero
 	for _, item := range account.FrozenV2 {
 		if item.Type == core.ResourceCode_BANDWIDTH {
-			stackedBandwidth = stackedBandwidth.Add(c.ConvertStackedTRXToBandwidth(accountResources.TotalNetWeight, accountResources.TotalNetLimit, item.Amount))
+			stackedBandwidth = stackedBandwidth.Add(c.ConvertStakedToBandwidth(accountResources.TotalNetWeight, accountResources.TotalNetLimit, SUN(item.Amount)))
 		}
 		if item.Type == core.ResourceCode_ENERGY {
-			stackedEnergy = stackedEnergy.Add(c.ConvertStackedTRXToEnergy(chainParams.TotalEnergyCurrentLimit, accountResources.TotalEnergyWeight, item.Amount))
+			stackedEnergy = stackedEnergy.Add(c.ConvertStakedToEnergy(chainParams.TotalEnergyCurrentLimit, accountResources.TotalEnergyWeight, SUN(item.Amount)))
 		}
 	}
 

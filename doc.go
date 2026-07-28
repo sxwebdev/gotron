@@ -20,6 +20,7 @@
 //   - Account operations and activation
 //   - Block and transaction queries
 //   - Multi-network support (Mainnet, Shasta, Nile)
+//   - Amount types that make the unit part of every signature (SUN, TokenAmount)
 //   - Type-safe operations with validation
 //
 // # Quick Start
@@ -57,7 +58,7 @@
 //	        log.Fatal(err)
 //	    }
 //
-//	    fmt.Printf("Balance: %s TRX\n", balance.String())
+//	    fmt.Printf("Balance: %s\n", balance) // e.g. "1.5 TRX"
 //	}
 //
 // # Configuration
@@ -205,13 +206,14 @@
 //
 //	ctx := context.Background()
 //
-//	// Create transaction (amount in TRX)
-//	tx, err := tron.CreateTransferTransaction(
-//	    ctx,
-//	    "TFromAddress",
-//	    "TToAddress",
-//	    decimal.NewFromFloat(1.5), // 1.5 TRX
-//	)
+//	// Every TRX amount is a SUN; FromTRX rejects values that cannot be
+//	// represented exactly (sub-SUN precision or outside int64).
+//	amount, err := gotron.FromTRX(decimal.NewFromFloat(1.5)) // 1.5 TRX
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//
+//	tx, err := tron.CreateTransferTransaction(ctx, "TFromAddress", "TToAddress", amount)
 //	if err != nil {
 //	    log.Fatal(err)
 //	}
@@ -247,12 +249,18 @@
 //	balance, err := tron.TRC20ContractBalance(ctx, "TAddress", usdtContract)
 //
 //	// Transfer tokens
+//	// TRC20 amounts use the token's own scale, so they are a separate type.
+//	amount, err := gotron.FromTokenDecimal(decimal.NewFromInt(1), 6) // 1 USDT
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//
 //	tx, err := tron.TRC20Send(
 //	    ctx,
 //	    "TFromAddress",
 //	    "TToAddress",
 //	    usdtContract,
-//	    decimal.NewFromInt(1000000), // Amount in smallest unit
+//	    amount,                      // TokenAmount, in the token's minimal units
 //	    100_000_000,                  // Fee limit in SUN
 //	)
 //
@@ -266,7 +274,7 @@
 //	    "TOwnerAddress",
 //	    "TReceiverAddress",
 //	    gotron.Energy,
-//	    1000_000_000, // 1000 TRX in SUN
+//	    gotron.SUN(1000_000_000), // 1000 TRX
 //	    false,         // lock
 //	    0,             // lock period
 //	)
@@ -277,7 +285,7 @@
 //	    "TOwnerAddress",
 //	    "TReceiverAddress",
 //	    gotron.Energy,
-//	    1000_000_000,
+//	    gotron.SUN(1000_000_000),
 //	)
 //
 // # Staking and Voting
@@ -286,10 +294,10 @@
 // in SUN:
 //
 //	// Stake 1000 TRX for energy
-//	tx, err := tron.Stake(ctx, "TOwnerAddress", gotron.Energy, 1000_000_000)
+//	tx, err := tron.Stake(ctx, "TOwnerAddress", gotron.Energy, gotron.SUN(1000_000_000))
 //
 //	// Start unstaking; the TRX becomes withdrawable after the unfreeze delay
-//	tx, err = tron.Unstake(ctx, "TOwnerAddress", gotron.Energy, 1000_000_000)
+//	tx, err = tron.Unstake(ctx, "TOwnerAddress", gotron.Energy, gotron.SUN(1000_000_000))
 //
 //	// Withdraw everything whose unfreeze period has expired
 //	tx, err = tron.WithdrawUnstaked(ctx, "TOwnerAddress")

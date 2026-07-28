@@ -8,12 +8,20 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
 	"github.com/sxwebdev/gotron/pkg/tronutils"
+	"github.com/sxwebdev/gotron/pkg/units"
 	"github.com/sxwebdev/gotron/schema/pb/api"
 	"github.com/sxwebdev/gotron/schema/pb/core"
 )
+
+// mustTokenUnits builds a TokenAmount from raw minimal units for tests.
+func mustTokenUnits(t *testing.T, v int64) TokenAmount {
+	t.Helper()
+	a, err := units.FromTokenUnits(big.NewInt(v))
+	require.NoError(t, err)
+	return a
+}
 
 func TestParseTRC20NumericProperty(t *testing.T) {
 	c := &Client{}
@@ -122,7 +130,7 @@ func TestTRC20SendBuildsTransferData(t *testing.T) {
 		},
 	})
 
-	_, err := c.TRC20Send(context.Background(), testAddr, testAddr2, testAddr, decimal.NewFromInt(1_000_000), 100*1e6)
+	_, err := c.TRC20Send(context.Background(), testAddr, testAddr2, testAddr, mustTokenUnits(t, 1_000_000), 100*units.SunPerTRX)
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, len(data), 4+32+32)
 	require.Equal(t, "a9059cbb", hex.EncodeToString(data[:4]), "transfer selector")
@@ -138,7 +146,7 @@ func TestTRC20ApproveAllowsZeroFeeLimit(t *testing.T) {
 	})
 
 	// Approve permits feeLimit == 0 (unlike Send, which requires > 0).
-	_, err := c.TRC20Approve(context.Background(), testAddr, testAddr2, testAddr, decimal.NewFromInt(1), 0)
+	_, err := c.TRC20Approve(context.Background(), testAddr, testAddr2, testAddr, mustTokenUnits(t, 1), 0)
 	require.NoError(t, err)
 	require.Equal(t, "095ea7b3", hex.EncodeToString(data[:4]), "approve selector")
 }
@@ -152,7 +160,7 @@ func TestTRC20TransferFromBuildsData(t *testing.T) {
 		},
 	})
 
-	_, err := c.TRC20TransferFrom(context.Background(), testAddr, testAddr2, testAddr, testAddr2, big.NewInt(5), 1)
+	_, err := c.TRC20TransferFrom(context.Background(), testAddr, testAddr2, testAddr, testAddr2, mustTokenUnits(t, 5), 1)
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, len(data), 4+32+32+32)
 	require.Equal(t, "23b872dd", hex.EncodeToString(data[:4]), "transferFrom selector")
@@ -164,18 +172,17 @@ func TestTRC20SendValidation(t *testing.T) {
 	const addr = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"
 
 	tests := []struct {
-		name              string
-		from, to, ct      string
-		amount            decimal.Decimal
-		feeLimit          int64
-		expect            string
+		name         string
+		from, to, ct string
+		amount       TokenAmount
+		feeLimit     SUN
+		expect       string
 	}{
-		{"empty contract", addr, addr, "", decimal.NewFromInt(1), 1, "contract address is required"},
-		{"empty from", "", addr, addr, decimal.NewFromInt(1), 1, "from address is required"},
-		{"empty to", addr, "", addr, decimal.NewFromInt(1), 1, "to address is required"},
-		{"zero amount", addr, addr, addr, decimal.Zero, 1, "amount must be greater than zero"},
-		{"negative amount", addr, addr, addr, decimal.NewFromInt(-1), 1, "amount must be greater than zero"},
-		{"zero fee limit", addr, addr, addr, decimal.NewFromInt(1), 0, "fee limit must be greater than zero"},
+		{"empty contract", addr, addr, "", mustTokenUnits(t, 1), 1, "contract address is required"},
+		{"empty from", "", addr, addr, mustTokenUnits(t, 1), 1, "from address is required"},
+		{"empty to", addr, "", addr, mustTokenUnits(t, 1), 1, "to address is required"},
+		{"zero amount", addr, addr, addr, mustTokenUnits(t, 0), 1, "amount must be greater than zero"},
+		{"zero fee limit", addr, addr, addr, mustTokenUnits(t, 1), 0, "fee limit must be greater than zero"},
 	}
 
 	for _, tt := range tests {

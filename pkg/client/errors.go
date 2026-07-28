@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/sxwebdev/gotron/pkg/units"
 	"github.com/sxwebdev/gotron/schema/pb/api"
 )
 
@@ -85,7 +86,12 @@ var (
 	ErrAccountNotActivated = errors.New("account is not activated")
 
 	// Transaction errors
-	ErrInvalidAmount           = errors.New("invalid amount")
+	//
+	// ErrInvalidAmount is units.ErrInvalidAmount rather than a second sentinel
+	// with the same text: the amount constructors live in pkg/units, which
+	// cannot import this package, and a caller must not have to know which
+	// layer rejected the amount.
+	ErrInvalidAmount           = units.ErrInvalidAmount
 	ErrInvalidTransaction      = errors.New("invalid transaction")
 	ErrInvalidPrivateKey       = errors.New("invalid private key")
 	ErrTransactionNotFound     = errors.New("transaction not found")

@@ -16,7 +16,7 @@ and Tron's protobuf definitions vendored under `schema/pb/`.
 ```bash
 go build ./...                 # build everything (CI gate)
 go vet ./...                   # vet (CI gate)
-make fmt                       # gofumpt -l -w .  (formatter is gofumpt, not gofmt)
+make fmt                       # go fix ./... then gofumpt -l -w .  (formatter is gofumpt, not gofmt)
 make lint                      # golangci-lint run
 
 # Unit tests — deterministic, no network. Always run with -race.
@@ -91,11 +91,19 @@ before adding transport methods.
 
 ## Conventions and gotchas
 
-- **SUN vs TRX.** 1 TRX = 1,000,000 SUN. This is the #1 source of bugs. Transfer/TRC20 human-facing
-  methods take **TRX** (`decimal.Decimal`) and multiply internally; staking, resource, and fee-limit
-  methods take **SUN** (`int64`). Check the doc comment on each method. When converting TRX→SUN,
-  guard against int64 overflow with `.BigInt().IsInt64()` before `.Int64()` — see `transfer.go`;
-  `decimal.IntPart()` silently truncates to the low 64 bits.
+- **Amounts are typed; never pass a bare number.** Tron has two unrelated amount scales and mixing
+  them was the #1 source of bugs, so the unit lives in the type (`pkg/units`), not in a doc comment.
+  - `SUN` — every TRX-denominated value: transfers, balances, stake, delegation, fee limits,
+    rewards, estimate fees. 1 TRX = 1,000,000 SUN, which is exactly what the protocol uses, so
+    nothing is rounded between the caller and the wire.
+  - `TokenAmount` — every TRC20 amount, always in the token's own minimal units. Its scale comes
+    from the contract's `decimals`, so it is deliberately **not** interchangeable with `SUN`:
+    `1_000_000` is one USDT but a millionth of a TRX.
+  - Convert only at the edges: `FromTRX` / `SUN.TRX()` and `FromTokenDecimal` / `FromTokenUnits` /
+    `TokenAmount.Decimal(decimals)`. Those constructors are the single place that rejects
+    unrepresentable values, so per-method overflow guards are neither needed nor wanted.
+  - Resource units (energy, bandwidth) and percentages (brokerage, consume-user-resource) stay
+    plain — they are not money. Vote counts are TRON POWER, also not money.
 - **Addresses.** The `Client` layer uses base58check strings (`T...`); the transport layer uses raw
   `[]byte`. Convert with `tronutils.DecodeCheck` / `tronutils.EncodeCheck`.
 - **HTTP transport is the tricky one.** Tron's REST JSON uses hex (not base64) for bytes, `txID`/

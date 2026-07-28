@@ -8,6 +8,7 @@ import (
 
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
+	"github.com/sxwebdev/gotron/pkg/units"
 	"github.com/sxwebdev/gotron/schema/pb/api"
 	"github.com/sxwebdev/gotron/schema/pb/core"
 )
@@ -125,122 +126,89 @@ func captureCalldata(data *[]byte) *Client {
 	})
 }
 
-// decimal.BigInt() truncates towards zero, so a fractional amount used to be
-// encoded as a smaller value - 0.5 became a transfer of nothing.
-func TestTRC20SendRejectsFractionalAmount(t *testing.T) {
+// A fractional or oversized amount can no longer reach a TRC20 call: the
+// TokenAmount constructors reject it. Previously decimal.BigInt truncated 0.5 to
+// a transfer of nothing, and common.LeftPadBytes passed an over-32-byte amount
+// through unpadded, misaligning the calldata.
+func TestUnrepresentableTokenAmountNeverReachesACall(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name   string
-		amount decimal.Decimal
-	}{
-		{"below one", decimal.NewFromFloat(0.5)},
-		{"fraction above one", decimal.RequireFromString("1.5")},
-		{"tiny fraction", decimal.RequireFromString("1000000.000001")},
-	}
+	t.Run("finer than the token", func(t *testing.T) {
+		t.Parallel()
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
+		var data []byte
+		_ = captureCalldata(&data)
 
-			var data []byte
-			c := captureCalldata(&data)
+		_, err := units.FromTokenDecimal(decimal.NewFromFloat(0.5), 0)
+		require.ErrorContains(t, err, "finer than the token")
+		require.Nil(t, data)
+	})
 
-			_, err := c.TRC20Send(t.Context(), testAddr, testAddr2, testAddr, tt.amount, 1_000_000)
-			require.ErrorIs(t, err, ErrInvalidAmount)
-			require.ErrorContains(t, err, "whole number")
-			require.Nil(t, data, "no transaction may be built for a fractional amount")
-		})
-	}
+	t.Run("wider than uint256", func(t *testing.T) {
+		t.Parallel()
+
+		var data []byte
+		_ = captureCalldata(&data)
+
+		_, err := units.FromTokenUnits(new(big.Int).Lsh(big.NewInt(1), 256))
+		require.ErrorContains(t, err, "needs 33 bytes, an ABI uint256 holds 32")
+		require.Nil(t, data)
+	})
+
+	t.Run("negative", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := units.FromTokenUnits(big.NewInt(-100))
+		require.ErrorContains(t, err, "negative")
+	})
 }
 
-// common.LeftPadBytes returns the input untouched once it is 32 bytes or longer,
-// so an oversized amount produced calldata of the wrong length that the contract
-// decodes as different arguments entirely.
-func TestTRC20SendRejectsOversizedAmount(t *testing.T) {
+// A zero amount is a valid TokenAmount - approve(0) is the standard way to
+// revoke an allowance - so the per-method positivity rule still has to hold.
+func TestTRC20SendRejectsZeroAmount(t *testing.T) {
 	t.Parallel()
-
-	// 2^256 needs 33 bytes and cannot be an ABI uint256.
-	tooBig := decimal.NewFromBigInt(new(big.Int).Lsh(big.NewInt(1), 256), 0)
 
 	var data []byte
 	c := captureCalldata(&data)
 
-	_, err := c.TRC20Send(t.Context(), testAddr, testAddr2, testAddr, tooBig, 1_000_000)
-	require.ErrorIs(t, err, ErrInvalidAmount)
-	require.ErrorContains(t, err, "32 bytes")
-	require.Nil(t, data)
-}
-
-// The largest valid uint256 must still go through, and the calldata must be
-// exactly 4 + 32 + 32 bytes.
-func TestTRC20SendAcceptsMaxUint256(t *testing.T) {
-	t.Parallel()
-
-	maxUint256 := new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1))
-
-	var data []byte
-	c := captureCalldata(&data)
-
-	_, err := c.TRC20Send(t.Context(), testAddr, testAddr2, testAddr, decimal.NewFromBigInt(maxUint256, 0), 1_000_000)
+	zero, err := units.FromTokenUnits(big.NewInt(0))
 	require.NoError(t, err)
-	require.Len(t, data, 4+32+32, "selector plus two ABI words")
 
-	require.Equal(t, maxUint256, new(big.Int).SetBytes(data[36:]))
+	_, err = c.TRC20Send(t.Context(), testAddr, testAddr2, testAddr, zero, 1_000_000)
+	require.ErrorIs(t, err, ErrInvalidAmount)
+	require.Nil(t, data)
+
+	_, err = c.TRC20Send(t.Context(), testAddr, testAddr2, testAddr, TokenAmount{}, 1_000_000)
+	require.ErrorIs(t, err, ErrInvalidAmount)
+	require.Nil(t, data)
 }
 
 func TestTRC20SendEncodesAmountExactly(t *testing.T) {
 	t.Parallel()
 
-	var data []byte
-	c := captureCalldata(&data)
-
-	_, err := c.TRC20Send(t.Context(), testAddr, testAddr2, testAddr, decimal.NewFromInt(1_500_000), 1_000_000)
-	require.NoError(t, err)
-	require.Len(t, data, 4+32+32)
-	require.Equal(t, int64(1_500_000), new(big.Int).SetBytes(data[36:]).Int64())
-}
-
-func TestTRC20ApproveRejectsFractionalAmount(t *testing.T) {
-	t.Parallel()
-
-	var data []byte
-	c := captureCalldata(&data)
-
-	_, err := c.TRC20Approve(t.Context(), testAddr, testAddr2, testAddr, decimal.NewFromFloat(0.5), 1_000_000)
-	require.ErrorIs(t, err, ErrInvalidAmount)
-	require.Nil(t, data)
-}
-
-// TRC20TransferFrom validated nothing at all: big.Int.Bytes() drops the sign, so
-// a negative amount was encoded as a large positive transfer.
-func TestTRC20TransferFromRejectsInvalidAmounts(t *testing.T) {
-	t.Parallel()
-
 	tests := []struct {
-		name   string
-		amount *big.Int
+		name  string
+		units *big.Int
 	}{
-		{"nil", nil},
-		{"zero", big.NewInt(0)},
-		{"negative", big.NewInt(-100)},
-		{"oversized", new(big.Int).Lsh(big.NewInt(1), 256)},
+		{name: "typical", units: big.NewInt(1_500_000)},
+		{name: "one", units: big.NewInt(1)},
+		{name: "max uint256", units: new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1))},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
+			amount, err := units.FromTokenUnits(tt.units)
+			require.NoError(t, err)
+
 			var data []byte
 			c := captureCalldata(&data)
 
-			var err error
-			require.NotPanics(t, func() {
-				_, err = c.TRC20TransferFrom(t.Context(), testAddr, testAddr, testAddr2, testAddr, tt.amount, 1_000_000)
-			})
-
-			require.ErrorIs(t, err, ErrInvalidAmount)
-			require.Nil(t, data)
+			_, err = c.TRC20Send(t.Context(), testAddr, testAddr2, testAddr, amount, 1_000_000)
+			require.NoError(t, err)
+			require.Len(t, data, 4+32+32, "selector plus two ABI words")
+			require.Equal(t, 0, new(big.Int).SetBytes(data[36:]).Cmp(tt.units))
 		})
 	}
 }
@@ -248,10 +216,13 @@ func TestTRC20TransferFromRejectsInvalidAmounts(t *testing.T) {
 func TestTRC20TransferFromEncodesAmount(t *testing.T) {
 	t.Parallel()
 
+	amount, err := units.FromTokenUnits(big.NewInt(777))
+	require.NoError(t, err)
+
 	var data []byte
 	c := captureCalldata(&data)
 
-	_, err := c.TRC20TransferFrom(t.Context(), testAddr, testAddr, testAddr2, testAddr, big.NewInt(777), 1_000_000)
+	_, err = c.TRC20TransferFrom(t.Context(), testAddr, testAddr, testAddr2, testAddr, amount, 1_000_000)
 	require.NoError(t, err)
 	require.Len(t, data, 4+32+32+32, "selector plus three ABI words")
 	require.Equal(t, int64(777), new(big.Int).SetBytes(data[68:]).Int64())
@@ -270,4 +241,54 @@ func TestParseTRC20StringPropertyStillHandlesLongForm(t *testing.T) {
 	got, err := c.ParseTRC20StringProperty("0x" + offset + length + body)
 	require.NoError(t, err)
 	require.Equal(t, "TRON", got)
+}
+
+// A zero TokenAmount is constructible - it is the zero value, and
+// FromTokenUnits(0) succeeds - so every write path has to reject it itself. The
+// constructors only rule out negative and oversized amounts.
+//
+// TRC20TransferFrom lost this check when amount encoding moved into the
+// TokenAmount constructors: it built calldata with a zero uint256 and returned
+// no error, so the caller signed and broadcast a transfer of nothing that still
+// burned energy and bandwidth.
+func TestTRC20WritesRejectZeroAmount(t *testing.T) {
+	t.Parallel()
+
+	zeroFromUnits, err := units.FromTokenUnits(big.NewInt(0))
+	require.NoError(t, err, "zero is a valid amount to construct - that is the point")
+
+	amounts := map[string]TokenAmount{
+		"zero value":       {},
+		"built from units": zeroFromUnits,
+	}
+
+	calls := map[string]func(*Client, TokenAmount) error{
+		"TRC20Send": func(c *Client, a TokenAmount) error {
+			_, err := c.TRC20Send(t.Context(), testAddr, testAddr2, testAddr, a, 1_000_000)
+			return err
+		},
+		"TRC20Approve": func(c *Client, a TokenAmount) error {
+			_, err := c.TRC20Approve(t.Context(), testAddr, testAddr2, testAddr, a, 1_000_000)
+			return err
+		},
+		"TRC20TransferFrom": func(c *Client, a TokenAmount) error {
+			_, err := c.TRC20TransferFrom(t.Context(), testAddr, testAddr, testAddr2, testAddr, a, 1_000_000)
+			return err
+		},
+	}
+
+	for method, call := range calls {
+		for amountName, amount := range amounts {
+			t.Run(method+"/"+amountName, func(t *testing.T) {
+				t.Parallel()
+
+				var data []byte
+				c := captureCalldata(&data)
+
+				err := call(c, amount)
+				require.ErrorIs(t, err, ErrInvalidAmount)
+				require.Nil(t, data, "no transaction may be built for a zero amount")
+			})
+		}
+	}
 }

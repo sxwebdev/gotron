@@ -81,7 +81,7 @@ func main() {
   if err != nil {
     log.Fatal(err)
   }
-  fmt.Printf("Balance: %s TRX\n", balance.String())
+  fmt.Printf("Balance: %s\n", balance) // e.g. "1.5 TRX"
 }
 ```
 
@@ -131,12 +131,14 @@ import (
 ctx := context.Background()
 
 // Create transfer transaction (amount in TRX)
-tx, err := tron.CreateTransferTransaction(
-  ctx,
-  "TFromAddress",
-  "TToAddress",
-  decimal.NewFromFloat(1.5), // 1.5 TRX
-)
+// Every TRX amount is a SUN, so the unit is part of the signature.
+// FromTRX rejects amounts that cannot be represented exactly.
+amount, err := gotron.FromTRX(decimal.NewFromFloat(1.5)) // 1.5 TRX
+if err != nil {
+  log.Fatal(err)
+}
+
+tx, err := tron.CreateTransferTransaction(ctx, "TFromAddress", "TToAddress", amount)
 if err != nil {
   log.Fatal(err)
 }
@@ -183,16 +185,23 @@ balance, err := tron.TRC20ContractBalance(ctx, "TYourAddress", usdtContract)
 if err != nil {
     log.Fatal(err)
 }
-fmt.Printf("Balance: %s\n", balance.String())
+// TokenAmount prints raw minimal units; render it with the token's decimals.
+fmt.Printf("Balance: %s USDT\n", balance.Decimal(6))
 
-// Transfer tokens (amount in smallest unit, 1 USDT = 1000000)
+// Transfer tokens.
+// TRC20 amounts live on the token's own scale, so they are a different type.
+usdtAmount, err := gotron.FromTokenDecimal(decimal.NewFromInt(1), 6) // 1 USDT
+if err != nil {
+  log.Fatal(err)
+}
+
 tx, err := tron.TRC20Send(
   ctx,
   "TFromAddress",
   "TToAddress",
   usdtContract,
-  decimal.NewFromInt(1000000), // 1 USDT
-  100_000_000, // Fee limit in SUN (100 TRX)
+  usdtAmount,                  // TokenAmount, in the token's minimal units
+  gotron.SUN(100_000_000),     // Fee limit: 100 TRX
 )
 if err != nil {
     log.Fatal(err)
@@ -217,7 +226,7 @@ tx, err := tron.DelegateResource(
   "TOwnerAddress",
   "TReceiverAddress",
   gotron.Energy,              // Resource type
-  1000_000_000,               // Balance in SUN (1000 TRX)
+  gotron.SUN(1000_000_000),   // 1000 TRX
   false,                      // Lock
   0,                          // Lock period
 )
@@ -233,13 +242,13 @@ reclaimTx, err := tron.ReclaimResource(
   "TOwnerAddress",
   "TReceiverAddress",
   gotron.Energy,
-  1000_000_000, // Amount in SUN
+  gotron.SUN(1000_000_000), // 1000 TRX
 )
 ```
 
 ### Stake & Unstake (Stake 2.0)
 
-All amounts are in SUN.
+All TRX amounts are `gotron.SUN`; build one from TRX with `gotron.FromTRX`.
 
 ```go
 import "github.com/sxwebdev/gotron"
@@ -247,7 +256,7 @@ import "github.com/sxwebdev/gotron"
 ctx := context.Background()
 
 // Stake 1000 TRX for energy
-tx, err := tron.Stake(ctx, "TOwnerAddress", gotron.Energy, 1000_000_000)
+tx, err := tron.Stake(ctx, "TOwnerAddress", gotron.Energy, gotron.SUN(1000_000_000))
 if err != nil {
     log.Fatal(err)
 }
@@ -256,7 +265,7 @@ if err != nil {
 
 // Start unstaking. The TRX becomes withdrawable after the network's
 // unfreeze delay (14 days on mainnet).
-unstakeTx, err := tron.Unstake(ctx, "TOwnerAddress", gotron.Energy, 1000_000_000)
+unstakeTx, err := tron.Unstake(ctx, "TOwnerAddress", gotron.Energy, gotron.SUN(1000_000_000))
 
 // Withdraw everything whose unfreeze period has expired
 withdrawTx, err := tron.WithdrawUnstaked(ctx, "TOwnerAddress")
@@ -344,7 +353,7 @@ isActivated, err := tron.IsAccountActivated(ctx, "TAddress")
 
 // Estimate activation cost
 estimate, err := tron.EstimateActivateAccount(ctx, "TFromAddress", "TToAddress")
-fmt.Printf("Activation cost: %s TRX\n", estimate.Trx.String())
+fmt.Printf("Activation cost: %s\n", estimate.Fee) // e.g. "1.1 TRX"
 
 // Get account resources
 resources, err := tron.TotalAvailableResources(ctx, "TAddress")

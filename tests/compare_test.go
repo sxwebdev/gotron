@@ -9,6 +9,7 @@ import (
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/sxwebdev/gotron/pkg/client"
 )
 
 // Comparison tests verify that gRPC and HTTP transports return identical data
@@ -79,10 +80,13 @@ func TestCompare_AccountBalance(t *testing.T) {
 	require.NoError(t, err)
 
 	// Balances should be very close (may differ slightly due to timing)
-	diff := grpcBalance.Sub(httpBalance).Abs()
-	assert.True(t, diff.LessThan(decimal.NewFromInt(1)), "Balance difference should be < 1 TRX")
+	diff := grpcBalance - httpBalance
+	if diff < 0 {
+		diff = -diff
+	}
+	assert.Less(t, diff, client.MustFromTRX(decimal.NewFromInt(1)), "Balance difference should be < 1 TRX")
 
-	t.Logf("gRPC balance: %s TRX, HTTP balance: %s TRX", grpcBalance.String(), httpBalance.String())
+	t.Logf("gRPC balance: %s, HTTP balance: %s", grpcBalance, httpBalance)
 }
 
 func TestCompare_BlockByNum(t *testing.T) {

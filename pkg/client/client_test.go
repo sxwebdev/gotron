@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
 	"github.com/sxwebdev/gotron/pkg/client"
 )
@@ -55,7 +54,7 @@ func TestGetAccountBalance(t *testing.T) {
 
 	balance, err := c.GetAccountBalance(context.Background(), "TDEPJkL1dUGWvrJ4pFkFok2x2zoW3diFMh")
 	require.NoError(t, err)
-	require.True(t, balance.GreaterThan(decimal.Zero))
+	require.Greater(t, balance, client.SUN(0))
 
-	fmt.Println(balance.String())
+	fmt.Println(balance)
 }

@@ -116,7 +116,7 @@ func (c *Client) TriggerConstantContract(ctx context.Context, ct *core.TriggerSm
 
 // TriggerContract and return tx result
 func (c *Client) TriggerContract(ctx context.Context, from, contractAddress, method, jsonString string,
-	feeLimit, tAmount int64, tTokenID string, tTokenAmount int64,
+	feeLimit SUN, tAmount int64, tTokenID string, tTokenAmount int64,
 ) (*api.TransactionExtention, error) {
 	fromDesc, err := tronutils.DecodeCheck(from)
 	if err != nil {
@@ -154,7 +154,7 @@ func (c *Client) TriggerContract(ctx context.Context, from, contractAddress, met
 		}
 	}
 
-	return c.triggerContract(ctx, ct, feeLimit)
+	return c.triggerContract(ctx, ct, feeLimit.Int64())
 }
 
 // triggerContract and return tx result

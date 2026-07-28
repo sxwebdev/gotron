@@ -12,6 +12,7 @@ make test:
 	go test ./tests/... -v
 
 fmt:
+	go fix ./...
 	gofumpt -l -w .
 
 lint:

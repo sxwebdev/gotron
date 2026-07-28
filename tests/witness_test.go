@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/sxwebdev/gotron/pkg/client"
 	"github.com/sxwebdev/gotron/pkg/tronutils"
 	"github.com/sxwebdev/gotron/schema/pb/api"
 )
@@ -71,7 +72,7 @@ func TestGetUnclaimedReward_GRPC(t *testing.T) {
 
 	reward, err := c.GetUnclaimedReward(ctx, stakedAddress)
 	require.NoError(t, err)
-	assert.GreaterOrEqual(t, reward, int64(0))
+	assert.GreaterOrEqual(t, reward, client.SUN(0))
 
 	t.Logf("gRPC: unclaimed reward: %d SUN", reward)
 }
@@ -85,7 +86,7 @@ func TestGetUnclaimedReward_HTTP(t *testing.T) {
 
 	reward, err := c.GetUnclaimedReward(ctx, stakedAddress)
 	require.NoError(t, err)
-	assert.GreaterOrEqual(t, reward, int64(0))
+	assert.GreaterOrEqual(t, reward, client.SUN(0))
 
 	t.Logf("HTTP: unclaimed reward: %d SUN", reward)
 }

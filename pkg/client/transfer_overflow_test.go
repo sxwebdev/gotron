@@ -8,29 +8,30 @@ import (
 
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
+	"github.com/sxwebdev/gotron/pkg/units"
 	"github.com/sxwebdev/gotron/schema/pb/api"
 	"github.com/sxwebdev/gotron/schema/pb/core"
 )
 
-// decimal.IntPart() is big.Int.Int64(), which silently keeps only the low 64
-// bits. An amount past the int64 ceiling used to be rebuilt as an unrelated
-// number - often small, sometimes negative - and then signed and broadcast as a
-// perfectly valid transfer of the wrong size.
-func TestCreateTransferTransactionRejectsUnrepresentableAmount(t *testing.T) {
+// CreateTransferTransaction used to take TRX and scale it with decimal.IntPart,
+// which keeps only the low 64 bits when the value does not fit: an amount past
+// ~9.22e12 TRX was rebuilt as an unrelated number and broadcast as a valid
+// transfer of the wrong size.
+//
+// The amount is now a SUN, so an unrepresentable value cannot be constructed in
+// the first place - it fails at units.FromTRX, before any client method is
+// reachable. This test pins that boundary end to end.
+func TestUnrepresentableTRXNeverReachesATransaction(t *testing.T) {
 	t.Parallel()
 
-	// 1e13 TRX scales to 1e19 SUN; int64 tops out near 9.22e18.
-	overflowing := decimal.NewFromInt(10_000_000_000_000)
-	require.False(t, overflowing.Mul(decimal.NewFromInt(1e6)).BigInt().IsInt64(),
-		"fixture must actually exceed int64 after scaling")
-
 	tests := []struct {
-		name   string
-		amount decimal.Decimal
+		name string
+		trx  string
 	}{
-		{"just above int64", decimal.NewFromBigInt(new(big.Int).Add(big.NewInt(math.MaxInt64), big.NewInt(1)), -6)},
-		{"1e13 TRX", overflowing},
-		{"astronomically large", decimal.NewFromBigInt(new(big.Int).Lsh(big.NewInt(1), 200), 0)},
+		{name: "just above int64 SUN", trx: "9223372036854.775808"},
+		{name: "1e13 TRX", trx: "10000000000000"},
+		{name: "astronomically large", trx: "1e30"},
+		{name: "finer than one SUN", trx: "0.0000001"},
 	}
 
 	for _, tt := range tests {
@@ -45,19 +46,30 @@ func TestCreateTransferTransactionRejectsUnrepresentableAmount(t *testing.T) {
 				},
 			})
 
-			_, err := c.CreateTransferTransaction(t.Context(), testAddr, testAddr2, tt.amount)
+			amount, err := units.FromTRX(decimal.RequireFromString(tt.trx))
+			require.Error(t, err, "the amount must be rejected at construction")
+			require.ErrorIs(t, err, ErrInvalidAmount)
+			require.Zero(t, amount)
+
+			// A caller who ignores that error is left holding the zero value,
+			// which the transfer itself refuses - so no transaction is built
+			// either way.
+			_, err = c.CreateTransferTransaction(t.Context(), testAddr, testAddr2, amount)
 			require.ErrorIs(t, err, ErrInvalidAmount)
 			require.False(t, called, "no transaction may be built for an unrepresentable amount")
 		})
 	}
 }
 
-// The largest representable amount must still work, and must arrive unchanged.
+// The largest representable amount must still go through unchanged.
 func TestCreateTransferTransactionAcceptsMaxInt64SUN(t *testing.T) {
 	t.Parallel()
 
-	// MaxInt64 SUN expressed in TRX.
 	maxTRX := decimal.NewFromBigInt(big.NewInt(math.MaxInt64), -6)
+
+	amount, err := units.FromTRX(maxTRX)
+	require.NoError(t, err)
+	require.Equal(t, SUN(math.MaxInt64), amount)
 
 	var gotAmount int64
 	c := newTestClient(&fakeTransport{
@@ -67,26 +79,21 @@ func TestCreateTransferTransactionAcceptsMaxInt64SUN(t *testing.T) {
 		},
 	})
 
-	_, err := c.CreateTransferTransaction(t.Context(), testAddr, testAddr2, maxTRX)
+	_, err = c.CreateTransferTransaction(t.Context(), testAddr, testAddr2, amount)
 	require.NoError(t, err)
 	require.Equal(t, int64(math.MaxInt64), gotAmount)
 }
 
-// Ordinary amounts must keep their existing truncating behaviour: sub-SUN
-// precision is dropped, not rejected.
-func TestCreateTransferTransactionTruncatesSubSun(t *testing.T) {
+// Sub-SUN precision is now an error rather than a silent truncation: 1.0000005
+// TRX used to become 1_000_000 SUN with the half-SUN quietly dropped.
+func TestSubSunPrecisionIsRejectedRatherThanTruncated(t *testing.T) {
 	t.Parallel()
 
-	var gotAmount int64
-	c := newTestClient(&fakeTransport{
-		createTransaction: func(_ context.Context, ct *core.TransferContract) (*api.TransactionExtention, error) {
-			gotAmount = ct.GetAmount()
-			return &api.TransactionExtention{Txid: []byte{0x01}}, nil
-		},
-	})
+	_, err := units.FromTRX(decimal.RequireFromString("1.0000005"))
+	require.ErrorContains(t, err, "sub-SUN precision")
 
-	// 1.0000005 TRX = 1_000_000.5 SUN
-	_, err := c.CreateTransferTransaction(t.Context(), testAddr, testAddr2, decimal.RequireFromString("1.0000005"))
+	// The representable neighbour is accepted.
+	amount, err := units.FromTRX(decimal.RequireFromString("1.000001"))
 	require.NoError(t, err)
-	require.Equal(t, int64(1_000_000), gotAmount)
+	require.Equal(t, SUN(1_000_001), amount)
 }

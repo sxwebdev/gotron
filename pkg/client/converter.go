@@ -1,47 +1,56 @@
 package client
 
-import "github.com/shopspring/decimal"
+import (
+	"github.com/shopspring/decimal"
+	"github.com/sxwebdev/gotron/pkg/units"
+)
 
-// ConvertStackedTRXToEnergy converts stacked TRX to energy.
-func (c *Client) ConvertStackedTRXToEnergy(totalEnergyCurrentLimit, totalEnergyWeight, stackedTrx int64) decimal.Decimal {
+// ConvertStakedToEnergy converts a staked balance to the energy it yields.
+//
+// totalEnergyWeight is the network-wide staked total in TRX, so the staked
+// amount is scaled down from SUN before the ratio is taken.
+func (c *Client) ConvertStakedToEnergy(totalEnergyCurrentLimit, totalEnergyWeight int64, staked SUN) decimal.Decimal {
 	if totalEnergyWeight == 0 {
 		return decimal.Zero
 	}
-	return decimal.NewFromInt(stackedTrx).
-		Div(decimal.NewFromInt(1e6)).
+	return staked.TRX().
 		Div(decimal.NewFromInt(totalEnergyWeight)).
 		Mul(decimal.NewFromInt(totalEnergyCurrentLimit))
 }
 
-// ConvertEnergyToStackedTRX converts energy to stacked TRX. Returns value in SUN.
-func (c *Client) ConvertEnergyToStackedTRX(totalEnergyCurrentLimit, totalEnergyWeight int64, energy decimal.Decimal) decimal.Decimal {
+// ConvertEnergyToStaked converts an energy amount to the balance that must be
+// staked to yield it.
+func (c *Client) ConvertEnergyToStaked(totalEnergyCurrentLimit, totalEnergyWeight int64, energy decimal.Decimal) SUN {
 	if totalEnergyCurrentLimit == 0 {
-		return decimal.Zero
+		return 0
 	}
-	return energy.
+	return units.CeilToSUN(energy.
 		Div(decimal.NewFromInt(totalEnergyCurrentLimit)).
 		Mul(decimal.NewFromInt(totalEnergyWeight)).
-		Mul(decimal.NewFromInt(1e6))
+		Mul(decimal.NewFromInt(units.SunPerTRX)))
 }
 
-// ConvertStackedTRXToBandwidth converts stacked TRX to bandwidth.
-func (c *Client) ConvertStackedTRXToBandwidth(totalNetWeight, totalNetLimit, stackedTrx int64) decimal.Decimal {
+// ConvertStakedToBandwidth converts a staked balance to the bandwidth it yields.
+//
+// totalNetWeight is the network-wide staked total in TRX, so the staked amount
+// is scaled down from SUN before the ratio is taken.
+func (c *Client) ConvertStakedToBandwidth(totalNetWeight, totalNetLimit int64, staked SUN) decimal.Decimal {
 	if totalNetWeight == 0 {
 		return decimal.Zero
 	}
-	return decimal.NewFromInt(stackedTrx).
-		Div(decimal.NewFromInt(1e6)).
+	return staked.TRX().
 		Div(decimal.NewFromInt(totalNetWeight)).
 		Mul(decimal.NewFromInt(totalNetLimit))
 }
 
-// ConvertBandwidthToStackedTRX converts bandwidth to stacked TRX. Returns value in SUN.
-func (c *Client) ConvertBandwidthToStackedTRX(totalNetWeight, totalNetLimit int64, bandwidth decimal.Decimal) decimal.Decimal {
+// ConvertBandwidthToStaked converts a bandwidth amount to the balance that must
+// be staked to yield it.
+func (c *Client) ConvertBandwidthToStaked(totalNetWeight, totalNetLimit int64, bandwidth decimal.Decimal) SUN {
 	if totalNetLimit == 0 {
-		return decimal.Zero
+		return 0
 	}
-	return bandwidth.
+	return units.CeilToSUN(bandwidth.
 		Div(decimal.NewFromInt(totalNetLimit)).
 		Mul(decimal.NewFromInt(totalNetWeight)).
-		Mul(decimal.NewFromInt(1e6))
+		Mul(decimal.NewFromInt(units.SunPerTRX)))
 }

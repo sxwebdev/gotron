@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/shopspring/decimal"
+	"github.com/sxwebdev/gotron/pkg/units"
 	"github.com/sxwebdev/gotron/schema/pb/core"
 )
 
@@ -77,10 +78,37 @@ func (r ResourceType) ToProto() core.ResourceCode {
 	}
 }
 
+// SUN is an amount of TRX in the chain's native unit: 1 TRX = 1,000,000 SUN.
+// Every TRX-denominated value in this package uses it, so the unit is part of
+// the signature rather than of a doc comment. Build one with units.FromTRX or
+// from a literal, e.g. client.SUN(1_500_000).
+type SUN = units.SUN
+
+// TokenAmount is an amount of a TRC20 token in the token's own minimal units.
+// Its scale comes from the token's decimals, so it is deliberately a different
+// type from SUN. Build one with FromTokenDecimal or FromTokenUnits.
+type TokenAmount = units.TokenAmount
+
+// Amount constructors, re-exported from pkg/units so that building an amount
+// does not require a second import.
+var (
+	// FromTRX converts a TRX amount to SUN, rejecting values that cannot be
+	// represented exactly: sub-SUN precision or outside int64.
+	FromTRX = units.FromTRX
+	// MustFromTRX is FromTRX for constants and tests; it panics on bad input.
+	MustFromTRX = units.MustFromTRX
+	// FromTokenUnits wraps a raw minimal-unit token amount.
+	FromTokenUnits = units.FromTokenUnits
+	// FromTokenDecimal converts a human-facing token amount using the token's decimals.
+	FromTokenDecimal = units.FromTokenDecimal
+)
+
+// EstimateResult is the cost of an operation. Energy and Bandwidth are resource
+// units; Fee is what those resources cost when they have to be burned.
 type EstimateResult struct {
 	Energy    decimal.Decimal `json:"energy"`
 	Bandwidth decimal.Decimal `json:"bandwidth"`
-	Trx       decimal.Decimal `json:"trx"`
+	Fee       SUN             `json:"fee"`
 }
 
 // AvailableResources represents the resources of an account
@@ -98,21 +126,20 @@ type Vote struct {
 	Count          int64  `json:"count"`
 }
 
-// PendingUnstake is one in-flight unstake entry. Amount is in SUN and becomes
-// withdrawable at ExpireTime.
+// PendingUnstake is one in-flight unstake entry. Amount becomes withdrawable at
+// ExpireTime.
 type PendingUnstake struct {
 	Resource   ResourceType `json:"resource"`
-	Amount     int64        `json:"amount"`
+	Amount     SUN          `json:"amount"`
 	ExpireTime time.Time    `json:"expire_time"`
 }
 
 // StakeInfo is an aggregated view of an account's Stake 2.0 position.
-// All amounts are in SUN.
 type StakeInfo struct {
-	StakedBandwidth int64            `json:"staked_bandwidth"`
-	StakedEnergy    int64            `json:"staked_energy"`
-	TotalStaked     int64            `json:"total_staked"`
-	UnstakingTotal  int64            `json:"unstaking_total"`
-	WithdrawableNow int64            `json:"withdrawable_now"`
+	StakedBandwidth SUN              `json:"staked_bandwidth"`
+	StakedEnergy    SUN              `json:"staked_energy"`
+	TotalStaked     SUN              `json:"total_staked"`
+	UnstakingTotal  SUN              `json:"unstaking_total"`
+	WithdrawableNow SUN              `json:"withdrawable_now"`
 	PendingUnstakes []PendingUnstake `json:"pending_unstakes"`
 }

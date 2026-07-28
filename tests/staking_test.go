@@ -18,12 +18,12 @@ func assertStakeInfo(t *testing.T, info *client.StakeInfo) {
 
 	require.NotNil(t, info)
 	require.Equal(t, info.StakedBandwidth+info.StakedEnergy, info.TotalStaked)
-	require.GreaterOrEqual(t, info.StakedBandwidth, int64(0))
-	require.GreaterOrEqual(t, info.StakedEnergy, int64(0))
+	require.GreaterOrEqual(t, info.StakedBandwidth, client.SUN(0))
+	require.GreaterOrEqual(t, info.StakedEnergy, client.SUN(0))
 
-	var pendingSum int64
+	var pendingSum client.SUN
 	for _, p := range info.PendingUnstakes {
-		require.Greater(t, p.Amount, int64(0), "zero-amount entries must be dropped")
+		require.Greater(t, p.Amount, client.SUN(0), "zero-amount entries must be dropped")
 		require.False(t, p.ExpireTime.IsZero())
 		pendingSum += p.Amount
 	}
@@ -41,7 +41,7 @@ func TestGetStakeInfo_GRPC(t *testing.T) {
 	info, err := c.GetStakeInfo(ctx, stakedAddress)
 	require.NoError(t, err)
 	assertStakeInfo(t, info)
-	require.Greater(t, info.TotalStaked, int64(0), "fixture account is expected to have an active stake")
+	require.Greater(t, info.TotalStaked, client.SUN(0), "fixture account is expected to have an active stake")
 
 	t.Logf("gRPC: staked bandwidth=%d energy=%d, unstaking=%d, withdrawable=%d",
 		info.StakedBandwidth, info.StakedEnergy, info.UnstakingTotal, info.WithdrawableNow)
@@ -57,7 +57,7 @@ func TestGetStakeInfo_HTTP(t *testing.T) {
 	info, err := c.GetStakeInfo(ctx, stakedAddress)
 	require.NoError(t, err)
 	assertStakeInfo(t, info)
-	require.Greater(t, info.TotalStaked, int64(0), "fixture account is expected to have an active stake")
+	require.Greater(t, info.TotalStaked, client.SUN(0), "fixture account is expected to have an active stake")
 
 	t.Logf("HTTP: staked bandwidth=%d energy=%d, unstaking=%d, withdrawable=%d",
 		info.StakedBandwidth, info.StakedEnergy, info.UnstakingTotal, info.WithdrawableNow)
@@ -102,7 +102,7 @@ func TestGetWithdrawableUnstaked_GRPC(t *testing.T) {
 
 	amount, err := c.GetWithdrawableUnstaked(ctx, stakedAddress)
 	require.NoError(t, err)
-	assert.GreaterOrEqual(t, amount, int64(0))
+	assert.GreaterOrEqual(t, amount, client.SUN(0))
 
 	// The node's answer must not exceed what the account actually has unstaking.
 	info, err := c.GetStakeInfo(ctx, stakedAddress)
@@ -121,7 +121,7 @@ func TestGetWithdrawableUnstaked_HTTP(t *testing.T) {
 
 	amount, err := c.GetWithdrawableUnstaked(ctx, stakedAddress)
 	require.NoError(t, err)
-	assert.GreaterOrEqual(t, amount, int64(0))
+	assert.GreaterOrEqual(t, amount, client.SUN(0))
 
 	info, err := c.GetStakeInfo(ctx, stakedAddress)
 	require.NoError(t, err)

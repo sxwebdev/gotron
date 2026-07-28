@@ -305,7 +305,7 @@ func (f *fakeTransport) GetAssetIssueById(context.Context, []byte) (*core.AssetI
 func (f *fakeTransport) GetAssetIssueListByName(context.Context, []byte) (*api.AssetIssueList, error) {
 	return nil, nil
 }
-func (f *fakeTransport) ListNodes(context.Context) (*api.NodeList, error) { return nil, nil }
+func (f *fakeTransport) ListNodes(context.Context) (*api.NodeList, error)    { return nil, nil }
 func (f *fakeTransport) GetNodeInfo(context.Context) (*core.NodeInfo, error) { return nil, nil }
 
 func (f *fakeTransport) GetNextMaintenanceTime(context.Context) (*api.NumberMessage, error) {
