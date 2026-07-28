@@ -244,11 +244,21 @@ func (c *Client) AvailableEnergy(res *api.AccountResourceMessage) decimal.Decima
 
 // AvailableBandwidth calculates the available bandwidth.
 func (c *Client) AvailableBandwidth(res *api.AccountResourceMessage) decimal.Decimal {
-	return decimal.NewFromInt(res.NetLimit + res.GetFreeNetLimit() - res.GetNetUsed() - res.GetFreeNetUsed())
+	return decimal.NewFromInt(res.GetNetLimit() + res.GetFreeNetLimit() - res.GetNetUsed() - res.GetFreeNetUsed())
 }
 
 func (c *Client) AvailableBandwidthWithoutFree(res *api.AccountResourceMessage) decimal.Decimal {
-	return decimal.NewFromInt(res.NetLimit - res.GetNetUsed())
+	return decimal.NewFromInt(res.GetNetLimit() - res.GetNetUsed())
+}
+
+// AvailableFreeBandwidth returns what is left of the daily free allowance.
+//
+// It is deliberately separate from the staked pool rather than folded into
+// AvailableBandwidth: Tron charges a transaction to one pool or the other, never
+// to both, so the two numbers answer different questions and their sum answers
+// neither. See billableBandwidth.
+func (c *Client) AvailableFreeBandwidth(res *api.AccountResourceMessage) decimal.Decimal {
+	return decimal.NewFromInt(res.GetFreeNetLimit() - res.GetFreeNetUsed())
 }
 
 func (c *Client) TotalEnergyLimit(res *api.AccountResourceMessage) decimal.Decimal {

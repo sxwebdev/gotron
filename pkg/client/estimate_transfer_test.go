@@ -96,34 +96,35 @@ func TestEstimateTransfer_TRX(t *testing.T) {
 
 			require.NoError(t, err)
 			require.NotNil(t, res)
-			require.True(t, res.Transfer.Bandwidth.IsPositive(), "transfer bandwidth must be > 0, got %s", res.Transfer.Bandwidth.String())
-			require.True(t, res.Transfer.Energy.Equal(decimal.Zero), "transfer energy must be 0 for TRX, got %s", res.Transfer.Energy.String())
-			require.GreaterOrEqual(t, res.Transfer.Fee, client.SUN(0), "transfer fee must be >= 0")
+			require.True(t, res.Usage.Bandwidth.IsPositive(), "transfer bandwidth must be > 0, got %s", res.Usage.Bandwidth.String())
+			require.True(t, res.Usage.Energy.Equal(decimal.Zero), "a TRX transfer uses no energy, got %s", res.Usage.Energy.String())
 
 			if tc.wantActivationGT0 {
-				require.GreaterOrEqual(t, res.Activation.Fee, client.MustFromTRX(decimal.NewFromInt(1)),
-					"activation fee must be >= 1 TRX for an unactivated address")
+				require.GreaterOrEqual(t, res.Charges.AccountCreation, client.MustFromTRX(decimal.NewFromInt(1)),
+					"creating an account costs at least 1 TRX")
 			} else {
-				require.Zero(t, res.Activation.Fee, "activation fee must be 0 for an activated address")
-				require.True(t, res.Activation.Bandwidth.Equal(decimal.Zero),
-					"activation bandwidth must be 0 for activated address, got %s", res.Activation.Bandwidth.String())
-				require.True(t, res.Activation.Energy.Equal(decimal.Zero),
-					"activation energy must be 0 for activated address, got %s", res.Activation.Energy.String())
+				require.Zero(t, res.Charges.AccountCreation, "no account is created for an activated address")
+				require.Zero(t, res.Charges.UnstakedCreation, "the surcharge only applies alongside a creation")
 			}
 
-			require.True(t, res.Total.Bandwidth.Equal(res.Transfer.Bandwidth.Add(res.Activation.Bandwidth)),
-				"total bandwidth must equal transfer + activation, got total=%s", res.Total.Bandwidth.String())
-			require.True(t, res.Total.Energy.Equal(res.Transfer.Energy.Add(res.Activation.Energy)),
-				"total energy must equal transfer + activation, got total=%s", res.Total.Energy.String())
-			require.Equal(t, res.Transfer.Fee+res.Activation.Fee, res.Total.Fee,
-				"total fee must equal transfer + activation")
+			// Fee accounts for every charge and for nothing else.
+			require.Equal(t, res.Charges.Total(), res.Fee)
+			require.Zero(t, res.Charges.Energy, "a TRX transfer burns no energy")
+
+			// A bandwidth charge and a covering pool are mutually exclusive: the
+			// pools are all-or-nothing, so being charged means neither covered it.
+			if res.Charges.Bandwidth > 0 {
+				require.True(t, res.Usage.Bandwidth.GreaterThan(res.Available.FreeBandwidth))
+				require.True(t, res.Usage.Bandwidth.GreaterThan(res.Available.StakedBandwidth))
+			}
 
 			t.Logf(
-				"TRX → %s: total=(b=%s e=%s fee=%s) transfer=(b=%s e=%s fee=%s) activation=(b=%s e=%s fee=%s)",
+				"TRX → %s: usage=(b=%s e=%s) available=(free=%s staked=%s energy=%s) charges=(b=%s e=%s create=%s unstaked=%s) fee=%s",
 				tc.to,
-				res.Total.Bandwidth, res.Total.Energy, res.Total.Fee,
-				res.Transfer.Bandwidth, res.Transfer.Energy, res.Transfer.Fee,
-				res.Activation.Bandwidth, res.Activation.Energy, res.Activation.Fee,
+				res.Usage.Bandwidth, res.Usage.Energy,
+				res.Available.FreeBandwidth, res.Available.StakedBandwidth, res.Available.StakedEnergy,
+				res.Charges.Bandwidth, res.Charges.Energy, res.Charges.AccountCreation, res.Charges.UnstakedCreation,
+				res.Fee,
 			)
 		})
 	}
@@ -134,13 +135,12 @@ func TestEstimateTransfer_TRC20(t *testing.T) {
 	require.NoError(t, err)
 
 	cases := []struct {
-		name              string
-		to                string
-		wantActivationGT0 bool
+		name string
+		to   string
 	}{
 		{name: "to activated with USDT", to: activatedAddressWithUSDT},
 		{name: "to activated without USDT", to: estimateToActivatedWithoutUSDT},
-		{name: "to not activated", to: emptyNotActivatedAddress, wantActivationGT0: true},
+		{name: "to not activated", to: emptyNotActivatedAddress},
 	}
 
 	for _, tc := range cases {
@@ -158,34 +158,32 @@ func TestEstimateTransfer_TRC20(t *testing.T) {
 
 			require.NoError(t, err)
 			require.NotNil(t, res)
-			require.True(t, res.Transfer.Bandwidth.IsPositive(), "transfer bandwidth must be > 0, got %s", res.Transfer.Bandwidth.String())
-			require.True(t, res.Transfer.Energy.IsPositive(), "transfer energy must be > 0 for TRC20, got %s", res.Transfer.Energy.String())
-			require.Greater(t, res.Transfer.Fee, client.SUN(0), "transfer fee must be > 0")
+			require.True(t, res.Usage.Bandwidth.IsPositive(), "transfer bandwidth must be > 0, got %s", res.Usage.Bandwidth.String())
+			require.True(t, res.Usage.Energy.IsPositive(), "a TRC20 transfer must use energy, got %s", res.Usage.Energy.String())
 
-			if tc.wantActivationGT0 {
-				require.GreaterOrEqual(t, res.Activation.Fee, client.MustFromTRX(decimal.NewFromInt(1)),
-					"activation fee must be >= 1 TRX for an unactivated address")
+			// A TRC20 balance is contract storage, so no recipient state creates
+			// a Tron account and none of them carries a creation fee - not even
+			// the unactivated one.
+			require.Zero(t, res.Charges.AccountCreation, "a TRC20 transfer creates no account")
+			require.Zero(t, res.Charges.UnstakedCreation)
+
+			require.Equal(t, res.Charges.Total(), res.Fee)
+
+			// Energy is additive, so a charge means the staked pool fell short by
+			// exactly what is charged - never more, never a rounded-up whole.
+			if res.Charges.Energy > 0 {
+				require.True(t, res.Usage.Energy.GreaterThan(res.Available.StakedEnergy))
 			} else {
-				require.Zero(t, res.Activation.Fee, "activation fee must be 0 for an activated address")
-				require.True(t, res.Activation.Bandwidth.Equal(decimal.Zero),
-					"activation bandwidth must be 0 for activated address, got %s", res.Activation.Bandwidth.String())
-				require.True(t, res.Activation.Energy.Equal(decimal.Zero),
-					"activation energy must be 0 for activated address, got %s", res.Activation.Energy.String())
+				require.True(t, res.Usage.Energy.LessThanOrEqual(res.Available.StakedEnergy))
 			}
 
-			require.True(t, res.Total.Bandwidth.Equal(res.Transfer.Bandwidth.Add(res.Activation.Bandwidth)),
-				"total bandwidth must equal transfer + activation, got total=%s", res.Total.Bandwidth.String())
-			require.True(t, res.Total.Energy.Equal(res.Transfer.Energy.Add(res.Activation.Energy)),
-				"total energy must equal transfer + activation, got total=%s", res.Total.Energy.String())
-			require.Equal(t, res.Transfer.Fee+res.Activation.Fee, res.Total.Fee,
-				"total fee must equal transfer + activation")
-
 			t.Logf(
-				"TRC20 → %s: total=(b=%s e=%s fee=%s) transfer=(b=%s e=%s fee=%s) activation=(b=%s e=%s fee=%s)",
+				"TRC20 → %s: usage=(b=%s e=%s) available=(free=%s staked=%s energy=%s) charges=(b=%s e=%s create=%s unstaked=%s) fee=%s",
 				tc.to,
-				res.Total.Bandwidth, res.Total.Energy, res.Total.Fee,
-				res.Transfer.Bandwidth, res.Transfer.Energy, res.Transfer.Fee,
-				res.Activation.Bandwidth, res.Activation.Energy, res.Activation.Fee,
+				res.Usage.Bandwidth, res.Usage.Energy,
+				res.Available.FreeBandwidth, res.Available.StakedBandwidth, res.Available.StakedEnergy,
+				res.Charges.Bandwidth, res.Charges.Energy, res.Charges.AccountCreation, res.Charges.UnstakedCreation,
+				res.Fee,
 			)
 		})
 	}

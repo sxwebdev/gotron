@@ -234,8 +234,12 @@ func (c *Client) ReclaimResource(ctx context.Context, owner, receiver string, re
 func (c *Client) AvailableForDelegateResources(ctx context.Context, addr string) (*AvailableResources, error)
 func (c *Client) TotalAvailableResources(ctx context.Context, addr string) (*AvailableResources, error)
 func (c *Client) AvailableEnergy(res *api.AccountResourceMessage) decimal.Decimal
+// AvailableBandwidth sums the staked and free pools. That sum answers "how much
+// bandwidth does this account have" but never "will this transaction be free" —
+// see the Billable notes under Estimate operations.
 func (c *Client) AvailableBandwidth(res *api.AccountResourceMessage) decimal.Decimal
 func (c *Client) AvailableBandwidthWithoutFree(res *api.AccountResourceMessage) decimal.Decimal
+func (c *Client) AvailableFreeBandwidth(res *api.AccountResourceMessage) decimal.Decimal
 func (c *Client) TotalEnergyLimit(res *api.AccountResourceMessage) decimal.Decimal
 func (c *Client) TotalBandwidthLimit(res *api.AccountResourceMessage) decimal.Decimal
 ```
@@ -344,14 +348,13 @@ func (c *Client) EstimateEnergy(
 ```go
 // TRX and TRC20 estimates are separate entry points because their amounts sit
 // on different scales — a single function would take one parameter meaning two
-// different things depending on the asset. Both break the cost down into:
-//   - Transfer:   the cost of the transfer transaction itself
-//   - Activation: the cost of activating toAddress (zero if already activated)
-//   - Total:      Transfer + Activation per resource (conservative upper bound)
+// different things depending on the asset. Both answer in three separable parts:
+//   - Usage:     what the transaction consumes
+//   - Available: what the sender already has to meet that
+//   - Charges:   the TRX charges left over, itemised
+//   - Fee:       the sum of Charges — what actually leaves the account
 //
-// Note: when sending to an unactivated address Tron consumes the activation fee
-// inside the transfer tx itself — Total slightly overestimates. Choose your own
-// merge policy if you need a single number (e.g. max(Transfer.Fee, Activation.Fee)).
+// Both entry points issue one GetAccountResource for the sender.
 func (c *Client) EstimateTRXTransfer(
     ctx context.Context,
     fromAddress, toAddress string,
@@ -367,11 +370,77 @@ func (c *Client) EstimateTRC20Transfer(
 
 ```go
 type EstimateTransferResult struct {
-    Total      EstimateResult `json:"total"`
-    Transfer   EstimateResult `json:"transfer"`
-    Activation EstimateResult `json:"activation"`
+    Usage     ResourceUsage   `json:"usage"`     // Bandwidth, Energy
+    Available SenderResources `json:"available"` // FreeBandwidth, StakedBandwidth, StakedEnergy
+    Charges   TransferCharges `json:"charges"`   // Bandwidth, Energy, AccountCreation, UnstakedCreation
+    Fee       SUN             `json:"fee"`       // == Charges.Total()
 }
+
+func (c TransferCharges) Total() SUN
 ```
+
+A real answer (Nile, sender with 600 free bandwidth and no stake, recipient not created):
+
+```text
+Usage:     bandwidth=267 energy=0
+Available: free=600 staked=0 energy=0
+Charges:   bandwidth=0 energy=0 accountCreation=1 TRX unstakedCreation=0.1 TRX
+Fee:       1.1 TRX
+```
+
+There is deliberately **no aggregate "if the account had no resources" figure.** The previous
+shape carried one (`Total`) and it was both derived and wrong — it summed the transfer transaction
+with a phantom second CreateAccount transaction that never reaches the chain, reporting 1.367 TRX
+where 1.1 is charged. Callers who want a worst case multiply `Usage` by the chain fees themselves.
+
+**Charges follow the chain's two different resource rules — do not simplify either to
+`needed - available`.**
+
+- **Bandwidth is all-or-nothing per pool.** Tron charges the staked pool for the whole
+  transaction, else the free daily allowance for the whole transaction, else burns TRX for every
+  byte. The pools never combine and there is no "pay the shortfall": an account with 400 free and
+  400 staked pays in full for a 500-byte transfer. Verified over 575 mainnet transactions — not one
+  had both `receipt.net_usage` and `receipt.net_fee` non-zero.
+- **A transaction that creates an account is never billed by the byte at all.** java-tron routes it
+  through `consumeForCreateNewAccount`, which tries the *staked* pool alone and otherwise charges a
+  flat `getCreateAccountFee` — the free allowance is not consulted on that path. So the bandwidth
+  charge and the creation charge are mutually exclusive, and `Charges.Bandwidth` is always zero
+  when `Charges.AccountCreation` is set. Verified over 12 account-creating transfers: every sender
+  with `NetLimit 0` paid exactly 100000 SUN of `net_fee` while holding hundreds of unused free
+  bandwidth, every sender with staked bandwidth paid nothing beyond the 1 TRX, and none paid a
+  per-byte amount. (Beware when sampling this yourself: multi-signature transfers also carry a
+  1 TRX `getMultiSignFee` and look like account creations if you filter on `fee >= 1 TRX`.)
+- **Energy is additive.** The staked pool covers what it can and the remainder is bought by
+  burning TRX, so the shortfall is what is billed. In the same 575 transactions, `energy_usage` and
+  `energy_fee` were non-zero together six times.
+- **Account creation is charged whole**, never reduced by the allowance: Tron does not let the
+  free daily quota pay for creating an account. It is reported as two fields because the two chain
+  parameters behind it apply independently — `AccountCreation` whenever the recipient does not
+  exist, `UnstakedCreation` only when the sender also lacks the staked bandwidth to cover it.
+- **The creation fees belong to system contracts only.** There are two ways an account comes into
+  existence and they are billed completely differently:
+
+  | how the account is created | cost | billed as |
+  | --- | --- | --- |
+  | TRX transfer (`TransferContract`) to a new address | 1 TRX, +0.1 TRX without staked bandwidth | **TRX fee** |
+  | a contract call that creates it | 25000 energy (`NEW_ACCT_CALL`) | **energy** |
+  | TRC20 `transfer()` | nothing — no account is created | — |
+
+  So `EstimateTRC20Transfer` adds **no** creation fee for any recipient state, and that is not a
+  special case for TRC20: whatever a contract does about the account is already inside the energy
+  the constant call measured, because it runs against the real recipient. Adding a fee on top would
+  double-count it.
+
+  Measured on mainnet — the activator contract `TQuCVz7ZXMwcuT2ERcBYCZzLeNAZofcTgY` reports 8227
+  energy for an existing target and 33227 for a fresh one (the 25000 gap is the account), and its
+  receipt for tx `c0c64a67…4535e0` shows `energy_usage 33227`, `net_usage 313` and no fee at all.
+  A plain USDT transfer meanwhile costs 130285 energy to an address with no balance against 64285
+  to one that holds some — that 66000 is the new storage slot, identical whether the recipient has
+  no balance or no account, so none of it is account creation. Mainnet is full of addresses holding
+  USDT for which `getaccount` answers `{}`.
+
+`AvailableBandwidth` sums the two pools and is therefore the wrong input here; use
+`AvailableBandwidthWithoutFree` and `AvailableFreeBandwidth` separately.
 
 ### Contract operations
 
