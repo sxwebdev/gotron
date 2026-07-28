@@ -147,8 +147,32 @@ Uses HTTP POST to Tron's REST API. All requests are JSON with `Content-Type: app
 | `doRequestTransformed` | Responses with Any types needing `transformTronJSON`                     |
 | `doBlockRequest`       | Block responses needing transaction wrapping into `TransactionExtention` |
 | `doBlockListRequest`   | Block list responses (array -> `{block: [...]}`)                         |
-| `doRequestRaw`         | Custom parsing needed (returns raw `[]byte`)                             |
+| `fetchJSON`            | Responses protojson cannot read at all — decode with `encoding/json`     |
+| `fetch`                | Custom parsing needed (returns raw `[]byte`)                             |
+| `doRequestRaw`         | **Only** when you read the `"Error"` field yourself — the two tx helpers |
 | `doTxRequest`          | **Every transaction-creating endpoint** — see below                      |
+
+**Every decoding path goes through `fetch`, which is `doRequestRaw` + `apiError`.**
+A `/wallet` endpoint answers a request it will not process at all — a malformed address, an
+unparseable integer — with **HTTP 200 and `{"Error":"class org.tron…"}`**. No decoder in this file
+has a field for it: protojson discards it as unknown and `encoding/json` ignores it, both leaving
+the zero message behind with a nil error, so "your request was wrong" reaches the caller as "there
+is nothing there" — an empty block, a contract that does not exist, an account that lends nothing.
+`fetch` checks for it once, on behalf of every decoding path, and returns **`ErrNodeRefusedRequest`**
+so a caller can `errors.Is` it instead of substring-matching a Java class name. It is a statement
+about the request, not the node: health stays untouched and retrying elsewhere returns the same
+refusal.
+
+`doRequestRaw` is the raw entry point and is called by exactly three things: `fetch`, `doTxRequest`
+and `doTxRequestWrapped`. The two tx helpers bypass `fetch` deliberately — they read `"Error"`
+themselves to give it a `ContractValidateError`. **Anything else that calls `doRequestRaw` directly
+reintroduces the silently-empty-message bug.**
+
+`apiError` ignores a body that is not a JSON object (`/wallet/gettransactioninfobyblocknum` answers
+with an array), and tests for the literal `"Error"` bytes before parsing — both because a full parse
+of a block body would be the third one of the same megabyte, and because `encoding/json` matches
+field names case-insensitively, so a gateway that added a lowercase `"error"` key of its own would
+otherwise fail every read.
 
 **`doTxRequest` — transaction-creating endpoints.**
 `/wallet/createtransaction`, `/wallet/freezebalancev2` and friends return the transaction at the
@@ -156,8 +180,10 @@ Uses HTTP POST to Tron's REST API. All requests are JSON with `Content-Type: app
 and report contract validation failures as **HTTP 200 with an `Error` field**. Feeding either to
 `doRequest` yields a silently empty message and a nil error. `doTxRequest` rebuilds the transaction
 from `raw_data_hex` (the protobuf-serialized `TransactionRaw`, so no JSON translation is needed and
-addresses stay in byte form regardless of `visible`) and turns `Error` into a real error.
-`txID == sha256(raw_data_hex)`, which the unit tests assert.
+addresses stay in byte form regardless of `visible`) and turns `Error` into a **`ContractValidateError`**
+— the same type the gRPC path produces, so which errors a caller can match on does not depend on the
+transport. This is the one reason it stays on `doRequestRaw` instead of `fetch`, which would flatten
+the refusal into an untyped error. `txID == sha256(raw_data_hex)`, which the unit tests assert.
 
 **`doTxRequestWrapped` — `/wallet/triggersmartcontract`.**
 This endpoint nests the transaction under `"transaction"` and reports the outcome in `"result"`
@@ -192,6 +218,15 @@ reached the caller as an opaque protojson error instead of a `BroadcastError` ca
 - `GetAccount` — uses `httpAccount` helper struct because account JSON is incompatible with
   protojson; it also maps `frozenV2`/`unfrozenV2` (Stake 2.0) via `httpFreezeV2`/`httpUnFreezeV2`.
   Tron omits `"type"` for `BANDWIDTH` (the zero enum) and `"amount"` when zero.
+  It further maps `account_resource`, `owner_permission`/`active_permission` and the TRC10 maps
+  `assetV2`/`free_asset_net_usageV2`. **Parsing a field into `httpAccount` is not enough — it has to
+  be copied into `core.Account` too.** Those six were parsed and then dropped, so HTTP returned an
+  account with no resource block, no multisig permissions and no TRC10 balances while gRPC returned
+  all of them, with no error either side; `TestCompare_AccountDetails` is the guard.
+  Tron renders a protobuf **map as an array of `{"key","value"}` objects** (`assetV2`,
+  `free_asset_net_usageV2`, `assetNetUsed`, `assetNetLimit`) — not a map to protojson either;
+  `assetMap` converts it. Permission key addresses are base58 under `visible:true` and go through
+  `decodeAddress`; `operations` is a hex bitmask.
 - `TriggerConstantContract` / `EstimateEnergy` — must **omit** `contract_address` when the proto's is
   empty, which is how a deployment is expressed (the node then reads `data` as creation bytecode and
   runs the constructor). `EncodeCheck` of nothing is a short but well-formed base58 string the node
@@ -203,7 +238,9 @@ reached the caller as an opaque protojson error instead of a `BroadcastError` ca
   back as 31 bytes of nonsense with no error. `visible:true` breaks it the other way, making the node
   answer in base58 for the same transform to mangle as hex. `origin_address` decides who pays a
   call's energy, so a wrong one mis-prices every TRC20 estimate.
-- `GetAccountResource` — uses `httpAccountResourceMessage` helper struct
+- `GetAccountResource` — uses `httpAccountResourceMessage`; same map shape for
+  `assetNetUsed`/`assetNetLimit`, and `TotalTronPowerWeight` / `tronPowerUsed` / `tronPowerLimit` /
+  `storageUsed` / `storageLimit` were missing from the struct altogether
 - `TriggerConstantContract` — uses `httpTriggerConstantContractResponse` for `constant_result`
   parsing. It must copy `result.code` **and** `result.message` into `api.Return`, not just the
   boolean: a revert answers `result.result = true` with the code absent (SUCCESS) and the failure
@@ -215,6 +252,28 @@ reached the caller as an opaque protojson error instead of a `BroadcastError` ca
   allow-list (for `AssetIssueContract.Url`) while `core.Witness.Url` is a string.
 - `GetRewardInfo` / `GetBrokerageInfo` — the response fields are `reward` and `brokerage`, not
   `NumberMessage`'s `num`, so `doRequest` would always return 0.
+- The four delegation reads (`getdelegatedresource[v2]`, `getdelegatedresourceaccountindex[v2]`) —
+  these send `visible:true`, so `from`/`to`/`account`/`fromAccounts`/`toAccounts` come back in
+  base58, and **protojson cannot read one**: a bytes field is base64 there, and base58's alphabet is
+  a subset of base64's, so a `T…` address decodes without complaint into 25 bytes of a different
+  account. The index then named a receiver nobody holds, the record lookup for it came back empty,
+  and an account with a live delegation reported lending nothing — while gRPC returned it. Both go
+  through `fetchJSON` and `decodeAddress`/`decodeAddresses`, which refuse a malformed entry rather
+  than keep it: `EncodeCheck` turns any bytes back into a plausible-looking address.
+- `GetAssetIssueById` / `GetAssetIssueListByName` — use `httpAssetIssue`, because every bytes field
+  of a TRC10 asset (`owner_address`, `name`, `abbr`, `description`, `url`) arrives **hex** and
+  protojson reads a bytes field as base64: an even-length hex string *is* valid base64, so it
+  decoded silently into other bytes. BitTorrent's name came back as `"\xe3n\xbd\xef…"` and its
+  21-byte owner as 31 bytes, with no error, while gRPC returned them intact.
+  `doRequestTransformed` cannot fix it — its hex→base64 pass is driven by the global `bytesFields`
+  allow-list, and `name` cannot go in it: `core.Witness.Url`-style collisions repeat here, since
+  `core.SmartContract.Name` and `core.Witness` carry `name`/`url` as *strings*.
+  On the **request** side the name is a bytes field and goes over the wire **hex-encoded** (plain,
+  it is refused with `invalid characters encountered in Hex string`), while the `id` that
+  `GetAssetIssueById` takes is a decimal string sent as it stands.
+  `httpAssetIssue` lists the fields in `core.AssetIssueContract`'s own declaration order so a
+  missing one is visible side by side; `TestHTTPAssetIssueCarriesEveryProtoField` walks the message
+  via protoreflect and fails naming any field that did not survive the conversion.
 
 **HTTP endpoints map to `/wallet/<methodname>` paths** — with two exceptions that are camelCase and
 return HTTP 405 in lowercase: **`/wallet/getReward`** and **`/wallet/getBrokerage`**.

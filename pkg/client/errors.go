@@ -155,6 +155,18 @@ var (
 	// an order of magnitude too cheap.
 	ErrContractCallFailed = errors.New("contract call failed")
 
+	// ErrNodeRefusedRequest marks a request an HTTP node would not process at
+	// all - a malformed address, an unparseable number. The /wallet endpoints
+	// report it as HTTP 200 with an "Error" field rather than a status code, so
+	// without a sentinel it is only distinguishable from a genuine transport
+	// failure by substring-matching a Java class name.
+	//
+	// It says the request was wrong, not that the node is: the health checker
+	// leaves node health untouched, and retrying the same call elsewhere returns
+	// the same refusal. The transaction-creating endpoints report the same class
+	// of refusal as a ContractValidateError, which carries the code gRPC gives.
+	ErrNodeRefusedRequest = errors.New("node refused the request")
+
 	// ErrNoHealthyNodes is returned when no node in any tier is currently
 	// marked healthy. The health-checker runs continuously and will return
 	// nodes to the pool as soon as they recover; callers should retry with

@@ -365,9 +365,74 @@ func (t *HTTPTransport) wrapErr(method string, err error) error {
 	}
 }
 
+// apiError reports a refusal the node returned as HTTP 200 with an "Error"
+// field, which is how the /wallet endpoints answer a request they would not
+// process at all - a malformed address, a value out of range.
+//
+// Without it such a refusal is indistinguishable from an empty answer:
+// protojson drops the field as unknown and leaves the zero message behind, so
+// "this request was wrong" arrives as "there is nothing there".
+//
+// A body that is not a JSON object - an array, a bare number - carries no such
+// field and is left to the caller's own decoding.
+//
+// The substring test is not just a fast path for the block bodies this runs on,
+// where a full parse would be the third one of the same megabyte: encoding/json
+// matches field names case-insensitively, so without it a gateway that added a
+// lowercase "error" key of its own alongside a valid payload would fail every
+// read.
+func apiError(body []byte) error {
+	if !bytes.Contains(body, []byte(`"Error"`)) {
+		return nil
+	}
+
+	var probe struct {
+		Error string `json:"Error"`
+	}
+
+	if err := json.Unmarshal(body, &probe); err != nil || probe.Error == "" {
+		return nil
+	}
+
+	return fmt.Errorf("%w: %s", ErrNodeRefusedRequest, probe.Error)
+}
+
+// fetch is doRequestRaw plus that check, which every decoding path below needs.
+//
+// The transaction-creating endpoints are the exception and stay on
+// doRequestRaw: they report the same refusal, but parseTxResponse gives it a
+// type so callers can match it the way they match the gRPC equivalent.
+func (t *HTTPTransport) fetch(ctx context.Context, endpoint string, body any) ([]byte, error) {
+	respBody, err := t.doRequestRaw(ctx, endpoint, body)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := apiError(respBody); err != nil {
+		return nil, t.wrapErr(endpoint, err)
+	}
+
+	return respBody, nil
+}
+
+// fetchJSON decodes an answer with encoding/json instead of protojson, for the
+// endpoints whose JSON protojson cannot read.
+func (t *HTTPTransport) fetchJSON(ctx context.Context, endpoint string, body, result any) error {
+	respBody, err := t.fetch(ctx, endpoint, body)
+	if err != nil {
+		return err
+	}
+
+	if err := json.Unmarshal(respBody, result); err != nil {
+		return t.wrapErr(endpoint, fmt.Errorf("unmarshal response: %w (body: %s)", err, string(respBody)))
+	}
+
+	return nil
+}
+
 // doRequest performs an HTTP POST request to the Tron API
 func (t *HTTPTransport) doRequest(ctx context.Context, endpoint string, body any, result proto.Message) error {
-	respBody, err := t.doRequestRaw(ctx, endpoint, body)
+	respBody, err := t.fetch(ctx, endpoint, body)
 	if err != nil {
 		return err
 	}
@@ -487,7 +552,7 @@ func (t *HTTPTransport) parseTxResponse(endpoint string, respBody []byte) (*api.
 // non-standard JSON format to standard protobuf JSON before unmarshaling.
 // This is needed for endpoints that return protobuf Any types.
 func (t *HTTPTransport) doRequestTransformed(ctx context.Context, endpoint string, body any, result proto.Message) error {
-	respBody, err := t.doRequestRaw(ctx, endpoint, body)
+	respBody, err := t.fetch(ctx, endpoint, body)
 	if err != nil {
 		return err
 	}
@@ -521,7 +586,7 @@ func (t *HTTPTransport) doRequestTransformed(ctx context.Context, endpoint strin
 // doBlockRequest performs an HTTP POST request for block endpoints and transforms
 // the response to match BlockExtention proto structure.
 func (t *HTTPTransport) doBlockRequest(ctx context.Context, endpoint string, body any, result proto.Message) error {
-	respBody, err := t.doRequestRaw(ctx, endpoint, body)
+	respBody, err := t.fetch(ctx, endpoint, body)
 	if err != nil {
 		return err
 	}
@@ -555,7 +620,7 @@ func (t *HTTPTransport) doBlockRequest(ctx context.Context, endpoint string, bod
 // doBlockListRequest performs an HTTP POST request for block list endpoints and transforms
 // the response to match BlockListExtention proto structure.
 func (t *HTTPTransport) doBlockListRequest(ctx context.Context, endpoint string, body any, result proto.Message) error {
-	respBody, err := t.doRequestRaw(ctx, endpoint, body)
+	respBody, err := t.fetch(ctx, endpoint, body)
 	if err != nil {
 		return err
 	}
@@ -597,13 +662,77 @@ type httpAccount struct {
 	NetWindowSize         int64                `json:"net_window_size"`
 	NetWindowOptimized    bool                 `json:"net_window_optimized"`
 	AccountResource       *httpAccountResource `json:"account_resource"`
-	OwnerPermission       json.RawMessage      `json:"owner_permission"`
-	ActivePermission      json.RawMessage      `json:"active_permission"`
+	OwnerPermission       *httpPermission      `json:"owner_permission"`
+	ActivePermission      []httpPermission     `json:"active_permission"`
 	FrozenV2              []httpFreezeV2       `json:"frozenV2"`
 	UnfrozenV2            []httpUnFreezeV2     `json:"unfrozenV2"`
-	AssetV2               json.RawMessage      `json:"assetV2"`
-	FreeAssetNetUsageV2   json.RawMessage      `json:"free_asset_net_usageV2"`
+	AssetV2               []httpAssetBalance   `json:"assetV2"`
+	FreeAssetNetUsageV2   []httpAssetBalance   `json:"free_asset_net_usageV2"`
 	AssetOptimized        bool                 `json:"asset_optimized"`
+}
+
+// httpAssetBalance is one entry of a TRC10 id -> amount map. Tron renders a
+// protobuf map as an array of key/value objects, which protojson would not read
+// as a map either.
+type httpAssetBalance struct {
+	Key   string `json:"key"`
+	Value int64  `json:"value"`
+}
+
+func assetMap(entries []httpAssetBalance) map[string]int64 {
+	if len(entries) == 0 {
+		return nil
+	}
+
+	out := make(map[string]int64, len(entries))
+	for _, e := range entries {
+		out[e.Key] = e.Value
+	}
+
+	return out
+}
+
+// httpPermission is one entry of an account's multisig permission set. "type"
+// is omitted for Owner (the zero enum), and the key addresses are base58
+// because the request asks for visible ones.
+type httpPermission struct {
+	Type           string `json:"type"`
+	ID             int32  `json:"id"`
+	PermissionName string `json:"permission_name"`
+	Threshold      int64  `json:"threshold"`
+	ParentID       int32  `json:"parent_id"`
+	Operations     string `json:"operations"`
+	Keys           []struct {
+		Address string `json:"address"`
+		Weight  int64  `json:"weight"`
+	} `json:"keys"`
+}
+
+func (p httpPermission) toProto() (*core.Permission, error) {
+	operations, err := hex.DecodeString(p.Operations)
+	if err != nil {
+		return nil, fmt.Errorf("decode permission operations %q: %w", p.Operations, err)
+	}
+
+	out := &core.Permission{
+		Type:           core.Permission_PermissionType(core.Permission_PermissionType_value[p.Type]),
+		Id:             p.ID,
+		PermissionName: p.PermissionName,
+		Threshold:      p.Threshold,
+		ParentId:       p.ParentID,
+		Operations:     operations,
+	}
+
+	for _, k := range p.Keys {
+		address, err := decodeAddress("permission key", k.Address)
+		if err != nil {
+			return nil, err
+		}
+
+		out.Keys = append(out.Keys, &core.Key{Address: address, Weight: k.Weight})
+	}
+
+	return out, nil
 }
 
 // httpFreezeV2 is a Stake 2.0 staked-balance entry. Tron omits "type" for
@@ -620,11 +749,38 @@ type httpUnFreezeV2 struct {
 	UnfreezeExpireTime int64  `json:"unfreeze_expire_time"`
 }
 
+// httpAccountResource mirrors core.Account_AccountResource field for field, in
+// its declaration order, so a missing one is visible side by side. Stake 1.0's
+// frozen_balance_for_energy is the only omission: it is a nested message the
+// chain no longer writes.
 type httpAccountResource struct {
+	EnergyUsage                               int64 `json:"energy_usage"`
 	LatestConsumeTimeForEnergy                int64 `json:"latest_consume_time_for_energy"`
+	AcquiredDelegatedFrozenBalanceForEnergy   int64 `json:"acquired_delegated_frozen_balance_for_energy"`
+	DelegatedFrozenBalanceForEnergy           int64 `json:"delegated_frozen_balance_for_energy"`
+	StorageLimit                              int64 `json:"storage_limit"`
+	StorageUsage                              int64 `json:"storage_usage"`
+	LatestExchangeStorageTime                 int64 `json:"latest_exchange_storage_time"`
 	EnergyWindowSize                          int64 `json:"energy_window_size"`
+	DelegatedFrozenV2BalanceForEnergy         int64 `json:"delegated_frozenV2_balance_for_energy"`
 	AcquiredDelegatedFrozenV2BalanceForEnergy int64 `json:"acquired_delegated_frozenV2_balance_for_energy"`
 	EnergyWindowOptimized                     bool  `json:"energy_window_optimized"`
+}
+
+func (r httpAccountResource) toProto() *core.Account_AccountResource {
+	return &core.Account_AccountResource{
+		EnergyUsage:                               r.EnergyUsage,
+		LatestConsumeTimeForEnergy:                r.LatestConsumeTimeForEnergy,
+		AcquiredDelegatedFrozenBalanceForEnergy:   r.AcquiredDelegatedFrozenBalanceForEnergy,
+		DelegatedFrozenBalanceForEnergy:           r.DelegatedFrozenBalanceForEnergy,
+		StorageLimit:                              r.StorageLimit,
+		StorageUsage:                              r.StorageUsage,
+		LatestExchangeStorageTime:                 r.LatestExchangeStorageTime,
+		EnergyWindowSize:                          r.EnergyWindowSize,
+		DelegatedFrozenV2BalanceForEnergy:         r.DelegatedFrozenV2BalanceForEnergy,
+		AcquiredDelegatedFrozenV2BalanceForEnergy: r.AcquiredDelegatedFrozenV2BalanceForEnergy,
+		EnergyWindowOptimized:                     r.EnergyWindowOptimized,
+	}
 }
 
 // Account operations
@@ -635,15 +791,10 @@ func (t *HTTPTransport) GetAccount(ctx context.Context, account *core.Account) (
 		"visible": true,
 	}
 
-	respBody, err := t.doRequestRaw(ctx, "/wallet/getaccount", reqBody)
-	if err != nil {
-		return nil, err
-	}
-
 	// Parse into helper struct to handle incompatible JSON format
 	var httpAcc httpAccount
-	if err := json.Unmarshal(respBody, &httpAcc); err != nil {
-		return nil, fmt.Errorf("unmarshal account: %w", err)
+	if err := t.fetchJSON(ctx, "/wallet/getaccount", reqBody, &httpAcc); err != nil {
+		return nil, err
 	}
 
 	// Convert to protobuf Account
@@ -655,11 +806,43 @@ func (t *HTTPTransport) GetAccount(ctx context.Context, account *core.Account) (
 		LatestConsumeFreeTime: httpAcc.LatestConsumeFreeTime,
 		NetWindowSize:         httpAcc.NetWindowSize,
 		NetWindowOptimized:    httpAcc.NetWindowOptimized,
+		AssetOptimized:        httpAcc.AssetOptimized,
+		AssetV2:               assetMap(httpAcc.AssetV2),
+		FreeAssetNetUsageV2:   assetMap(httpAcc.FreeAssetNetUsageV2),
 	}
 
-	// Decode address
+	// An unreadable address is refused rather than dropped: Client.GetAccount
+	// compares it against the one it asked for, so a nil here reports a funded
+	// account as ErrAccountNotFound.
 	if httpAcc.Address != "" {
-		result.Address, _ = tronutils.DecodeCheck(httpAcc.Address)
+		address, err := decodeAddress("address", httpAcc.Address)
+		if err != nil {
+			return nil, t.wrapErr("/wallet/getaccount", err)
+		}
+
+		result.Address = address
+	}
+
+	if httpAcc.AccountResource != nil {
+		result.AccountResource = httpAcc.AccountResource.toProto()
+	}
+
+	if httpAcc.OwnerPermission != nil {
+		owner, err := httpAcc.OwnerPermission.toProto()
+		if err != nil {
+			return nil, t.wrapErr("/wallet/getaccount", err)
+		}
+
+		result.OwnerPermission = owner
+	}
+
+	for _, item := range httpAcc.ActivePermission {
+		permission, err := item.toProto()
+		if err != nil {
+			return nil, t.wrapErr("/wallet/getaccount", err)
+		}
+
+		result.ActivePermission = append(result.ActivePermission, permission)
 	}
 
 	// Stake 2.0 balances
@@ -682,18 +865,24 @@ func (t *HTTPTransport) GetAccount(ctx context.Context, account *core.Account) (
 
 // httpAccountResourceMessage is a helper struct for parsing HTTP API account resource response
 type httpAccountResourceMessage struct {
-	FreeNetLimit      int64           `json:"freeNetLimit"`
-	FreeNetUsed       int64           `json:"freeNetUsed"`
-	NetLimit          int64           `json:"NetLimit"`
-	NetUsed           int64           `json:"NetUsed"`
-	TotalNetLimit     int64           `json:"TotalNetLimit"`
-	TotalNetWeight    int64           `json:"TotalNetWeight"`
-	EnergyLimit       int64           `json:"EnergyLimit"`
-	EnergyUsed        int64           `json:"EnergyUsed"`
-	TotalEnergyLimit  int64           `json:"TotalEnergyLimit"`
-	TotalEnergyWeight int64           `json:"TotalEnergyWeight"`
-	AssetNetUsed      json.RawMessage `json:"assetNetUsed"`
-	AssetNetLimit     json.RawMessage `json:"assetNetLimit"`
+	FreeNetLimit      int64              `json:"freeNetLimit"`
+	FreeNetUsed       int64              `json:"freeNetUsed"`
+	NetLimit          int64              `json:"NetLimit"`
+	NetUsed           int64              `json:"NetUsed"`
+	TotalNetLimit     int64              `json:"TotalNetLimit"`
+	TotalNetWeight    int64              `json:"TotalNetWeight"`
+	EnergyLimit       int64              `json:"EnergyLimit"`
+	EnergyUsed        int64              `json:"EnergyUsed"`
+	TotalEnergyLimit  int64              `json:"TotalEnergyLimit"`
+	TotalEnergyWeight int64              `json:"TotalEnergyWeight"`
+	AssetNetUsed      []httpAssetBalance `json:"assetNetUsed"`
+	AssetNetLimit     []httpAssetBalance `json:"assetNetLimit"`
+
+	TotalTronPowerWeight int64 `json:"TotalTronPowerWeight"`
+	TronPowerUsed        int64 `json:"tronPowerUsed"`
+	TronPowerLimit       int64 `json:"tronPowerLimit"`
+	StorageUsed          int64 `json:"storageUsed"`
+	StorageLimit         int64 `json:"storageLimit"`
 }
 
 func (t *HTTPTransport) GetAccountResource(ctx context.Context, account *core.Account) (*api.AccountResourceMessage, error) {
@@ -702,15 +891,10 @@ func (t *HTTPTransport) GetAccountResource(ctx context.Context, account *core.Ac
 		"visible": true,
 	}
 
-	respBody, err := t.doRequestRaw(ctx, "/wallet/getaccountresource", reqBody)
-	if err != nil {
-		return nil, err
-	}
-
 	// Parse into helper struct to handle incompatible JSON format
 	var httpRes httpAccountResourceMessage
-	if err := json.Unmarshal(respBody, &httpRes); err != nil {
-		return nil, fmt.Errorf("unmarshal account resource: %w", err)
+	if err := t.fetchJSON(ctx, "/wallet/getaccountresource", reqBody, &httpRes); err != nil {
+		return nil, err
 	}
 
 	// Convert to protobuf AccountResourceMessage
@@ -725,6 +909,15 @@ func (t *HTTPTransport) GetAccountResource(ctx context.Context, account *core.Ac
 		EnergyUsed:        httpRes.EnergyUsed,
 		TotalEnergyLimit:  httpRes.TotalEnergyLimit,
 		TotalEnergyWeight: httpRes.TotalEnergyWeight,
+
+		AssetNetUsed:  assetMap(httpRes.AssetNetUsed),
+		AssetNetLimit: assetMap(httpRes.AssetNetLimit),
+
+		TotalTronPowerWeight: httpRes.TotalTronPowerWeight,
+		TronPowerUsed:        httpRes.TronPowerUsed,
+		TronPowerLimit:       httpRes.TronPowerLimit,
+		StorageUsed:          httpRes.StorageUsed,
+		StorageLimit:         httpRes.StorageLimit,
 	}
 
 	return result, nil
@@ -811,7 +1004,7 @@ func (t *HTTPTransport) GetTransactionInfoByBlockNum(ctx context.Context, num in
 		"num": num,
 	}
 
-	respBody, err := t.doRequestRaw(ctx, "/wallet/gettransactioninfobyblocknum", reqBody)
+	respBody, err := t.fetch(ctx, "/wallet/gettransactioninfobyblocknum", reqBody)
 	if err != nil {
 		return nil, err
 	}
@@ -887,7 +1080,6 @@ type httpBroadcastResponse struct {
 	Result  bool   `json:"result"`
 	Code    string `json:"code"`
 	Message string `json:"message"`
-	Error   string `json:"Error"`
 }
 
 // BroadcastTransaction submits a signed transaction over /wallet/broadcasthex.
@@ -911,18 +1103,9 @@ func (t *HTTPTransport) BroadcastTransaction(ctx context.Context, tx *core.Trans
 		"transaction": hex.EncodeToString(txBytes),
 	}
 
-	respBody, err := t.doRequestRaw(ctx, "/wallet/broadcasthex", reqBody)
-	if err != nil {
-		return nil, err
-	}
-
 	var resp httpBroadcastResponse
-	if err := json.Unmarshal(respBody, &resp); err != nil {
-		return nil, t.wrapErr("/wallet/broadcasthex", fmt.Errorf("unmarshal response: %w (body: %s)", err, string(respBody)))
-	}
-
-	if resp.Error != "" {
-		return nil, t.wrapErr("/wallet/broadcasthex", fmt.Errorf("%s", resp.Error))
+	if err := t.fetchJSON(ctx, "/wallet/broadcasthex", reqBody, &resp); err != nil {
+		return nil, err
 	}
 
 	return &api.Return{
@@ -997,15 +1180,10 @@ func (t *HTTPTransport) TriggerConstantContract(ctx context.Context, contract *c
 		reqBody["call_value"] = contract.CallValue
 	}
 
-	respBody, err := t.doRequestRaw(ctx, "/wallet/triggerconstantcontract", reqBody)
-	if err != nil {
-		return nil, err
-	}
-
 	// Parse into helper struct to handle constant_result as string array
 	var httpRes httpTriggerConstantContractResponse
-	if err := json.Unmarshal(respBody, &httpRes); err != nil {
-		return nil, fmt.Errorf("unmarshal trigger constant contract response: %w", err)
+	if err := t.fetchJSON(ctx, "/wallet/triggerconstantcontract", reqBody, &httpRes); err != nil {
+		return nil, err
 	}
 
 	// Code and message must be carried over, not just the boolean: a revert
@@ -1131,62 +1309,157 @@ func (t *HTTPTransport) GetAccountResourceMessage(ctx context.Context, account *
 	return t.GetAccountResource(ctx, account)
 }
 
-func (t *HTTPTransport) GetDelegatedResource(ctx context.Context, msg *api.DelegatedResourceMessage) (*api.DelegatedResourceList, error) {
+// httpDelegatedResource is one record of /wallet/getdelegatedresource[v2].
+//
+// It exists because the request asks for visible addresses and protojson cannot
+// read one: a bytes field is base64 there, and a base58 address is made of
+// base64 characters, so it decodes without complaint into a different account.
+// The delegation then names an address nobody holds and every later lookup for
+// it comes back empty.
+type httpDelegatedResource struct {
+	From                      string `json:"from"`
+	To                        string `json:"to"`
+	FrozenBalanceForBandwidth int64  `json:"frozen_balance_for_bandwidth"`
+	FrozenBalanceForEnergy    int64  `json:"frozen_balance_for_energy"`
+	ExpireTimeForBandwidth    int64  `json:"expire_time_for_bandwidth"`
+	ExpireTimeForEnergy       int64  `json:"expire_time_for_energy"`
+}
+
+// delegatedResources performs one of the two delegation-record endpoints, which
+// differ only in their path.
+func (t *HTTPTransport) delegatedResources(ctx context.Context, endpoint string, msg *api.DelegatedResourceMessage) (*api.DelegatedResourceList, error) {
 	reqBody := map[string]any{
 		"fromAddress": tronutils.EncodeCheck(msg.FromAddress),
 		"toAddress":   tronutils.EncodeCheck(msg.ToAddress),
 		"visible":     true,
 	}
 
-	result := &api.DelegatedResourceList{}
-	if err := t.doRequest(ctx, "/wallet/getdelegatedresource", reqBody, result); err != nil {
+	var parsed struct {
+		DelegatedResource []httpDelegatedResource `json:"delegatedResource"`
+	}
+	if err := t.fetchJSON(ctx, endpoint, reqBody, &parsed); err != nil {
 		return nil, err
 	}
 
+	result := &api.DelegatedResourceList{
+		DelegatedResource: make([]*core.DelegatedResource, 0, len(parsed.DelegatedResource)),
+	}
+
+	for _, item := range parsed.DelegatedResource {
+		from, err := decodeAddress("from", item.From)
+		if err != nil {
+			return nil, t.wrapErr(endpoint, err)
+		}
+
+		to, err := decodeAddress("to", item.To)
+		if err != nil {
+			return nil, t.wrapErr(endpoint, err)
+		}
+
+		result.DelegatedResource = append(result.DelegatedResource, &core.DelegatedResource{
+			From:                      from,
+			To:                        to,
+			FrozenBalanceForBandwidth: item.FrozenBalanceForBandwidth,
+			FrozenBalanceForEnergy:    item.FrozenBalanceForEnergy,
+			ExpireTimeForBandwidth:    item.ExpireTimeForBandwidth,
+			ExpireTimeForEnergy:       item.ExpireTimeForEnergy,
+		})
+	}
+
 	return result, nil
+}
+
+// delegationIndex performs one of the two account-index endpoints, whose
+// addresses are base58 for the same reason.
+func (t *HTTPTransport) delegationIndex(ctx context.Context, endpoint string, address []byte) (*core.DelegatedResourceAccountIndex, error) {
+	reqBody := map[string]any{
+		"value":   tronutils.EncodeCheck(address),
+		"visible": true,
+	}
+
+	var parsed struct {
+		Account      string   `json:"account"`
+		FromAccounts []string `json:"fromAccounts"`
+		ToAccounts   []string `json:"toAccounts"`
+		Timestamp    int64    `json:"timestamp"`
+	}
+	if err := t.fetchJSON(ctx, endpoint, reqBody, &parsed); err != nil {
+		return nil, err
+	}
+
+	result := &core.DelegatedResourceAccountIndex{Timestamp: parsed.Timestamp}
+
+	// The queried account is echoed back; an empty index omits it entirely, and
+	// DecodeCheck rejects the empty string.
+	if parsed.Account != "" {
+		account, err := decodeAddress("account", parsed.Account)
+		if err != nil {
+			return nil, t.wrapErr(endpoint, err)
+		}
+
+		result.Account = account
+	}
+
+	var err error
+	if result.FromAccounts, err = decodeAddresses("fromAccounts", parsed.FromAccounts); err != nil {
+		return nil, t.wrapErr(endpoint, err)
+	}
+
+	if result.ToAccounts, err = decodeAddresses("toAccounts", parsed.ToAccounts); err != nil {
+		return nil, t.wrapErr(endpoint, err)
+	}
+
+	return result, nil
+}
+
+// decodeAddresses is decodeAddress over a list, refusing the whole list if any
+// entry is malformed.
+func decodeAddresses(field string, list []string) ([][]byte, error) {
+	if len(list) == 0 {
+		return nil, nil
+	}
+
+	out := make([][]byte, 0, len(list))
+	for _, addr := range list {
+		decoded, err := decodeAddress(field, addr)
+		if err != nil {
+			return nil, err
+		}
+
+		out = append(out, decoded)
+	}
+
+	return out, nil
+}
+
+// decodeAddress turns one base58 address of a response into its byte form,
+// naming the field it came from. A malformed one is refused rather than kept:
+// EncodeCheck turns any bytes back into a plausible-looking address, so a record
+// built from a half-decoded one names an account that does not exist, and an
+// index silently short of a receiver reads as a delegation that was reclaimed.
+func decodeAddress(field, addr string) ([]byte, error) {
+	decoded, err := tronutils.DecodeCheck(addr)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s %q: %w", ErrInvalidAddress, field, addr, err)
+	}
+
+	return decoded, nil
+}
+
+func (t *HTTPTransport) GetDelegatedResource(ctx context.Context, msg *api.DelegatedResourceMessage) (*api.DelegatedResourceList, error) {
+	return t.delegatedResources(ctx, "/wallet/getdelegatedresource", msg)
 }
 
 func (t *HTTPTransport) GetDelegatedResourceV2(ctx context.Context, msg *api.DelegatedResourceMessage) (*api.DelegatedResourceList, error) {
-	reqBody := map[string]any{
-		"fromAddress": tronutils.EncodeCheck(msg.FromAddress),
-		"toAddress":   tronutils.EncodeCheck(msg.ToAddress),
-		"visible":     true,
-	}
-
-	result := &api.DelegatedResourceList{}
-	if err := t.doRequest(ctx, "/wallet/getdelegatedresourcev2", reqBody, result); err != nil {
-		return nil, err
-	}
-
-	return result, nil
+	return t.delegatedResources(ctx, "/wallet/getdelegatedresourcev2", msg)
 }
 
 func (t *HTTPTransport) GetDelegatedResourceAccountIndex(ctx context.Context, address []byte) (*core.DelegatedResourceAccountIndex, error) {
-	reqBody := map[string]any{
-		"value":   tronutils.EncodeCheck(address),
-		"visible": true,
-	}
-
-	result := &core.DelegatedResourceAccountIndex{}
-	if err := t.doRequest(ctx, "/wallet/getdelegatedresourceaccountindex", reqBody, result); err != nil {
-		return nil, err
-	}
-
-	return result, nil
+	return t.delegationIndex(ctx, "/wallet/getdelegatedresourceaccountindex", address)
 }
 
 func (t *HTTPTransport) GetDelegatedResourceAccountIndexV2(ctx context.Context, address []byte) (*core.DelegatedResourceAccountIndex, error) {
-	reqBody := map[string]any{
-		"value":   tronutils.EncodeCheck(address),
-		"visible": true,
-	}
-
-	result := &core.DelegatedResourceAccountIndex{}
-	if err := t.doRequest(ctx, "/wallet/getdelegatedresourceaccountindexv2", reqBody, result); err != nil {
-		return nil, err
-	}
-
-	return result, nil
+	return t.delegationIndex(ctx, "/wallet/getdelegatedresourceaccountindexv2", address)
 }
 
 func (t *HTTPTransport) GetCanDelegatedMaxSize(ctx context.Context, msg *api.CanDelegatedMaxSizeRequestMessage) (*api.CanDelegatedMaxSizeResponseMessage, error) {
@@ -1347,16 +1620,11 @@ type httpWitness struct {
 }
 
 func (t *HTTPTransport) ListWitnesses(ctx context.Context) (*api.WitnessList, error) {
-	respBody, err := t.doRequestRaw(ctx, "/wallet/listwitnesses", nil)
-	if err != nil {
-		return nil, err
-	}
-
 	var resp struct {
 		Witnesses []httpWitness `json:"witnesses"`
 	}
-	if err := json.Unmarshal(respBody, &resp); err != nil {
-		return nil, fmt.Errorf("unmarshal witness list: %w", err)
+	if err := t.fetchJSON(ctx, "/wallet/listwitnesses", nil, &resp); err != nil {
+		return nil, err
 	}
 
 	result := &api.WitnessList{Witnesses: make([]*core.Witness, 0, len(resp.Witnesses))}
@@ -1389,16 +1657,11 @@ func (t *HTTPTransport) GetRewardInfo(ctx context.Context, address []byte) (*api
 		"visible": true,
 	}
 
-	respBody, err := t.doRequestRaw(ctx, "/wallet/getReward", reqBody)
-	if err != nil {
-		return nil, err
-	}
-
 	var resp struct {
 		Reward int64 `json:"reward"`
 	}
-	if err := json.Unmarshal(respBody, &resp); err != nil {
-		return nil, fmt.Errorf("unmarshal reward: %w", err)
+	if err := t.fetchJSON(ctx, "/wallet/getReward", reqBody, &resp); err != nil {
+		return nil, err
 	}
 
 	return &api.NumberMessage{Num: resp.Reward}, nil
@@ -1412,16 +1675,11 @@ func (t *HTTPTransport) GetBrokerageInfo(ctx context.Context, address []byte) (*
 		"visible": true,
 	}
 
-	respBody, err := t.doRequestRaw(ctx, "/wallet/getBrokerage", reqBody)
-	if err != nil {
-		return nil, err
-	}
-
 	var resp struct {
 		Brokerage int64 `json:"brokerage"`
 	}
-	if err := json.Unmarshal(respBody, &resp); err != nil {
-		return nil, fmt.Errorf("unmarshal brokerage: %w", err)
+	if err := t.fetchJSON(ctx, "/wallet/getBrokerage", reqBody, &resp); err != nil {
+		return nil, err
 	}
 
 	return &api.NumberMessage{Num: resp.Brokerage}, nil
@@ -1429,27 +1687,149 @@ func (t *HTTPTransport) GetBrokerageInfo(ctx context.Context, address []byte) (*
 
 // Asset operations
 
+// httpAssetIssue is one TRC10 asset as /wallet/getassetissue* renders it.
+//
+// Every bytes field arrives hex-encoded, and protojson reads a bytes field as
+// base64: an even-length hex string is valid base64, so it decoded without
+// complaint into other bytes entirely. The name of BitTorrent came back as
+// "\xe3n\xbd\xef…" and its 21-byte owner as 31 bytes of nonsense - while gRPC,
+// which carries the same field as raw bytes, returned it intact.
+//
+// doRequestTransformed is not usable here: its hex-to-base64 pass is driven by
+// the global bytesFields allow-list, and "name" cannot go in it - core.Witness
+// and core.SmartContract both have a string field by that name, so any of them
+// that happened to spell a hex string would be mangled in turn.
+// The fields are in core.AssetIssueContract's own declaration order so that the
+// two can be read side by side and a missing one is visible; the bytes ones are
+// strings here and decoded below.
+type httpAssetIssue struct {
+	ID           string `json:"id"`
+	OwnerAddress string `json:"owner_address"`
+	Name         string `json:"name"`
+	Abbr         string `json:"abbr"`
+	TotalSupply  int64  `json:"total_supply"`
+	FrozenSupply []struct {
+		FrozenAmount int64 `json:"frozen_amount"`
+		FrozenDays   int64 `json:"frozen_days"`
+	} `json:"frozen_supply"`
+	TrxNum                  int32  `json:"trx_num"`
+	Precision               int32  `json:"precision"`
+	Num                     int32  `json:"num"`
+	StartTime               int64  `json:"start_time"`
+	EndTime                 int64  `json:"end_time"`
+	Order                   int64  `json:"order"`
+	VoteScore               int32  `json:"vote_score"`
+	Description             string `json:"description"`
+	URL                     string `json:"url"`
+	FreeAssetNetLimit       int64  `json:"free_asset_net_limit"`
+	PublicFreeAssetNetLimit int64  `json:"public_free_asset_net_limit"`
+	PublicFreeAssetNetUsage int64  `json:"public_free_asset_net_usage"`
+	PublicLatestFreeNetTime int64  `json:"public_latest_free_net_time"`
+}
+
+func (a httpAssetIssue) toProto() (*core.AssetIssueContract, error) {
+	out := &core.AssetIssueContract{
+		Id:                      a.ID,
+		TotalSupply:             a.TotalSupply,
+		TrxNum:                  a.TrxNum,
+		Precision:               a.Precision,
+		Num:                     a.Num,
+		StartTime:               a.StartTime,
+		EndTime:                 a.EndTime,
+		Order:                   a.Order,
+		VoteScore:               a.VoteScore,
+		FreeAssetNetLimit:       a.FreeAssetNetLimit,
+		PublicFreeAssetNetLimit: a.PublicFreeAssetNetLimit,
+		PublicFreeAssetNetUsage: a.PublicFreeAssetNetUsage,
+		PublicLatestFreeNetTime: a.PublicLatestFreeNetTime,
+	}
+
+	// The issuer is an address, so a caller matches its failure the way they
+	// match one from any other read.
+	if a.OwnerAddress != "" {
+		owner, err := hex.DecodeString(a.OwnerAddress)
+		if err != nil {
+			return nil, fmt.Errorf("%w: owner_address %q: %w", ErrInvalidAddress, a.OwnerAddress, err)
+		}
+
+		out.OwnerAddress = owner
+	}
+
+	for _, field := range []struct {
+		name string
+		hex  string
+		out  *[]byte
+	}{
+		{"name", a.Name, &out.Name},
+		{"abbr", a.Abbr, &out.Abbr},
+		{"description", a.Description, &out.Description},
+		{"url", a.URL, &out.Url},
+	} {
+		decoded, err := hex.DecodeString(field.hex)
+		if err != nil {
+			return nil, fmt.Errorf("decode %s %q: %w", field.name, field.hex, err)
+		}
+
+		if len(decoded) > 0 {
+			*field.out = decoded
+		}
+	}
+
+	for _, f := range a.FrozenSupply {
+		out.FrozenSupply = append(out.FrozenSupply, &core.AssetIssueContract_FrozenSupply{
+			FrozenAmount: f.FrozenAmount,
+			FrozenDays:   f.FrozenDays,
+		})
+	}
+
+	return out, nil
+}
+
+// GetAssetIssueById looks up a TRC10 asset by its id, a decimal string that is
+// sent as it stands - unlike the name GetAssetIssueListByName takes.
 func (t *HTTPTransport) GetAssetIssueById(ctx context.Context, id []byte) (*core.AssetIssueContract, error) {
 	reqBody := map[string]any{
 		"value": string(id),
 	}
 
-	result := &core.AssetIssueContract{}
-	if err := t.doRequest(ctx, "/wallet/getassetissuebyid", reqBody, result); err != nil {
+	var parsed httpAssetIssue
+	if err := t.fetchJSON(ctx, "/wallet/getassetissuebyid", reqBody, &parsed); err != nil {
 		return nil, err
+	}
+
+	result, err := parsed.toProto()
+	if err != nil {
+		return nil, t.wrapErr("/wallet/getassetissuebyid", err)
 	}
 
 	return result, nil
 }
 
+// GetAssetIssueListByName looks up TRC10 assets by name.
+//
+// The name goes over the wire hex-encoded: this endpoint takes a bytes field,
+// and the plain name is rejected outright with "invalid characters encountered
+// in Hex string".
 func (t *HTTPTransport) GetAssetIssueListByName(ctx context.Context, name []byte) (*api.AssetIssueList, error) {
 	reqBody := map[string]any{
-		"value": string(name),
+		"value": hex.EncodeToString(name),
 	}
 
-	result := &api.AssetIssueList{}
-	if err := t.doRequest(ctx, "/wallet/getassetissuelistbyname", reqBody, result); err != nil {
+	var parsed struct {
+		AssetIssue []httpAssetIssue `json:"assetIssue"`
+	}
+	if err := t.fetchJSON(ctx, "/wallet/getassetissuelistbyname", reqBody, &parsed); err != nil {
 		return nil, err
+	}
+
+	result := &api.AssetIssueList{AssetIssue: make([]*core.AssetIssueContract, 0, len(parsed.AssetIssue))}
+	for _, item := range parsed.AssetIssue {
+		asset, err := item.toProto()
+		if err != nil {
+			return nil, t.wrapErr("/wallet/getassetissuelistbyname", err)
+		}
+
+		result.AssetIssue = append(result.AssetIssue, asset)
 	}
 
 	return result, nil

@@ -29,6 +29,9 @@ ErrInvalidResourceType      = errors.New("invalid resource type")
 // Account (file: account.go)
 ErrAccountNotFound          = errors.New("account not found")
 
+// Transport (file: transport_http.go)
+ErrNodeRefusedRequest       = errors.New("node refused the request")
+
 // Health-checker / tier fallback
 ErrNoHealthyNodes           = errors.New("no healthy nodes available in any tier")
 ```
@@ -37,6 +40,15 @@ ErrNoHealthyNodes           = errors.New("no healthy nodes available in any tier
 node of every tier is currently marked unhealthy. The background probe loop
 keeps retrying — callers should retry with backoff. Detect with
 `errors.Is(err, client.ErrNoHealthyNodes)`.
+
+`ErrNodeRefusedRequest` marks a request an HTTP node would not process at all —
+a malformed address, an unparseable number. The `/wallet` endpoints report that
+as **HTTP 200 with an `"Error"` field** rather than a status code, so without
+the sentinel it is only distinguishable from a real transport failure by
+substring-matching a Java class name. It says the request was wrong, not the
+node: node health is untouched and retrying elsewhere returns the same refusal.
+The transaction-creating endpoints report the same class of refusal as a
+`*ContractValidateError`, which additionally carries the code gRPC gives.
 
 **Address package errors** (`pkg/address/address.go`):
 

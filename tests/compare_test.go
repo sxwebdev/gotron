@@ -10,6 +10,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/sxwebdev/gotron/pkg/client"
+	"github.com/sxwebdev/gotron/schema/pb/core"
+	"google.golang.org/protobuf/proto"
 )
 
 // Comparison tests verify that gRPC and HTTP transports return identical data
@@ -343,15 +345,124 @@ func TestCompare_AssetIssue(t *testing.T) {
 	httpAsset, err := httpClient.GetAssetIssueById(ctx, assetID)
 	require.NoError(t, err)
 
-	assert.Equal(t, grpcAsset.GetId(), httpAsset.GetId(), "Asset ID mismatch")
-	assert.Equal(t, grpcAsset.GetTotalSupply(), httpAsset.GetTotalSupply(), "Asset total supply mismatch")
-	assert.Equal(t, grpcAsset.GetPrecision(), httpAsset.GetPrecision(), "Asset precision mismatch")
+	// The whole record, not a chosen few fields. The byte fields are the ones
+	// that used to differ: HTTP sends them hex and protojson read them as
+	// base64, so the name came back as "\xe3n\xbd\xef…" and the 21-byte owner as
+	// 31 bytes - with no error either side. Comparing only id, supply and
+	// precision was what let that stand.
+	assert.True(t, proto.Equal(grpcAsset, httpAsset), "gRPC: %v\nHTTP: %v", grpcAsset, httpAsset)
+}
 
-	// Note: name and abbr fields may have encoding differences between gRPC and HTTP
-	// gRPC returns raw bytes, HTTP may return them differently
-	t.Logf("gRPC Asset: name=%s, abbr=%s", string(grpcAsset.GetName()), string(grpcAsset.GetAbbr()))
-	t.Logf("HTTP Asset: name=%s, abbr=%s", string(httpAsset.GetName()), string(httpAsset.GetAbbr()))
-	t.Logf("Asset %s: ID, TotalSupply, Precision match between gRPC and HTTP", grpcAsset.GetId())
+// A name lookup returns the same byte fields, one record deeper. It is also the
+// only test that can catch the request encoding: HTTP has to hex-encode the
+// name, and sent plain it is refused at HTTP 200 - which reaches a one-sided
+// test as a believable "no such asset".
+func TestCompare_AssetIssueListByName(t *testing.T) {
+	grpcClient := newGRPCClient(t)
+	defer func() { _ = grpcClient.Close() }()
+
+	httpClient := newHTTPClient(t)
+	defer func() { _ = httpClient.Close() }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	grpcAssets, err := grpcClient.GetAssetIssueListByName(ctx, bttAssetName)
+	require.NoError(t, err)
+	require.NotEmpty(t, grpcAssets.GetAssetIssue())
+
+	httpAssets, err := httpClient.GetAssetIssueListByName(ctx, bttAssetName)
+	require.NoError(t, err)
+
+	// Matched by id rather than by position: the two clients talk to different
+	// hosts, anyone may issue another TRC10 under this name between the calls,
+	// and the store's iteration order is not part of the API. Every asset gRPC
+	// reports must be there and identical - an extra one on the HTTP side is a
+	// new issuance, not an encoding bug.
+	byID := make(map[string]*core.AssetIssueContract, len(httpAssets.GetAssetIssue()))
+	for _, asset := range httpAssets.GetAssetIssue() {
+		byID[asset.GetId()] = asset
+	}
+
+	for _, want := range grpcAssets.GetAssetIssue() {
+		got, ok := byID[want.GetId()]
+		if !assert.True(t, ok, "asset %s missing over HTTP", want.GetId()) {
+			continue
+		}
+
+		assert.True(t, proto.Equal(want, got), "asset %s\ngRPC: %v\nHTTP: %v", want.GetId(), want, got)
+	}
+}
+
+// The two transports have to agree on the whole account, not on the handful of
+// scalars a one-sided test happens to look at. account_resource, the multisig
+// permissions and the TRC10 balance maps were parsed out of the HTTP response
+// and then never copied into the result, so they came back empty from HTTP and
+// populated from gRPC with no error either side.
+func TestCompare_AccountDetails(t *testing.T) {
+	grpcClient := newGRPCClient(t)
+	defer func() { _ = grpcClient.Close() }()
+
+	httpClient := newHTTPClient(t)
+	defer func() { _ = httpClient.Close() }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	grpcAcc, err := grpcClient.GetAccount(ctx, testAddress)
+	require.NoError(t, err)
+
+	httpAcc, err := httpClient.GetAccount(ctx, testAddress)
+	require.NoError(t, err)
+
+	// The account must actually have the things being compared, or the test
+	// passes by both sides returning nothing.
+	require.NotNil(t, grpcAcc.GetAccountResource())
+	require.NotNil(t, grpcAcc.GetOwnerPermission())
+	require.NotEmpty(t, grpcAcc.GetActivePermission())
+	require.NotEmpty(t, grpcAcc.GetAssetV2())
+
+	assert.True(t, proto.Equal(grpcAcc.GetAccountResource(), httpAcc.GetAccountResource()),
+		"account_resource\ngRPC: %v\nHTTP: %v", grpcAcc.GetAccountResource(), httpAcc.GetAccountResource())
+	assert.True(t, proto.Equal(grpcAcc.GetOwnerPermission(), httpAcc.GetOwnerPermission()),
+		"owner_permission\ngRPC: %v\nHTTP: %v", grpcAcc.GetOwnerPermission(), httpAcc.GetOwnerPermission())
+
+	require.Len(t, httpAcc.GetActivePermission(), len(grpcAcc.GetActivePermission()))
+	for i, want := range grpcAcc.GetActivePermission() {
+		assert.True(t, proto.Equal(want, httpAcc.GetActivePermission()[i]),
+			"active_permission[%d]\ngRPC: %v\nHTTP: %v", i, want, httpAcc.GetActivePermission()[i])
+	}
+
+	assert.Equal(t, grpcAcc.GetAssetV2(), httpAcc.GetAssetV2())
+	assert.Equal(t, grpcAcc.GetFreeAssetNetUsageV2(), httpAcc.GetFreeAssetNetUsageV2())
+	assert.Equal(t, grpcAcc.GetAssetOptimized(), httpAcc.GetAssetOptimized())
+}
+
+// The per-TRC10 free-bandwidth maps and the TRON POWER / storage counters were
+// missing from the HTTP conversion the same way.
+func TestCompare_AccountResourceMaps(t *testing.T) {
+	grpcClient := newGRPCClient(t)
+	defer func() { _ = grpcClient.Close() }()
+
+	httpClient := newHTTPClient(t)
+	defer func() { _ = httpClient.Close() }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	grpcRes, err := grpcClient.GetAccountResource(ctx, testAddress)
+	require.NoError(t, err)
+
+	httpRes, err := httpClient.GetAccountResource(ctx, testAddress)
+	require.NoError(t, err)
+
+	require.NotEmpty(t, grpcRes.GetAssetNetLimit(), "account holds no TRC10, nothing to compare")
+
+	assert.Equal(t, grpcRes.GetAssetNetUsed(), httpRes.GetAssetNetUsed())
+	assert.Equal(t, grpcRes.GetAssetNetLimit(), httpRes.GetAssetNetLimit())
+	assert.Equal(t, grpcRes.GetTotalTronPowerWeight(), httpRes.GetTotalTronPowerWeight())
+	assert.Equal(t, grpcRes.GetTronPowerLimit(), httpRes.GetTronPowerLimit())
+	assert.Equal(t, grpcRes.GetStorageLimit(), httpRes.GetStorageLimit())
 }
 
 // TestCompare_StakeInfo guards the HTTP account mapping of frozenV2/unfrozenV2.
