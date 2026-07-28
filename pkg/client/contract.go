@@ -365,17 +365,9 @@ func (c *Client) DeployContract(ctx context.Context, req DeployContractRequest) 
 // TQuCVz7ZXMwcuT2ERcBYCZzLeNAZofcTgY both reproduce from their creation
 // transactions.
 func DeployedContractAddress(tx *core.Transaction) (string, error) {
-	contracts := tx.GetRawData().GetContract()
-	if len(contracts) != 1 {
-		return "", fmt.Errorf("%w: expected exactly one contract, got %d", ErrInvalidTransaction, len(contracts))
-	}
-	if contracts[0].GetType() != core.Transaction_Contract_CreateSmartContract {
-		return "", fmt.Errorf("%w: not a contract deployment: %s", ErrInvalidTransaction, contracts[0].GetType())
-	}
-
-	var deploy core.CreateSmartContract
-	if err := contracts[0].GetParameter().UnmarshalTo(&deploy); err != nil {
-		return "", fmt.Errorf("%w: decode deployment: %s", ErrInvalidTransaction, err)
+	deploy, err := deploymentContract(tx)
+	if err != nil {
+		return "", err
 	}
 	if len(deploy.GetOwnerAddress()) == 0 {
 		return "", fmt.Errorf("%w: deployment has no owner address", ErrInvalidTransaction)
@@ -388,6 +380,29 @@ func DeployedContractAddress(tx *core.Transaction) (string, error) {
 	txID := sha256.Sum256(rawData)
 
 	return contractAddressFromTxID(txID[:], deploy.GetOwnerAddress()), nil
+}
+
+// deploymentContract extracts the CreateSmartContract a transaction carries.
+//
+// It is the one place a deployment is read back out of a transaction, so that
+// the address it will occupy and the energy it will burn are both taken from
+// the transaction that gets broadcast rather than from a second, independent
+// reconstruction of it.
+func deploymentContract(tx *core.Transaction) (*core.CreateSmartContract, error) {
+	contracts := tx.GetRawData().GetContract()
+	if len(contracts) != 1 {
+		return nil, fmt.Errorf("%w: expected exactly one contract, got %d", ErrInvalidTransaction, len(contracts))
+	}
+	if contracts[0].GetType() != core.Transaction_Contract_CreateSmartContract {
+		return nil, fmt.Errorf("%w: not a contract deployment: %s", ErrInvalidTransaction, contracts[0].GetType())
+	}
+
+	deploy := &core.CreateSmartContract{}
+	if err := contracts[0].GetParameter().UnmarshalTo(deploy); err != nil {
+		return nil, fmt.Errorf("%w: decode deployment: %s", ErrInvalidTransaction, err)
+	}
+
+	return deploy, nil
 }
 
 // contractAddressFromTxID is the derivation itself, kept apart from the

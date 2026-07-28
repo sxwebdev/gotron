@@ -192,6 +192,11 @@ reached the caller as an opaque protojson error instead of a `BroadcastError` ca
 - `GetAccount` — uses `httpAccount` helper struct because account JSON is incompatible with
   protojson; it also maps `frozenV2`/`unfrozenV2` (Stake 2.0) via `httpFreezeV2`/`httpUnFreezeV2`.
   Tron omits `"type"` for `BANDWIDTH` (the zero enum) and `"amount"` when zero.
+- `TriggerConstantContract` / `EstimateEnergy` — must **omit** `contract_address` when the proto's is
+  empty, which is how a deployment is expressed (the node then reads `data` as creation bytecode and
+  runs the constructor). `EncodeCheck` of nothing is a short but well-formed base58 string the node
+  reads as a real address, and an explicit `""` is refused outright with
+  `invalid address for field ... contract_address`.
 - `GetContract` — must use **`doRequestTransformed`**, and must *not* send `visible:true`. Every
   bytes field it returns (`origin_address`, `contract_address`, `bytecode`, `code_hash`) arrives as
   hex; plain `doRequest` hands that to protojson, which base64-decodes it, so a 21-byte address came

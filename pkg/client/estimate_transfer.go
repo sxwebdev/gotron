@@ -8,6 +8,7 @@ import (
 	"github.com/shopspring/decimal"
 	"github.com/sxwebdev/gotron/pkg/tronutils"
 	"github.com/sxwebdev/gotron/pkg/units"
+	"github.com/sxwebdev/gotron/schema/pb/core"
 )
 
 // estimateTransferFeeLimit is the fee limit used to build the throwaway TRC20
@@ -350,6 +351,69 @@ func (c *Client) contractEnergySubsidy(ctx context.Context, fromAddress, contrac
 		contract.GetOriginEnergyLimit(),
 		c.AvailableEnergy(res),
 	), nil
+}
+
+// EstimateDeployContract prices a deployment without broadcasting it.
+//
+// It takes the same request DeployContract takes, and builds the transaction
+// through DeployContract itself, so the estimate cannot end up describing
+// different code than gets deployed - constructor arguments included.
+//
+// This matters more than for other operations: a deployment whose fee limit is
+// too low is still accepted, mined and charged for, and only the receipt says
+// OUT_OF_ENERGY. The fee is gone and no contract exists, so there is no second
+// chance to find out what it costs.
+//
+// req.ConsumeUserResourcePercent does not enter into it. That field decides who
+// pays for the contract's *later* calls - it is what contractEnergySubsidy
+// applies to a TRC20 transfer - but the deployment itself is always billed to
+// the deployer, so Usage.ContractEnergy is zero here.
+//
+// The creation charges are zero too: a deployment does create an account for
+// the contract, but the chain bills that inside the energy rather than as the
+// 1 TRX activation fee that a TRX transfer to a new address pays.
+func (c *Client) EstimateDeployContract(ctx context.Context, req DeployContractRequest) (*EstimateTransferResult, error) {
+	tx, err := c.DeployContract(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	var usage ResourceUsage
+	usage.Bandwidth, err = c.EstimateBandwidth(tx.GetTransaction())
+	if err != nil {
+		return nil, err
+	}
+
+	// Read the deployment back out of the transaction rather than building it a
+	// second time from req: the bandwidth above was measured on this exact
+	// transaction, and the energy has to be measured on the same one or the two
+	// halves of the estimate can describe different code.
+	contract, err := deploymentContract(tx.GetTransaction())
+	if err != nil {
+		return nil, err
+	}
+
+	// A TriggerSmartContract with no contract address is how java-tron is asked
+	// to run a deployment: it reads Data as creation bytecode and executes the
+	// constructor, answering with the CreateSmartContract it built.
+	//
+	// The energy comes from a constant call rather than from EstimateEnergy
+	// because EstimateEnergy needs a node started with vm.estimateEnergy, which
+	// the public mainnet nodes are not - and because it is the more accurate of
+	// the two: measured against two real Nile deployments, the constant call
+	// reproduced receipt.energy_usage_total exactly (1372886 and 1365499) while
+	// EstimateEnergy reported roughly 0.4% more.
+	probe, err := c.TriggerConstantContract(ctx, &core.TriggerSmartContract{
+		OwnerAddress: contract.GetOwnerAddress(),
+		Data:         contract.GetNewContract().GetBytecode(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("simulate deployment: %w", err)
+	}
+
+	usage.Energy = decimal.NewFromInt(probe.GetEnergyUsed())
+
+	return c.priceTransfer(ctx, req.From, usage, false)
 }
 
 // priceTransfer turns what a transfer consumes into what it costs, by pricing

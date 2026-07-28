@@ -13,13 +13,25 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// EstimateBandwidth calculates the estimated bandwidth.
+// EstimateBandwidth returns the bandwidth points a transaction will consume:
+// its serialized size plus Tron's 64-byte protocol overhead.
+//
+// tx is left untouched. Sizing it needs a signature, and filling one in is
+// destructive - it clears Ret and appends a throwaway signature - so the
+// measurement is taken on a clone. Doing it in place corrupted the very
+// transaction the caller was about to sign, which is the only reason anyone
+// calls this.
 func (c *Client) EstimateBandwidth(tx *core.Transaction) (decimal.Decimal, error) {
-	if err := fillFakeTX(tx); err != nil {
+	if tx == nil {
+		return decimal.Decimal{}, fmt.Errorf("%w: transaction is nil", ErrInvalidTransaction)
+	}
+
+	probe := proto.CloneOf(tx)
+	if err := fillFakeTX(probe); err != nil {
 		return decimal.Decimal{}, err
 	}
 
-	return decimal.NewFromInt(int64(proto.Size(tx))).Add(decimal.NewFromInt(64)), nil
+	return decimal.NewFromInt(int64(proto.Size(probe))).Add(decimal.NewFromInt(64)), nil
 }
 
 // EstimateEnergy returns enery required

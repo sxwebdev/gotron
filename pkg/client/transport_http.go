@@ -979,10 +979,18 @@ type httpTriggerConstantContractResponse struct {
 
 func (t *HTTPTransport) TriggerConstantContract(ctx context.Context, contract *core.TriggerSmartContract) (*api.TransactionExtention, error) {
 	reqBody := map[string]any{
-		"owner_address":    tronutils.EncodeCheck(contract.OwnerAddress),
-		"contract_address": tronutils.EncodeCheck(contract.ContractAddress),
-		"data":             hex.EncodeToString(contract.Data),
-		"visible":          true,
+		"owner_address": tronutils.EncodeCheck(contract.OwnerAddress),
+		"data":          hex.EncodeToString(contract.Data),
+		"visible":       true,
+	}
+
+	// An empty contract address is how a deployment is expressed: the node then
+	// reads data as creation bytecode and runs the constructor. The field has to
+	// be left out entirely - EncodeCheck of nothing is a short but perfectly
+	// well-formed base58 string, and an explicit "" is rejected outright
+	// ("invalid address for field ... contract_address").
+	if len(contract.ContractAddress) > 0 {
+		reqBody["contract_address"] = tronutils.EncodeCheck(contract.ContractAddress)
 	}
 
 	if contract.CallValue > 0 {
@@ -1028,10 +1036,14 @@ func (t *HTTPTransport) TriggerConstantContract(ctx context.Context, contract *c
 
 func (t *HTTPTransport) EstimateEnergy(ctx context.Context, contract *core.TriggerSmartContract) (*api.EstimateEnergyMessage, error) {
 	reqBody := map[string]any{
-		"owner_address":    tronutils.EncodeCheck(contract.OwnerAddress),
-		"contract_address": tronutils.EncodeCheck(contract.ContractAddress),
-		"data":             hex.EncodeToString(contract.Data),
-		"visible":          true,
+		"owner_address": tronutils.EncodeCheck(contract.OwnerAddress),
+		"data":          hex.EncodeToString(contract.Data),
+		"visible":       true,
+	}
+
+	// Omitted rather than empty for a deployment - see TriggerConstantContract.
+	if len(contract.ContractAddress) > 0 {
+		reqBody["contract_address"] = tronutils.EncodeCheck(contract.ContractAddress)
 	}
 
 	if contract.CallValue > 0 {

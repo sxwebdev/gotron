@@ -391,8 +391,11 @@ Cost estimators for transactions and transfers. Use these to compute fees before
 **File:** `estimate_resources.go`
 
 ```go
-// EstimateBandwidth fills required signature bytes into a fake transaction
-// and returns proto.Size(tx) + 64 (Tron protocol overhead) as bandwidth points.
+// EstimateBandwidth returns proto.Size(tx) + 64 (Tron's protocol overhead) as
+// bandwidth points. Sizing needs a signature, so the measurement is taken on a
+// clone: tx itself is left untouched and the call is idempotent. It used to fill
+// the signature in place, which corrupted the transaction the caller was about
+// to sign - the only reason anyone calls this.
 func (c *Client) EstimateBandwidth(tx *core.Transaction) (decimal.Decimal, error)
 
 // EstimateEnergy queries the node's /wallet/estimateenergy or gRPC EstimateEnergy
@@ -527,6 +530,18 @@ the chain settles for nothing: Nile tx `e3e1633c…` has `energy_usage_total 146
 `EstimateTRC20Transfer` two extra RPCs (`GetContract` plus the owner's `GetAccountResource`), because
 it depends on the contract's settings and the owner's balance right now.
 
+**Deployments are priced with `EstimateDeployContract`**, which takes the same `DeployContractRequest`
+the deployment takes so the two cannot describe different code. The energy comes from a constant call
+on a `TriggerSmartContract` with **no contract address** — that is how java-tron is asked to run a
+deployment: it reads `data` as creation bytecode and executes the constructor. `EstimateEnergy` would
+also answer, but it needs a node started with `vm.estimateEnergy` (the public mainnet nodes are not)
+and it pads: against two real Nile deployments the constant call reproduced `receipt.energy_usage_total`
+exactly — 1372886 and 1365499 — while `EstimateEnergy` reported about 0.4% more. The deployer pays the
+deployment's energy in full, so `Usage.ContractEnergy` is zero and `req.ConsumeUserResourcePercent`
+does not apply — that field governs the contract's *later* calls. The creation charges are zero too:
+a deployment does create the contract's account, but the chain bills it inside the energy rather than
+as the 1 TRX activation fee.
+
 **`EstimateTRC20Transfer` fails for a transfer that would revert** — insufficient token balance
 being the usual reason — because it measures energy with a constant call, and a reverted call
 reports only what the VM burned before giving up. The error wraps `ErrContractCallFailed`. This is
@@ -558,6 +573,10 @@ func (c *Client) DeployContract(ctx context.Context, req DeployContractRequest) 
 
 // The address the deployment will occupy, derived locally from the transaction.
 func DeployedContractAddress(tx *core.Transaction) (string, error)
+
+// What the deployment will cost, before committing to it. Same request type, so
+// the estimate cannot describe different code than the deployment.
+func (c *Client) EstimateDeployContract(ctx context.Context, req DeployContractRequest) (*EstimateTransferResult, error)
 
 // Calling. method is the full signature ("transfer(address,uint256)"); jsonString
 // is the argument list in the pkg/client/abi form (see below).
@@ -628,8 +647,11 @@ _, err = c.BroadcastTransaction(ctx, tx.GetTransaction())
   **Read it after the last edit to `raw_data`**: the fee limit is inside `raw_data`, so setting it
   changes the txID and therefore the address. `DeployContract` sets the fee limit before returning,
   so the transaction it hands back is already final.
-- **`FeeLimit` matters.** A deployment left at the node's default routinely runs out of energy
-  mid-construction, which still burns what it used.
+- **`FeeLimit` matters, and `EstimateDeployContract` is how to size it.** A deployment whose fee
+  limit is too low is still accepted, mined and charged for; only the receipt says `OUT_OF_ENERGY`,
+  by which point the fee is gone and no contract exists. The estimate runs the constructor without
+  broadcasting, so a constructor that reverts surfaces as `ErrContractCallFailed` instead of as a
+  paid-for failure.
 - **The receipt is still the authority after the fact:**
   `GetTransactionInfoByHash(…).GetContractAddress()` returns the raw bytes;
   `tronutils.EncodeCheck` turns them into the `T…` form.

@@ -177,10 +177,18 @@ func deployTx(t *testing.T, owner string) *api.TransactionExtention {
 	ownerBytes, err := tronutils.DecodeCheck(owner)
 	require.NoError(t, err)
 
-	param, err := anypb.New(&core.CreateSmartContract{
+	return deployTxFor(t, &core.CreateSmartContract{
 		OwnerAddress: ownerBytes,
 		NewContract:  &core.SmartContract{OriginAddress: ownerBytes, Bytecode: []byte{0x60}},
 	})
+}
+
+// deployTxFor wraps a specific CreateSmartContract the way a node does, so a
+// fake echoes back what it was asked to deploy instead of a canned contract.
+func deployTxFor(t *testing.T, ct *core.CreateSmartContract) *api.TransactionExtention {
+	t.Helper()
+
+	param, err := anypb.New(ct)
 	require.NoError(t, err)
 
 	return &api.TransactionExtention{
@@ -541,6 +549,23 @@ func TestDeployedContractAddressRejects(t *testing.T) {
 				Contract: []*core.Transaction_Contract{{
 					Type:      core.Transaction_Contract_CreateSmartContract,
 					Parameter: transferParam,
+				}},
+			}},
+		},
+		{
+			// The inverse, and the only case the declared type catches on its
+			// own: the payload really is a deployment but the transaction does
+			// not say so. java-tron dispatches on the declared type, so this
+			// would execute as a transfer and deploy nothing - reading a
+			// contract address out of it would be fiction.
+			name: "payload is a deployment but the type does not say so",
+			tx: &core.Transaction{RawData: &core.TransactionRaw{
+				Contract: []*core.Transaction_Contract{{
+					Type: core.Transaction_Contract_TransferContract,
+					Parameter: mustAny(t, &core.CreateSmartContract{
+						OwnerAddress: []byte{0x41},
+						NewContract:  &core.SmartContract{Bytecode: []byte{0x60}},
+					}),
 				}},
 			}},
 		},

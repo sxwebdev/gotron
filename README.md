@@ -337,7 +337,7 @@ if err != nil {
     log.Fatal(err)
 }
 
-tx, err := tron.DeployContract(ctx, client.DeployContractRequest{
+req := client.DeployContractRequest{
     From:     "TSenderAddress",
     Name:     "MyToken",
     ABI:      contractABI,
@@ -350,7 +350,18 @@ tx, err := tron.DeployContract(ctx, client.DeployContractRequest{
     FeeLimit:                   client.MustFromTRX(decimal.NewFromInt(1000)),
     ConsumeUserResourcePercent: 100,      // share of each call paid by the caller
     OriginEnergyLimit:          10000000, // required, must be > 0
-})
+}
+
+// Price it before committing: a deployment whose fee limit is too low is still
+// mined and charged for, and only the receipt says OUT_OF_ENERGY.
+estimate, err := tron.EstimateDeployContract(ctx, req)
+if err != nil {
+    log.Fatal(err) // a constructor that reverts fails here, before it costs anything
+}
+fmt.Printf("deployment needs %s energy and %s bandwidth, costing %s\n",
+    estimate.Usage.Energy, estimate.Usage.Bandwidth, estimate.Fee)
+
+tx, err := tron.DeployContract(ctx, req)
 if err != nil {
     log.Fatal(err)
 }

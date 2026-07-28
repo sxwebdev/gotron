@@ -243,3 +243,67 @@ func TestHTTPGetContractDecodesTheByteFields(t *testing.T) {
 	require.NotContains(t, *lastReq, "visible")
 	require.Equal(t, hex.EncodeToString(addr), (*lastReq)["value"])
 }
+
+// A deployment is expressed as a TriggerSmartContract with no contract address.
+// The field has to be left out of the JSON entirely: EncodeCheck of nothing is a
+// short but well-formed base58 string that the node reads as a real address, and
+// an explicit "" is refused outright ("invalid address for field ...
+// contract_address"). Either way the node would price a call instead of a
+// deployment, or fail.
+func TestHTTPConstantCallOmitsAnEmptyContractAddress(t *testing.T) {
+	const body = `{"result":{"result":true},"constant_result":[""],"energy_used":2021}`
+
+	tr, lastReq := newStubTransport(t, http.StatusOK, body)
+
+	owner, err := tronutils.DecodeCheck(triggerOwnerAddr)
+	require.NoError(t, err)
+	code, err := hex.DecodeString("600a600c600039600a6000f3602a60805260206080f3")
+	require.NoError(t, err)
+
+	tx, err := tr.TriggerConstantContract(t.Context(), &core.TriggerSmartContract{
+		OwnerAddress: owner,
+		Data:         code,
+	})
+	require.NoError(t, err)
+	require.Equal(t, int64(2021), tx.GetEnergyUsed())
+
+	require.NotContains(t, *lastReq, "contract_address")
+	require.Equal(t, triggerOwnerAddr, (*lastReq)["owner_address"])
+	require.Equal(t, hex.EncodeToString(code), (*lastReq)["data"])
+}
+
+func TestHTTPConstantCallKeepsARealContractAddress(t *testing.T) {
+	const body = `{"result":{"result":true},"constant_result":[""],"energy_used":1}`
+
+	tr, lastReq := newStubTransport(t, http.StatusOK, body)
+
+	owner, err := tronutils.DecodeCheck(triggerOwnerAddr)
+	require.NoError(t, err)
+	contractAddr, err := tronutils.DecodeCheck(triggerContractAddr)
+	require.NoError(t, err)
+
+	_, err = tr.TriggerConstantContract(t.Context(), &core.TriggerSmartContract{
+		OwnerAddress:    owner,
+		ContractAddress: contractAddr,
+		Data:            []byte{0x01},
+	})
+	require.NoError(t, err)
+	require.Equal(t, triggerContractAddr, (*lastReq)["contract_address"])
+}
+
+func TestHTTPEstimateEnergyOmitsAnEmptyContractAddress(t *testing.T) {
+	const body = `{"result":{"result":true},"energy_required":4042}`
+
+	tr, lastReq := newStubTransport(t, http.StatusOK, body)
+
+	owner, err := tronutils.DecodeCheck(triggerOwnerAddr)
+	require.NoError(t, err)
+
+	got, err := tr.EstimateEnergy(t.Context(), &core.TriggerSmartContract{
+		OwnerAddress: owner,
+		Data:         []byte{0x60},
+	})
+	require.NoError(t, err)
+	require.Equal(t, int64(4042), got.GetEnergyRequired())
+	require.NotContains(t, *lastReq, "contract_address")
+}
