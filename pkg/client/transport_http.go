@@ -883,31 +883,39 @@ type httpBroadcastResponse struct {
 	Error   string `json:"Error"`
 }
 
+// BroadcastTransaction submits a signed transaction over /wallet/broadcasthex.
+//
+// The hex endpoint takes the marshalled protobuf, so the signed bytes reach the
+// node exactly as they were signed. /wallet/broadcasttransaction cannot offer
+// that: it rebuilds the transaction from the JSON "raw_data" object - it ignores
+// "raw_data_hex" and "txID" entirely - which means every byte field, every
+// address and every contract-specific Any would have to be re-rendered in
+// Tron's own JSON dialect, and any discrepancy would change the hash the
+// signature covers. protojson cannot produce that dialect at all: it emits
+// base64 where Tron reads hex and "@type" where Tron reads "type_url"/"value",
+// and a node handed such a body answers "class java.lang.NullPointerException".
 func (t *HTTPTransport) BroadcastTransaction(ctx context.Context, tx *core.Transaction) (*api.Return, error) {
-	// Convert transaction to JSON using protojson
-	txJSON, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(tx)
+	txBytes, err := proto.Marshal(tx)
 	if err != nil {
 		return nil, fmt.Errorf("marshal transaction: %w", err)
 	}
 
-	var reqBody map[string]any
-	if err := json.Unmarshal(txJSON, &reqBody); err != nil {
-		return nil, fmt.Errorf("unmarshal transaction json: %w", err)
+	reqBody := map[string]any{
+		"transaction": hex.EncodeToString(txBytes),
 	}
-	reqBody["visible"] = true
 
-	respBody, err := t.doRequestRaw(ctx, "/wallet/broadcasttransaction", reqBody)
+	respBody, err := t.doRequestRaw(ctx, "/wallet/broadcasthex", reqBody)
 	if err != nil {
 		return nil, err
 	}
 
 	var resp httpBroadcastResponse
 	if err := json.Unmarshal(respBody, &resp); err != nil {
-		return nil, t.wrapErr("/wallet/broadcasttransaction", fmt.Errorf("unmarshal response: %w (body: %s)", err, string(respBody)))
+		return nil, t.wrapErr("/wallet/broadcasthex", fmt.Errorf("unmarshal response: %w (body: %s)", err, string(respBody)))
 	}
 
 	if resp.Error != "" {
-		return nil, t.wrapErr("/wallet/broadcasttransaction", fmt.Errorf("%s", resp.Error))
+		return nil, t.wrapErr("/wallet/broadcasthex", fmt.Errorf("%s", resp.Error))
 	}
 
 	return &api.Return{

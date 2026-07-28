@@ -192,7 +192,7 @@ Key endpoints used by `HTTPTransport`:
 | GetTransactionById           | `/wallet/gettransactionbyid`           |
 | GetTransactionInfoById       | `/wallet/gettransactioninfobyid`       |
 | GetTransactionInfoByBlockNum | `/wallet/gettransactioninfobyblocknum` |
-| BroadcastTransaction         | `/wallet/broadcasttransaction`         |
+| BroadcastTransaction         | `/wallet/broadcasthex`                 |
 | CreateTransaction            | `/wallet/createtransaction`            |
 | TriggerContract              | `/wallet/triggersmartcontract`         |
 | TriggerConstantContract      | `/wallet/triggerconstantcontract`      |

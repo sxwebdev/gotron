@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"encoding/hex"
 	"math/big"
 	"strings"
 	"testing"
@@ -291,4 +292,114 @@ func TestTRC20WritesRejectZeroAmount(t *testing.T) {
 			})
 		}
 	}
+}
+
+// The string-property layout is [32-byte offset][32-byte length][payload]. The
+// length word is contract-supplied, so a hostile or simply broken token can put
+// anything in it.
+//
+// The bound used to be computed as 2*int(l): for l = 2^62+1 that product
+// overflows int64 and wraps negative, so the "fits in the payload" check passed,
+// while the slice bound 128+2*l stayed at 2^63+130 and panicked the caller.
+// Reachable straight through TRC20GetName and TRC20GetSymbol.
+func TestParseTRC20StringPropertyRejectsOverflowingLength(t *testing.T) {
+	t.Parallel()
+
+	// A 32-byte length word whose LOW 64 bits are the value big.Int.Uint64
+	// returns; the high bytes are what makes the value exceed uint64 entirely.
+	lengthWord := func(low, high string) string {
+		return strings.Repeat("0", 64-len(low)-len(high)) + high + low
+	}
+	payload := strings.Repeat("41", 32) // "AAAA..."
+	offset := strings.Repeat("0", 64)
+
+	tests := []struct {
+		name   string
+		length string
+		want   string
+		wantOK bool
+	}{
+		{
+			// 2*int(l) wraps to a negative number, 128+2*l does not.
+			name:   "length that overflows the signed bound",
+			length: lengthWord("4000000000000001", ""),
+		},
+		{
+			// 2*l overflows uint64 as well, landing back on a small number.
+			name:   "length that overflows the unsigned doubling",
+			length: lengthWord("8000000000000001", ""),
+		},
+		{
+			name:   "length wider than uint64",
+			length: lengthWord("0000000000000004", "ff"),
+		},
+		{
+			name:   "length just past the payload",
+			length: lengthWord("0000000000000021", ""),
+		},
+		{
+			name:   "maximum length word",
+			length: strings.Repeat("f", 64),
+		},
+		{
+			name:   "honest length still parses",
+			length: lengthWord("0000000000000004", ""),
+			want:   "AAAA",
+			wantOK: true,
+		},
+		{
+			name:   "length exactly filling the payload",
+			length: lengthWord("0000000000000020", ""),
+			want:   strings.Repeat("A", 32),
+			wantOK: true,
+		},
+		{
+			name:   "zero length is the empty string",
+			length: lengthWord("0000000000000000", ""),
+			want:   "",
+			wantOK: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			c := &Client{}
+			got, err := c.ParseTRC20StringProperty(offset + tt.length + payload)
+
+			if !tt.wantOK {
+				require.Error(t, err, "an unusable length must be reported, never sliced")
+				require.Empty(t, got)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// The same length word reaching the parser through the public token getters.
+func TestTRC20GetNameSurvivesHostileLengthWord(t *testing.T) {
+	t.Parallel()
+
+	data := strings.Repeat("0", 64) +
+		strings.Repeat("0", 48) + "4000000000000001" +
+		strings.Repeat("41", 32)
+
+	c := newTestClient(&fakeTransport{
+		triggerConstantContract: func(context.Context, *core.TriggerSmartContract) (*api.TransactionExtention, error) {
+			raw, err := hex.DecodeString(data)
+			if err != nil {
+				return nil, err
+			}
+			return &api.TransactionExtention{
+				Result:         &api.Return{Result: true, Code: api.Return_SUCCESS},
+				ConstantResult: [][]byte{raw},
+			}, nil
+		},
+	})
+
+	_, err := c.TRC20GetName(t.Context(), testAddr)
+	require.Error(t, err)
 }

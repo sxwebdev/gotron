@@ -168,11 +168,24 @@ under `DiscardUnknown`, and the bytes fields are hex, so `ref_block_bytes`/`ref_
 mangled by base64 decoding. `doRequestTransformed` would fix the byte fields but not the wrapper,
 so `doTxRequestWrapped` reuses `parseTxResponse` on the nested object instead.
 
-**`BroadcastTransaction` cannot use `doRequest` either.** `api.Return.Message` is a protobuf bytes
-field and protojson insists on base64, but the node sends a plain-text sentence
+**`BroadcastTransaction` posts to `/wallet/broadcasthex`, not `/wallet/broadcasttransaction`.**
+The hex endpoint takes `{"transaction": hex(proto.Marshal(tx))}`, so the signed bytes reach the node
+exactly as they were signed — the outbound mirror of what `doTxRequest` does inbound.
+
+`/wallet/broadcasttransaction` cannot be used from protobuf. Probed against Nile, it rebuilds the
+transaction from the JSON `raw_data` **object** and ignores `raw_data_hex` and `txID` completely:
+a body carrying a correct `raw_data_hex` + `txID` but `raw_data: {"contract": []}` answers
+`Contract validate error : No contract!` with the txid of `sha256("")`, and sending `raw_data_hex` +
+`txID` + `signature` **without** `raw_data` answers `class java.lang.NullPointerException : null`.
+Using it would mean re-rendering every byte field, address and contract `Any` in Tron's own JSON
+dialect for ~30 contract types, where any discrepancy silently changes the hash the signature
+covers. protojson cannot produce that dialect at all — it emits base64 where Tron reads hex and
+`@type` where Tron reads `type_url`/`value`.
+
+The **response** still needs the `httpBroadcastResponse` helper struct: `api.Return.Message` is a
+protobuf bytes field and protojson insists on base64, but the node sends a plain-text sentence
 (`"Validate signature error: …"`). Unmarshaling into `api.Return` fails outright, so every rejection
 reached the caller as an opaque protojson error instead of a `BroadcastError` carrying the code.
-It uses the `httpBroadcastResponse` helper struct.
 
 **Custom parsing examples:**
 

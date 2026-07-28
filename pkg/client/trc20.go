@@ -151,9 +151,15 @@ func (c *Client) ParseTRC20StringProperty(data string) (string, error) {
 	}
 	if len(data) > 128 {
 		n, _ := c.ParseTRC20NumericProperty(data[64:128])
-		if n != nil {
+		// The length word is 32 bytes of contract-supplied data, so it can hold
+		// any value at all. It has to be compared in uint64 and against the
+		// available half-length: converting to int first lets 2*int(l) wrap
+		// negative, which passes the bound check while 128+2*l stays enormous
+		// and panics the slice. n.IsUint64 rules out the wider values, whose low
+		// 64 bits would otherwise be read as a plausible length.
+		if n != nil && n.IsUint64() {
 			l := n.Uint64()
-			if 2*int(l) <= len(data)-128 {
+			if avail := uint64(len(data) - 128); l <= avail/2 {
 				b, err := hex.DecodeString(data[128 : 128+2*l])
 				if err == nil {
 					return string(b), nil
