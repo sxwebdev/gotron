@@ -94,6 +94,10 @@ func FromPrivateKey(privateKeyHex string) (*Address, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode private key: %w", err)
 	}
+	// ToECDSA copies the scalar into a big.Int, so this decode buffer is dead
+	// weight the moment it returns - and dead key material is what ends up in a
+	// core dump. It is the one copy on this path we can actually erase.
+	defer clear(pkBytes)
 
 	if len(pkBytes) != 32 {
 		return nil, fmt.Errorf("invalid private key length: expected 32 bytes, got %d", len(pkBytes))

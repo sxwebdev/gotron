@@ -7,12 +7,18 @@ import (
 	"crypto/sha256"
 	"fmt"
 
+	"github.com/decred/dcrd/dcrec/secp256k1/v4"
+	dcrecdsa "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/sxwebdev/gotron/pkg/tronutils"
 	"github.com/sxwebdev/gotron/schema/pb/api"
 	"github.com/sxwebdev/gotron/schema/pb/core"
 	"google.golang.org/protobuf/proto"
 )
+
+// recoveryIDOffset is the position of the recovery id in a 65-byte
+// [r ‖ s ‖ v] Tron signature.
+const recoveryIDOffset = 64
 
 // GetTransactionByHash returns transaction details by hash
 func (c *Client) GetTransactionByHash(ctx context.Context, hash string) (*core.Transaction, error) {
@@ -117,6 +123,69 @@ func (c *Client) SignTransaction(tx *core.Transaction, privateKey *ecdsa.Private
 	}
 
 	tx.Signature = append(tx.Signature, signature)
+
+	return nil
+}
+
+// ValidatePrivateKeyRaw reports whether privateKey is usable for signing: it
+// must be exactly 32 bytes and a scalar in [1, N-1]. It keeps no copy of the
+// key, so a caller can use it to check stored key material without deriving
+// anything from it.
+//
+// The length check is not pedantry: SetByteSlice truncates a longer slice to
+// its first 32 bytes and reduces mod N rather than rejecting, so a wrong-sized
+// or out-of-range key would otherwise sign as a silently different one.
+func ValidatePrivateKeyRaw(privateKey []byte) error {
+	if len(privateKey) != secp256k1.PrivKeyBytesLen {
+		return fmt.Errorf("%w: expected %d bytes, got %d", ErrInvalidPrivateKey, secp256k1.PrivKeyBytesLen, len(privateKey))
+	}
+
+	var scalar secp256k1.ModNScalar
+	defer scalar.Zero()
+	if overflow := scalar.SetByteSlice(privateKey); overflow || scalar.IsZero() {
+		return fmt.Errorf("%w: key is not a scalar in [1, N-1]", ErrInvalidPrivateKey)
+	}
+	return nil
+}
+
+// SignTransactionRaw signs a raw transaction with a raw 32-byte secp256k1
+// private key. It produces the same signature as SignTransaction and exists for
+// callers to whom the key's lifetime in memory matters.
+//
+// SignTransaction takes an *ecdsa.PrivateKey, which carries the secret in a
+// big.Int whose words cannot be zeroed through the standard library, and
+// go-ethereum's crypto.Sign then copies it out again with prv.D.Bytes(). Both
+// copies outlive the call and are erased only when the garbage collector
+// happens to reuse their memory. Here the key exists in the caller's slice and
+// in one secp256k1.PrivateKey that is wiped before returning; nothing else is
+// derived from it. The caller owns privateKey and should clear() it once the
+// key is no longer needed.
+func (c *Client) SignTransactionRaw(tx *core.Transaction, privateKey []byte) error {
+	if tx == nil {
+		return fmt.Errorf("empty tron tx")
+	}
+	if err := ValidatePrivateKeyRaw(privateKey); err != nil {
+		return err
+	}
+
+	var priv secp256k1.PrivateKey
+	priv.Key.SetByteSlice(privateKey) // range-checked by ValidatePrivateKeyRaw
+	defer priv.Zero()
+
+	rawData, err := proto.Marshal(tx.GetRawData())
+	if err != nil {
+		return err
+	}
+	hash := sha256.Sum256(rawData)
+
+	// SignCompact returns [v ‖ r ‖ s] with v offset by 27; Tron expects
+	// [r ‖ s ‖ v] with v in {0, 1}, which is what crypto.Sign builds too.
+	sig := dcrecdsa.SignCompact(&priv, hash[:], false)
+	v := sig[0] - 27
+	copy(sig, sig[1:])
+	sig[recoveryIDOffset] = v
+
+	tx.Signature = append(tx.Signature, sig)
 
 	return nil
 }
