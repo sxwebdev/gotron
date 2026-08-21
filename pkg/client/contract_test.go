@@ -21,7 +21,8 @@ import (
 func TestTriggerContractNilResultDoesNotPanic(t *testing.T) {
 	c := newTestClient(&fakeTransport{
 		triggerContract: func(context.Context, *core.TriggerSmartContract) (*api.TransactionExtention, error) {
-			return &api.TransactionExtention{Transaction: &core.Transaction{}}, nil // Result == nil
+			// Result == nil, but a transaction the node actually built.
+			return &api.TransactionExtention{Transaction: &core.Transaction{RawData: &core.TransactionRaw{}}}, nil
 		},
 	})
 

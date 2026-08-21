@@ -114,6 +114,10 @@ func (t *GRPCTransport) CreateAccount(ctx context.Context, contract *core.Accoun
 	return t.walletClient.CreateAccount2(ctx, contract)
 }
 
+func (t *GRPCTransport) AccountPermissionUpdate(ctx context.Context, contract *core.AccountPermissionUpdateContract) (*api.TransactionExtention, error) {
+	return t.walletClient.AccountPermissionUpdate(ctx, contract)
+}
+
 // Block operations
 
 func (t *GRPCTransport) GetNowBlock(ctx context.Context) (*api.BlockExtention, error) {

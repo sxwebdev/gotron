@@ -63,6 +63,13 @@ func (t *MetricsTransport) CreateAccount(ctx context.Context, contract *core.Acc
 	return result, err
 }
 
+func (t *MetricsTransport) AccountPermissionUpdate(ctx context.Context, contract *core.AccountPermissionUpdateContract) (*api.TransactionExtention, error) {
+	start := time.Now()
+	result, err := t.transport.AccountPermissionUpdate(ctx, contract)
+	t.after("AccountPermissionUpdate", start, err)
+	return result, err
+}
+
 // Block operations
 
 func (t *MetricsTransport) GetNowBlock(ctx context.Context) (*api.BlockExtention, error) {

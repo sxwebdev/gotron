@@ -10,6 +10,7 @@ import (
 
 	ethcrypto "github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
+	"github.com/sxwebdev/gotron/pkg/address"
 	"github.com/sxwebdev/gotron/schema/pb/api"
 	"github.com/sxwebdev/gotron/schema/pb/core"
 	"google.golang.org/protobuf/proto"
@@ -272,4 +273,28 @@ func TestValidatePrivateKeyRaw(t *testing.T) {
 
 	require.ErrorIs(t, ValidatePrivateKeyRaw(nil), ErrInvalidPrivateKey)
 	require.ErrorIs(t, ValidatePrivateKeyRaw(make([]byte, 32)), ErrInvalidPrivateKey)
+}
+
+func TestAddressFromPrivateKeyRaw(t *testing.T) {
+	t.Parallel()
+
+	generated, err := address.Generate()
+	require.NoError(t, err)
+	raw, err := hex.DecodeString(generated.PrivateKey)
+	require.NoError(t, err)
+	wantRaw := slices.Clone(raw)
+
+	got, err := AddressFromPrivateKeyRaw(raw)
+	require.NoError(t, err)
+	require.Equal(t, generated.Address, got)
+	require.Equal(t, wantRaw, raw, "caller-owned key must not be mutated")
+}
+
+func TestAddressFromPrivateKeyRawRejectsInvalidKeys(t *testing.T) {
+	t.Parallel()
+
+	for _, key := range [][]byte{nil, make([]byte, 31), make([]byte, 32)} {
+		_, err := AddressFromPrivateKeyRaw(key)
+		require.ErrorIs(t, err, ErrInvalidPrivateKey)
+	}
 }

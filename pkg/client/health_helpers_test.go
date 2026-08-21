@@ -78,6 +78,10 @@ func (c *controllableTransport) CreateAccount(ctx context.Context, contract *cor
 	return &api.TransactionExtention{}, c.live()
 }
 
+func (c *controllableTransport) AccountPermissionUpdate(ctx context.Context, contract *core.AccountPermissionUpdateContract) (*api.TransactionExtention, error) {
+	return &api.TransactionExtention{}, c.live()
+}
+
 func (c *controllableTransport) GetNowBlock(ctx context.Context) (*api.BlockExtention, error) {
 	return &api.BlockExtention{}, c.live()
 }

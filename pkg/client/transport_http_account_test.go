@@ -32,6 +32,13 @@ const liveAccountWithPermissions = `{
 		"threshold": 1,
 		"keys": [{"address": "TZ4UXDV5ZhNW7fb2AMSbgfAEZ7hWsnYS2g", "weight": 1}]
 	},
+	"witness_permission": {
+		"type": "Witness",
+		"id": 1,
+		"permission_name": "witness",
+		"threshold": 1,
+		"keys": [{"address": "TN2W4cc7a4dsYyTLiLMWa9m7jVpdLjGvYs", "weight": 1}]
+	},
 	"active_permission": [{
 		"type": "Active",
 		"id": 2,
@@ -84,6 +91,13 @@ func TestHTTPGetAccountKeepsResourceAndPermissions(t *testing.T) {
 	require.Len(t, owner.GetKeys(), 1)
 	require.Equal(t, mustDecode(t, "TZ4UXDV5ZhNW7fb2AMSbgfAEZ7hWsnYS2g"), owner.GetKeys()[0].GetAddress())
 
+	witness := acc.GetWitnessPermission()
+	require.NotNil(t, witness, "witness_permission dropped")
+	require.Equal(t, core.Permission_Witness, witness.GetType())
+	require.Equal(t, WitnessPermissionID, witness.GetId())
+	require.Equal(t, "witness", witness.GetPermissionName())
+	require.Equal(t, mustDecode(t, "TN2W4cc7a4dsYyTLiLMWa9m7jVpdLjGvYs"), witness.GetKeys()[0].GetAddress())
+
 	require.Len(t, acc.GetActivePermission(), 1)
 	active := acc.GetActivePermission()[0]
 	require.Equal(t, core.Permission_Active, active.GetType())
@@ -124,6 +138,7 @@ func TestHTTPGetAccountWithoutOptionalSections(t *testing.T) {
 	require.Equal(t, int64(1), acc.GetBalance())
 	require.Nil(t, acc.GetAccountResource())
 	require.Nil(t, acc.GetOwnerPermission())
+	require.Nil(t, acc.GetWitnessPermission())
 	require.Empty(t, acc.GetActivePermission())
 	require.Empty(t, acc.GetAssetV2())
 }
@@ -177,4 +192,43 @@ func TestHTTPGetAccountResourceKeepsAssetAndPowerFields(t *testing.T) {
 	require.Equal(t, int64(600), res.GetFreeNetLimit())
 	require.Equal(t, int64(100), res.GetNetLimit())
 	require.Equal(t, int64(50), res.GetEnergyLimit())
+}
+
+// is_witness governs whether a witness permission is legal at all
+// (AccountPermissionUpdateActuator: "account isn't witness can't set witness
+// permission"). Dropping it made the same SR read as a witness over gRPC and
+// as an ordinary account over HTTP.
+func TestHTTPGetAccountKeepsIsWitness(t *testing.T) {
+	tr, _ := newStubTransport(t, http.StatusOK,
+		`{"address":"TZ4UXDV5ZhNW7fb2AMSbgfAEZ7hWsnYS2g","balance":1,"is_witness":true}`)
+
+	acc, err := tr.GetAccount(t.Context(), &core.Account{Address: mustDecode(t, testAddr)})
+	require.NoError(t, err)
+	require.True(t, acc.GetIsWitness())
+}
+
+// A permission type the SDK does not know used to fall through the value map to
+// 0, which is Owner - the one type PermissionAllows grants everything.
+func TestHTTPGetAccountRejectsUnknownPermissionType(t *testing.T) {
+	tr, _ := newStubTransport(t, http.StatusOK,
+		`{"address":"TZ4UXDV5ZhNW7fb2AMSbgfAEZ7hWsnYS2g","active_permission":[`+
+			`{"type":"Delegated","id":2,"permission_name":"a","threshold":1,"operations":"`+
+			`0000000000000000000000000000000000000000000000000000000000000000",`+
+			`"keys":[{"address":"TZ4UXDV5ZhNW7fb2AMSbgfAEZ7hWsnYS2g","weight":1}]}]}`)
+
+	_, err := tr.GetAccount(t.Context(), &core.Account{Address: mustDecode(t, testAddr)})
+	require.ErrorIs(t, err, ErrInvalidPermission)
+}
+
+// Tron omits "type" for the owner permission because Owner is the protobuf zero
+// value, so an absent type must still parse.
+func TestHTTPGetAccountAcceptsOwnerPermissionWithoutType(t *testing.T) {
+	tr, _ := newStubTransport(t, http.StatusOK,
+		`{"address":"TZ4UXDV5ZhNW7fb2AMSbgfAEZ7hWsnYS2g","owner_permission":`+
+			`{"permission_name":"owner","threshold":1,`+
+			`"keys":[{"address":"TZ4UXDV5ZhNW7fb2AMSbgfAEZ7hWsnYS2g","weight":1}]}}`)
+
+	acc, err := tr.GetAccount(t.Context(), &core.Account{Address: mustDecode(t, testAddr)})
+	require.NoError(t, err)
+	require.Equal(t, core.Permission_Owner, acc.GetOwnerPermission().GetType())
 }

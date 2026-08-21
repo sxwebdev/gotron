@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/sxwebdev/gotron/pkg/client"
+	"github.com/sxwebdev/gotron/schema/pb/core"
 )
 
 func TestGetAccount_GRPC(t *testing.T) {
@@ -36,6 +37,80 @@ func TestGetAccount_HTTP(t *testing.T) {
 	require.NotNil(t, account)
 
 	t.Logf("HTTP: Account balance: %d SUN", account.GetBalance())
+}
+
+func TestGetAccountPermission_GRPC(t *testing.T) {
+	testGetAccountPermission(t, newGRPCClient(t))
+}
+
+func TestGetAccountPermission_HTTP(t *testing.T) {
+	testGetAccountPermission(t, newHTTPClient(t))
+}
+
+func testGetAccountPermission(t *testing.T, c *client.Client) {
+	t.Helper()
+	t.Cleanup(func() { _ = c.Close() })
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	t.Cleanup(cancel)
+	permission, err := c.GetAccountPermission(ctx, testAddress, client.FirstActivePermissionID)
+	require.NoError(t, err)
+	require.Equal(t, client.FirstActivePermissionID, permission.GetId())
+	require.NotEmpty(t, permission.GetKeys())
+}
+
+func TestGetWitnessPermission_GRPC(t *testing.T) {
+	testGetWitnessPermission(t, newGRPCClient(t))
+}
+
+func TestGetWitnessPermission_HTTP(t *testing.T) {
+	testGetWitnessPermission(t, newHTTPClient(t))
+}
+
+func testGetWitnessPermission(t *testing.T, c *client.Client) {
+	t.Helper()
+	t.Cleanup(func() { _ = c.Close() })
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	t.Cleanup(cancel)
+	permission, err := c.GetAccountPermission(ctx, witnessAddress, client.WitnessPermissionID)
+	require.NoError(t, err)
+	require.Equal(t, core.Permission_Witness, permission.GetType())
+	require.Equal(t, client.WitnessPermissionID, permission.GetId())
+	require.Len(t, permission.GetKeys(), 1)
+}
+
+func TestUpdateAccountPermissions_GRPC(t *testing.T) {
+	testUpdateAccountPermissions(t, newGRPCClient(t))
+}
+
+func TestUpdateAccountPermissions_HTTP(t *testing.T) {
+	testUpdateAccountPermissions(t, newHTTPClient(t))
+}
+
+func testUpdateAccountPermissions(t *testing.T, c *client.Client) {
+	t.Helper()
+	t.Cleanup(func() { _ = c.Close() })
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	t.Cleanup(cancel)
+	account, err := c.GetAccount(ctx, witnessAddress)
+	require.NoError(t, err)
+	// is_witness is what java-tron consults to allow a witness permission at
+	// all, and the HTTP account parser used to drop it while gRPC kept it.
+	require.True(t, account.GetIsWitness())
+	require.NotNil(t, account.GetOwnerPermission())
+	require.NotNil(t, account.GetWitnessPermission())
+	require.NotEmpty(t, account.GetActivePermission())
+
+	tx, err := c.UpdateAccountPermissions(ctx, client.AccountPermissionUpdateRequest{
+		Account: witnessAddress,
+		Owner:   account.GetOwnerPermission(),
+		Witness: account.GetWitnessPermission(),
+		Actives: account.GetActivePermission(),
+	})
+	require.NoError(t, err)
+	require.Equal(t, core.Transaction_Contract_AccountPermissionUpdateContract, tx.GetTransaction().GetRawData().GetContract()[0].GetType())
 }
 
 func TestGetAccountBalance_GRPC(t *testing.T) {

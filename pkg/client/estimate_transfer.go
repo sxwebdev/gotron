@@ -63,6 +63,13 @@ type SenderResources struct {
 // show what was paid for what. A zero field is a charge that does not apply, and
 // the reason it does not apply is readable from the estimate's Usage and
 // Available.
+//
+// One charge is deliberately absent: a transaction carrying more than one
+// signature burns getMultiSignFee (1 TRX on mainnet). java-tron charges it on
+// the signature count alone, not on the permission id, so one key signing under
+// an active permission pays nothing while a 2-of-N under the owner permission
+// pays it. The count depends on how the caller assembles signatures, which the
+// estimate cannot see, so multi-signing callers must add it themselves.
 type TransferCharges struct {
 	// Bandwidth is burned when neither pool covers the transaction on its own.
 	// It then pays for every byte of it, not for the shortfall. It is always

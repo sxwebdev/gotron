@@ -29,6 +29,12 @@ ErrInvalidResourceType      = errors.New("invalid resource type")
 // Account (file: account.go)
 ErrAccountNotFound          = errors.New("account not found")
 
+// Account permissions (file: account_permissions.go)
+ErrInvalidPermissionID     = errors.New("invalid permission id")
+ErrInvalidPermission       = errors.New("invalid permission")
+ErrPermissionNotFound      = errors.New("permission not found")
+ErrPermissionDenied        = errors.New("permission denied")
+
 // Transport (file: transport_http.go)
 ErrNodeRefusedRequest       = errors.New("node refused the request")
 
@@ -97,6 +103,19 @@ type Network string
 NetworkMainnet Network = "mainnet"
 NetworkShasta  Network = "shasta"
 NetworkNile    Network = "nile"
+```
+
+## Account Permission IDs
+
+**File:** `pkg/client/account_permissions.go`
+
+```go
+const (
+    OwnerPermissionID       int32 = 0
+    WitnessPermissionID     int32 = 1
+    FirstActivePermissionID int32 = 2
+    LastActivePermissionID  int32 = 9
+)
 ```
 
 ## Protocol Types
@@ -213,5 +232,6 @@ Key endpoints used by `HTTPTransport`:
 | GetContract                  | `/wallet/getcontract`                  |
 | DelegateResource             | `/wallet/delegateresource`             |
 | UnDelegateResource           | `/wallet/undelegateresource`           |
+| AccountPermissionUpdate      | `/wallet/accountpermissionupdate`      |
 | ListNodes                    | `/wallet/listnodes`                    |
 | GetChainParameters           | `/wallet/getchainparameters`           |

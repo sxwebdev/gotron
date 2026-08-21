@@ -6,6 +6,7 @@
 - [Package pkg/client](#package-pkgclient)
   - [Client construction](#client-construction)
   - [Account operations](#account-operations)
+  - [Account permission operations](#account-permission-operations)
   - [Activation operations](#activation-operations)
   - [Block operations](#block-operations)
   - [Transaction operations](#transaction-operations)
@@ -181,6 +182,46 @@ precise than the transfer estimator's: they compare against `AvailableForDelegat
 `Bandwidth` is `min(staked limit from FrozenV2, staked remaining + free remaining)`, so free
 bandwidth can make it report staked bandwidth the account does not have.
 
+### Account permission operations
+
+**File:** `account_permissions.go`
+
+```go
+const (
+    OwnerPermissionID       int32 = 0
+    WitnessPermissionID     int32 = 1
+    FirstActivePermissionID int32 = 2
+    LastActivePermissionID  int32 = 9
+)
+
+type PermissionKey struct {
+    Address string
+    Weight  int64
+}
+
+type AccountPermissionUpdateRequest struct {
+    Account string
+    Owner   *core.Permission
+    Witness *core.Permission
+    Actives []*core.Permission
+}
+
+func ContractOperations(types ...core.Transaction_Contract_ContractType) ([]byte, error)
+func PermissionAllows(permission *core.Permission, typ core.Transaction_Contract_ContractType) bool
+func NewOwnerPermission(name string, threshold int64, keys ...PermissionKey) (*core.Permission, error)
+func NewWitnessPermission(name string, threshold int64, key PermissionKey) (*core.Permission, error)
+func NewActivePermission(name string, threshold int64, operations []byte, keys ...PermissionKey) (*core.Permission, error)
+func (c *Client) GetAccountPermission(ctx context.Context, account string, permissionID int32) (*core.Permission, error)
+func (c *Client) ValidatePermissionSigner(ctx context.Context, account, signer string, permissionID int32, required ...core.Transaction_Contract_ContractType) error
+func (c *Client) UpdateAccountPermissions(ctx context.Context, req AccountPermissionUpdateRequest) (*api.TransactionExtention, error)
+func ValidatePermissionID(permissionID int32) error
+func SetPermissionID(tx *api.TransactionExtention, permissionID int32) error
+```
+
+`UpdateAccountPermissions` replaces the complete permission set atomically and returns an unsigned transaction. Copy every permission that must be preserved. `SetPermissionID` refreshes `TransactionExtention.Txid`; call it before signing, because it rejects a transaction that already contains signatures. Owner permission is `0`, active permissions are `2..9`, and witness permission `1` cannot sign transactions. For legacy accounts with no stored permission fields, `GetAccountPermission(..., 0)` returns java-tron's implicit default owner permission. Permission names are checked in UTF-16 code units to match java-tron. The node's dynamic `getTotalSignNum` parameter—not a fixed SDK constant—limits keys per permission. The operations bitmap filters transaction contract types only: allowing `TriggerSmartContract` does not constrain the target contract or ABI method.
+
+Two fees are attached to these paths and neither appears in any estimate. Broadcasting an `UpdateAccountPermissions` transaction burns `getUpdateAccountPermissionFee` (100 TRX on mainnet), charged even when the permission set is unchanged. Separately, a transaction carrying more than one signature burns `getMultiSignFee` (1 TRX on mainnet) — java-tron charges it on the signature count, not on the permission id, so a single key signing under an active permission pays nothing while a 2-of-N under the owner permission pays it. `TransferCharges` has no field for it; multi-signing callers add it themselves.
+
 ### Block operations
 
 **File:** `block.go`
@@ -205,7 +246,17 @@ func (c *Client) GetTransactionInfoByHash(ctx context.Context, hash string) (*co
 func (c *Client) GetTransactionExtensionByHash(ctx context.Context, hash string) (*api.TransactionExtention, *core.TransactionInfo, error)
 func (c *Client) BroadcastTransaction(ctx context.Context, tx *core.Transaction) (*api.Return, error)
 func (c *Client) SignTransaction(tx *core.Transaction, privateKey *ecdsa.PrivateKey) error
+func (c *Client) SignTransactionRaw(tx *core.Transaction, privateKey []byte) error
+func ValidatePrivateKeyRaw(privateKey []byte) error
+func AddressFromPrivateKeyRaw(privateKey []byte) (string, error)
 ```
+
+The three `Raw` entry points take a 32-byte secp256k1 key instead of an
+`*ecdsa.PrivateKey`, whose `big.Int` cannot be zeroed through the standard
+library. They keep the secret in the caller's slice and in one wipeable
+`secp256k1.PrivateKey`, so the caller can `clear()` it when done. Prefer
+`SignTransactionRaw` over `SignTransaction` whenever the key's lifetime in
+memory matters.
 
 **File:** `transfer.go`
 
@@ -817,6 +868,10 @@ ErrTransactionNotFound, ErrTransactionInfoNotFound
 
 // Resources
 ErrInvalidResourceType
+
+// Account permissions
+ErrInvalidPermissionID, ErrInvalidPermission
+ErrPermissionNotFound, ErrPermissionDenied
 
 // Contracts
 ErrContractCallFailed      // a constant call the VM refused, most often a revert

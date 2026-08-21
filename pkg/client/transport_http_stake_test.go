@@ -22,11 +22,22 @@ const liveFreezeResponse = `{"raw_data":{"ref_block_bytes":"cc02","ref_block_has
 
 // newStubTransport serves body for every request and records the last request body.
 func newStubTransport(t *testing.T, status int, body string) (*HTTPTransport, *map[string]any) {
+	return newStubTransportAtPath(t, "", status, body)
+}
+
+// newStubTransportAtPath also pins the endpoint, so an otherwise valid request
+// cannot hide a typo in an HTTP transport path.
+func newStubTransportAtPath(t *testing.T, expectedPath string, status int, body string) (*HTTPTransport, *map[string]any) {
 	t.Helper()
 
 	var lastReq map[string]any
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if expectedPath != "" && r.URL.Path != expectedPath {
+			t.Errorf("request path = %q, want %q", r.URL.Path, expectedPath)
+			http.NotFound(w, r)
+			return
+		}
 		raw, _ := io.ReadAll(r.Body)
 		lastReq = nil
 		_ = json.Unmarshal(raw, &lastReq)

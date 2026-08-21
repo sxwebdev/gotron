@@ -14,6 +14,7 @@ type fakeTransport struct {
 	getAccountResource      func(ctx context.Context, account *core.Account) (*api.AccountResourceMessage, error)
 	getAccountResourceMsg   func(ctx context.Context, account *core.Account) (*api.AccountResourceMessage, error)
 	createAccount           func(ctx context.Context, c *core.AccountCreateContract) (*api.TransactionExtention, error)
+	accountPermissionUpdate func(ctx context.Context, c *core.AccountPermissionUpdateContract) (*api.TransactionExtention, error)
 	createTransaction       func(ctx context.Context, c *core.TransferContract) (*api.TransactionExtention, error)
 	triggerContract         func(ctx context.Context, c *core.TriggerSmartContract) (*api.TransactionExtention, error)
 	triggerConstantContract func(ctx context.Context, c *core.TriggerSmartContract) (*api.TransactionExtention, error)
@@ -77,6 +78,13 @@ func (f *fakeTransport) GetAccountResourceMessage(ctx context.Context, account *
 func (f *fakeTransport) CreateAccount(ctx context.Context, c *core.AccountCreateContract) (*api.TransactionExtention, error) {
 	if f.createAccount != nil {
 		return f.createAccount(ctx, c)
+	}
+	return nil, nil
+}
+
+func (f *fakeTransport) AccountPermissionUpdate(ctx context.Context, c *core.AccountPermissionUpdateContract) (*api.TransactionExtention, error) {
+	if f.accountPermissionUpdate != nil {
+		return f.accountPermissionUpdate(ctx, c)
 	}
 	return nil, nil
 }

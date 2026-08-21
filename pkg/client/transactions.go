@@ -148,6 +148,24 @@ func ValidatePrivateKeyRaw(privateKey []byte) error {
 	return nil
 }
 
+// AddressFromPrivateKeyRaw derives the base58 Tron address for a raw 32-byte
+// secp256k1 private key without creating an ecdsa.PrivateKey. The temporary
+// scalar is wiped before return; the caller retains ownership of privateKey.
+func AddressFromPrivateKeyRaw(privateKey []byte) (string, error) {
+	if err := ValidatePrivateKeyRaw(privateKey); err != nil {
+		return "", err
+	}
+
+	var priv secp256k1.PrivateKey
+	priv.Key.SetByteSlice(privateKey)
+	defer priv.Zero()
+
+	pub := priv.PubKey().SerializeUncompressed()
+	digest := tronutils.Keccak256(pub[1:])
+
+	return tronutils.EncodeCheck(append([]byte{tronutils.TronBytePrefix}, digest[len(digest)-20:]...)), nil
+}
+
 // SignTransactionRaw signs a raw transaction with a raw 32-byte secp256k1
 // private key. It produces the same signature as SignTransaction and exists for
 // callers to whom the key's lifetime in memory matters.

@@ -24,6 +24,7 @@ type Transport interface {
     GetAccount(ctx context.Context, account *core.Account) (*core.Account, error)
     GetAccountResource(ctx context.Context, account *core.Account) (*api.AccountResourceMessage, error)
     CreateAccount(ctx context.Context, contract *core.AccountCreateContract) (*api.TransactionExtention, error)
+    AccountPermissionUpdate(ctx context.Context, contract *core.AccountPermissionUpdateContract) (*api.TransactionExtention, error)
 
     // Block
     GetNowBlock(ctx context.Context) (*api.BlockExtention, error)

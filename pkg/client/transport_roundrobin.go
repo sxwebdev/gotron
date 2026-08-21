@@ -53,6 +53,10 @@ func (t *RoundRobinTransport) CreateAccount(ctx context.Context, contract *core.
 	return t.next().CreateAccount(ctx, contract)
 }
 
+func (t *RoundRobinTransport) AccountPermissionUpdate(ctx context.Context, contract *core.AccountPermissionUpdateContract) (*api.TransactionExtention, error) {
+	return t.next().AccountPermissionUpdate(ctx, contract)
+}
+
 // Block operations
 
 func (t *RoundRobinTransport) GetNowBlock(ctx context.Context) (*api.BlockExtention, error) {

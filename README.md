@@ -21,6 +21,7 @@ A comprehensive Go SDK for the Tron blockchain. This library provides a complete
 - **Staking 2.0** - Stake/unstake TRX, withdraw unstaked funds, aggregated stake overview
 - **Voting & Rewards** - Vote for super representatives, claim voting rewards
 - **Account Operations** - Balance queries, account info, activation
+- **Account Permissions** - Build permission updates, validate active signers, select permission IDs
 - **Block & Transaction Queries** - Get blocks, transactions, and receipts
 - **Multi-Network Support** - Mainnet, Shasta testnet, Nile testnet
 - **Precision Arithmetic** - Uses `decimal.Decimal` for accurate calculations
@@ -246,6 +247,70 @@ reclaimTx, err := tron.ReclaimResource(
   gotron.SUN(1000_000_000), // 1000 TRX
 )
 ```
+
+### Use a Restricted Active Key
+
+An active key can authorize a transaction owned by another account. Set the
+permission id before signing; resources and balances are charged to the
+transaction's owner account, not to the active key address. Signing with one key
+under an active permission costs no extra fee; a transaction that ends up
+carrying more than one signature burns a flat `getMultiSignFee` (1 TRX on
+mainnet), which java-tron charges on the signature count and not on the
+permission id. The estimators cannot see how many keys will sign, so add that
+1 TRX yourself whenever you multi-sign.
+
+```go
+import (
+  "github.com/sxwebdev/gotron"
+  "github.com/sxwebdev/gotron/pkg/client"
+  "github.com/sxwebdev/gotron/schema/pb/core"
+)
+
+err := tron.ValidatePermissionSigner(
+  ctx,
+  "TSourceAccount",
+  "TActiveSigner",
+  3,
+  core.Transaction_Contract_DelegateResourceContract,
+  core.Transaction_Contract_UnDelegateResourceContract,
+)
+if err != nil {
+  log.Fatal(err)
+}
+
+tx, err := tron.DelegateResource(
+  ctx,
+  "TSourceAccount",
+  "TReceiverAddress",
+  client.ResourceTypeEnergy,
+  gotron.FromTRX(1),
+  false,
+  0,
+)
+if err != nil {
+  log.Fatal(err)
+}
+if err := client.SetPermissionID(tx, 3); err != nil {
+  log.Fatal(err)
+}
+// Sign tx.Transaction with TActiveSigner's private key, then broadcast.
+```
+
+Use `ContractOperations`, `NewOwnerPermission`, `NewWitnessPermission`, `NewActivePermission`, and
+`UpdateAccountPermissions` to build an unsigned complete-set permission update.
+That update replaces every permission atomically, so preserve all existing
+owner, witness, and active permissions that must remain. An operations bitmap
+can allow `TriggerSmartContract`, but cannot limit it to one contract or method.
+`SetPermissionID` also refreshes `TransactionExtention.Txid`; pass the complete
+unsigned extension, not only its embedded transaction. It rejects transactions
+that already contain signatures. Legacy accounts whose permission fields are
+absent still expose java-tron's implicit owner permission `0`. The node enforces
+the current dynamic `getTotalSignNum` limit on keys per permission.
+
+Broadcasting that update burns `getUpdateAccountPermissionFee`, **100 TRX on
+mainnet**, charged whether or not the permissions actually changed. It is by far
+the largest fee this SDK can trigger, so fund and review the update before
+signing it.
 
 ### Stake & Unstake (Stake 2.0)
 
@@ -765,6 +830,12 @@ if errors.Is(err, client.ErrAccountNotFound) {
 // - client.ErrTransactionNotFound
 // - client.ErrInvalidResourceType
 // - client.ErrContractCallFailed — a constant call the VM refused (usually a revert)
+// - client.ErrInvalidPermissionID — outside [0,9], or witness permission 1 asked to sign
+// - client.ErrInvalidPermission — a malformed permission, or one whose type a node reported
+//   as a name this SDK does not know
+// - client.ErrPermissionNotFound — the account has no permission with that id
+// - client.ErrPermissionDenied — the signer holds no key in the permission, is below its
+//   threshold, or the permission does not allow that contract type
 //
 // Structured errors, matched with errors.As:
 // - *client.ContractValidateError — the node refused to build the transaction because

@@ -69,6 +69,10 @@ func (m *mockTransport) CreateAccount(context.Context, *core.AccountCreateContra
 	return nil, m.err
 }
 
+func (m *mockTransport) AccountPermissionUpdate(context.Context, *core.AccountPermissionUpdateContract) (*api.TransactionExtention, error) {
+	return nil, m.err
+}
+
 func (m *mockTransport) GetBlockByNum(context.Context, int64) (*api.BlockExtention, error) {
 	return nil, m.err
 }

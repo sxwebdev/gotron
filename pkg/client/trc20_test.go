@@ -141,7 +141,7 @@ func TestTRC20ApproveAllowsZeroFeeLimit(t *testing.T) {
 	c := newTestClient(&fakeTransport{
 		triggerContract: func(_ context.Context, ct *core.TriggerSmartContract) (*api.TransactionExtention, error) {
 			data = ct.Data
-			return &api.TransactionExtention{}, nil
+			return &api.TransactionExtention{Transaction: &core.Transaction{RawData: &core.TransactionRaw{}}}, nil
 		},
 	})
 

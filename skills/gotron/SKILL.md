@@ -6,7 +6,8 @@ description: >
   adding new RPC methods, writing integration tests, working with the Transport interface (gRPC,
   HTTP, round-robin), tier-based fallback, health checking, HealthAwareTransport, HealthConfig,
   ErrNoHealthyNodes, NodeConfig.Tier, TRC20 token operations, address generation (BIP39/BIP44),
-  resource delegation (bandwidth/energy), Prometheus metrics (MetricsCollector), or any file
+  resource delegation (bandwidth/energy), account permissions and active signing keys,
+  Prometheus metrics (MetricsCollector), or any file
   importing gotron packages. Also triggers when the user mentions Tron blockchain, TRX, SUN, TRC20,
   USDT on Tron, or TronGrid.
 user-invocable: true
@@ -121,6 +122,21 @@ Use `pkg/address` for generation/validation:
 - `address.FromMnemonic(mnemonic, passphrase, index)` — BIP44 derivation (path: `m/44'/195'/0'/0/index`)
 - `address.FromPrivateKey(hex)` — import existing key
 - `address.Validate(addr)` — validate base58 format
+- `client.AddressFromPrivateKeyRaw(raw)` — derive a signer address from
+  short-lived 32-byte key material through a wipeable secp256k1 object; the
+  caller-owned slice is not changed
+
+### Working with account permissions
+
+Permission helpers live in `pkg/client/account_permissions.go`:
+
+- `GetAccountPermission` and `ValidatePermissionSigner` inspect an owner/active permission before a service accepts a signing key. Permission `0` falls back to java-tron's implicit default owner for legacy accounts whose permission fields are absent.
+- `ContractOperations` builds Tron's 32-byte contract-type bitmap; the bitmap cannot restrict a `TriggerSmartContract` permission to one contract address or ABI method.
+- `NewOwnerPermission`, `NewActivePermission`, and `UpdateAccountPermissions` build an unsigned, complete-set `AccountPermissionUpdateContract`. Preserve every owner/witness/active permission that must survive the update.
+- `SetPermissionID` accepts an unsigned `*api.TransactionExtention`, stamps every contract, and refreshes `Txid`; it rejects an extension that already contains signatures. Transaction permission `0` is owner, `2..9` are active, and witness permission `1` cannot authorize transactions.
+- Use `NewWitnessPermission` for SR witness permissions. Permission names are limited in Java UTF-16 code units, and the node enforces its dynamic `getTotalSignNum` key-count limit.
+
+An active signer may submit a transaction whose contract `owner_address` is a different account. Resources and balances belong to that owner account; the active key is authorization only.
 
 ### Working with TRC20 tokens
 

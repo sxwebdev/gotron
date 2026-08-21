@@ -44,6 +44,15 @@ func TestCheckTransactionAcceptsWhatTheNodeBuilt(t *testing.T) {
 	require.ErrorIs(t, err, ErrInvalidTransaction)
 	var cve *ContractValidateError
 	require.False(t, errors.As(err, &cve))
+
+	err = checkTransaction(&api.TransactionExtention{Result: &api.Return{Result: true}})
+	require.ErrorIs(t, err, ErrInvalidTransaction)
+
+	err = checkTransaction(&api.TransactionExtention{
+		Transaction: &core.Transaction{},
+		Result:      &api.Return{Result: true, Code: api.Return_SUCCESS},
+	})
+	require.ErrorIs(t, err, ErrInvalidTransaction)
 }
 
 func TestContractValidateErrorMessage(t *testing.T) {

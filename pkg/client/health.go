@@ -455,6 +455,16 @@ func (h *HealthAwareTransport) CreateAccount(ctx context.Context, contract *core
 	return res, callErr
 }
 
+func (h *HealthAwareTransport) AccountPermissionUpdate(ctx context.Context, contract *core.AccountPermissionUpdateContract) (*api.TransactionExtention, error) {
+	n, err := h.next()
+	if err != nil {
+		return nil, err
+	}
+	res, callErr := n.transport.AccountPermissionUpdate(ctx, contract)
+	h.recordOutcome(n, callErr)
+	return res, callErr
+}
+
 // Block operations
 
 func (h *HealthAwareTransport) GetNowBlock(ctx context.Context) (*api.BlockExtention, error) {

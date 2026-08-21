@@ -248,5 +248,8 @@ func checkTransaction(tx *api.TransactionExtention) error {
 			Message: string(tx.GetResult().GetMessage()),
 		}
 	}
+	if tx.GetTransaction() == nil || tx.GetTransaction().GetRawData() == nil {
+		return ErrInvalidTransaction
+	}
 	return nil
 }

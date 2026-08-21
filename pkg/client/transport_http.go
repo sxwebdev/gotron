@@ -661,8 +661,10 @@ type httpAccount struct {
 	LatestConsumeFreeTime int64                `json:"latest_consume_free_time"`
 	NetWindowSize         int64                `json:"net_window_size"`
 	NetWindowOptimized    bool                 `json:"net_window_optimized"`
+	IsWitness             bool                 `json:"is_witness"`
 	AccountResource       *httpAccountResource `json:"account_resource"`
 	OwnerPermission       *httpPermission      `json:"owner_permission"`
+	WitnessPermission     *httpPermission      `json:"witness_permission"`
 	ActivePermission      []httpPermission     `json:"active_permission"`
 	FrozenV2              []httpFreezeV2       `json:"frozenV2"`
 	UnfrozenV2            []httpUnFreezeV2     `json:"unfrozenV2"`
@@ -714,8 +716,21 @@ func (p httpPermission) toProto() (*core.Permission, error) {
 		return nil, fmt.Errorf("decode permission operations %q: %w", p.Operations, err)
 	}
 
+	// Tron omits "type" for the owner permission because Owner is the protobuf
+	// zero value. Every other value must resolve: a map miss would silently
+	// become Owner, which PermissionAllows treats as authorizing everything.
+	permissionType := core.Permission_Owner
+	if p.Type != "" {
+		value, ok := core.Permission_PermissionType_value[p.Type]
+		if !ok {
+			return nil, fmt.Errorf("%w: unknown permission type %q", ErrInvalidPermission, p.Type)
+		}
+
+		permissionType = core.Permission_PermissionType(value)
+	}
+
 	out := &core.Permission{
-		Type:           core.Permission_PermissionType(core.Permission_PermissionType_value[p.Type]),
+		Type:           permissionType,
 		Id:             p.ID,
 		PermissionName: p.PermissionName,
 		Threshold:      p.Threshold,
@@ -806,6 +821,7 @@ func (t *HTTPTransport) GetAccount(ctx context.Context, account *core.Account) (
 		LatestConsumeFreeTime: httpAcc.LatestConsumeFreeTime,
 		NetWindowSize:         httpAcc.NetWindowSize,
 		NetWindowOptimized:    httpAcc.NetWindowOptimized,
+		IsWitness:             httpAcc.IsWitness,
 		AssetOptimized:        httpAcc.AssetOptimized,
 		AssetV2:               assetMap(httpAcc.AssetV2),
 		FreeAssetNetUsageV2:   assetMap(httpAcc.FreeAssetNetUsageV2),
@@ -834,6 +850,15 @@ func (t *HTTPTransport) GetAccount(ctx context.Context, account *core.Account) (
 		}
 
 		result.OwnerPermission = owner
+	}
+
+	if httpAcc.WitnessPermission != nil {
+		witness, err := httpAcc.WitnessPermission.toProto()
+		if err != nil {
+			return nil, t.wrapErr("/wallet/getaccount", err)
+		}
+
+		result.WitnessPermission = witness
 	}
 
 	for _, item := range httpAcc.ActivePermission {
@@ -931,6 +956,57 @@ func (t *HTTPTransport) CreateAccount(ctx context.Context, contract *core.Accoun
 	}
 
 	return t.doTxRequest(ctx, "/wallet/createaccount", reqBody)
+}
+
+type httpPermissionKeyRequest struct {
+	Address string `json:"address"`
+	Weight  int64  `json:"weight"`
+}
+
+type httpPermissionRequest struct {
+	Type           int32                      `json:"type"`
+	ID             int32                      `json:"id,omitempty"`
+	PermissionName string                     `json:"permission_name"`
+	Threshold      int64                      `json:"threshold"`
+	ParentID       int32                      `json:"parent_id,omitempty"`
+	Operations     string                     `json:"operations,omitempty"`
+	Keys           []httpPermissionKeyRequest `json:"keys"`
+}
+
+func permissionRequest(p *core.Permission) httpPermissionRequest {
+	keys := make([]httpPermissionKeyRequest, 0, len(p.GetKeys()))
+	for _, key := range p.GetKeys() {
+		keys = append(keys, httpPermissionKeyRequest{
+			Address: tronutils.EncodeCheck(key.GetAddress()),
+			Weight:  key.GetWeight(),
+		})
+	}
+	return httpPermissionRequest{
+		Type:           int32(p.GetType()),
+		ID:             p.GetId(),
+		PermissionName: p.GetPermissionName(),
+		Threshold:      p.GetThreshold(),
+		ParentID:       p.GetParentId(),
+		Operations:     hex.EncodeToString(p.GetOperations()),
+		Keys:           keys,
+	}
+}
+
+func (t *HTTPTransport) AccountPermissionUpdate(ctx context.Context, contract *core.AccountPermissionUpdateContract) (*api.TransactionExtention, error) {
+	actives := make([]httpPermissionRequest, 0, len(contract.GetActives()))
+	for _, permission := range contract.GetActives() {
+		actives = append(actives, permissionRequest(permission))
+	}
+	reqBody := map[string]any{
+		"owner_address": tronutils.EncodeCheck(contract.GetOwnerAddress()),
+		"owner":         permissionRequest(contract.GetOwner()),
+		"actives":       actives,
+		"visible":       true,
+	}
+	if contract.GetWitness() != nil {
+		reqBody["witness"] = permissionRequest(contract.GetWitness())
+	}
+	return t.doTxRequest(ctx, "/wallet/accountpermissionupdate", reqBody)
 }
 
 // Block operations

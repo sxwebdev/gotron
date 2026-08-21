@@ -185,14 +185,13 @@ func (c *Client) triggerContract(ctx context.Context, ct *core.TriggerSmartContr
 		return nil, err
 	}
 
-	if tx.GetResult().GetCode() > 0 {
-		return nil, fmt.Errorf("%s", string(tx.GetResult().GetMessage()))
+	// Shared with the other tx-building paths so that the same refusal from the
+	// same node is the same error type here as it is for a deployment.
+	if err := checkTransaction(tx); err != nil {
+		return nil, err
 	}
 
 	if feeLimit > 0 {
-		if tx.GetTransaction().GetRawData() == nil {
-			return nil, ErrInvalidTransaction
-		}
 		tx.Transaction.RawData.FeeLimit = feeLimit
 		// update hash
 		err = c.UpdateHash(tx)
@@ -338,9 +337,7 @@ func (c *Client) DeployContract(ctx context.Context, req DeployContractRequest) 
 	}
 
 	if req.FeeLimit > 0 {
-		if tx.GetTransaction().GetRawData() == nil {
-			return nil, ErrInvalidTransaction
-		}
+		// checkTransaction above already refused a nil RawData.
 		tx.Transaction.RawData.FeeLimit = req.FeeLimit.Int64()
 		// The fee limit is part of raw_data, so it changes the txID - and with
 		// it the contract's address, which is derived from that txID.
