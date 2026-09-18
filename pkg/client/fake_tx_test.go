@@ -1,12 +1,15 @@
 package client
 
 import (
+	"crypto/sha256"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
 	"github.com/sxwebdev/gotron/pkg/tronutils"
 	"github.com/sxwebdev/gotron/schema/pb/core"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestCreateFakeCreateAccountTransaction(t *testing.T) {
@@ -139,4 +142,27 @@ func TestEstimateBandwidth(t *testing.T) {
 	require.NoError(t, err)
 	// proto.Size + 64 overhead, must be a sane positive number.
 	require.True(t, bw.GreaterThan(decimal.NewFromInt(64)), "got %s", bw)
+}
+
+func TestEstimateBandwidthMatchesARealSignature(t *testing.T) {
+	tx, err := CreateFakeCreateAccountTransaction(testAddr, testAddr2)
+	require.NoError(t, err)
+
+	rawData, err := proto.Marshal(tx.GetRawData())
+	require.NoError(t, err)
+	digest := sha256.Sum256(rawData)
+	key, err := crypto.GenerateKey()
+	require.NoError(t, err)
+	signature, err := crypto.Sign(digest[:], key)
+	require.NoError(t, err)
+	require.Len(t, signature, crypto.SignatureLength)
+
+	signed := proto.CloneOf(tx)
+	signed.Ret = nil
+	signed.Signature = append(signed.Signature, signature)
+	want := decimal.NewFromInt(int64(proto.Size(signed) + 64))
+
+	got, err := new(Client).EstimateBandwidth(tx)
+	require.NoError(t, err)
+	require.True(t, got.Equal(want), "EstimateBandwidth() = %s, want %s", got, want)
 }

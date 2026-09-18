@@ -32,6 +32,14 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      - name: Test pure-Go bandwidth estimation
+        # Release consumers commonly build with CGO disabled. Keep the
+        # throwaway signature used for transaction sizing compatible with that
+        # mode even though the main race build below enables CGO.
+        env:
+          CGO_ENABLED: 0
+        run: go test ./pkg/client -run '^TestEstimateBandwidth' -count=1
+
       - name: Test (race + coverage)
         # Gate coverage on the deterministic unit packages only. pkg/client and
         # tests/ are excluded: their tests hit live Tron nodes (non-deterministic

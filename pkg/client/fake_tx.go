@@ -1,11 +1,8 @@
 package client
 
 import (
-	"crypto/sha256"
 	"time"
 
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/sxwebdev/gotron/pkg/tronutils"
 	"github.com/sxwebdev/gotron/schema/pb/core"
 	"google.golang.org/protobuf/proto"
@@ -218,28 +215,13 @@ func CreateFakeWithdrawUnstakedTransaction(ownerAddress string) (*core.Transacti
 func fillFakeTX(tx *core.Transaction) error {
 	tx.Ret = nil
 
-	rawData, err := proto.Marshal(tx.GetRawData())
-	if err != nil {
-		return err
-	}
-
-	h256h := sha256.New()
-	_, err = h256h.Write(rawData)
-	if err != nil {
-		return err
-	}
-
-	pk, err := secp256k1.GeneratePrivateKey()
-	if err != nil {
-		return err
-	}
-
-	signature, err := crypto.Sign(h256h.Sum(nil), pk.ToECDSA())
-	if err != nil {
-		return err
-	}
-
-	tx.Signature = append(tx.Signature, signature)
+	// Bandwidth depends on the serialized signature length, not its contents.
+	// A real signature here used to make estimates fail in pure-Go builds:
+	// decred's and go-ethereum's secp256k1 curve adapters are mathematically the
+	// same curve but have different Go types, which crypto.Sign rejects when
+	// CGO is disabled. The transaction is never validated or broadcast, so a
+	// fixed-size placeholder is both sufficient and deterministic.
+	tx.Signature = append(tx.Signature, make([]byte, 65))
 
 	return nil
 }
