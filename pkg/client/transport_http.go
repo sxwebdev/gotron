@@ -1913,10 +1913,37 @@ func (t *HTTPTransport) GetAssetIssueListByName(ctx context.Context, name []byte
 
 // Network operations
 
+// ListNodes decodes /wallet/listnodes with encoding/json. The node sends each
+// peer host as hex, and protojson reads a bytes field as base64: hex digits are
+// all base64 characters, so every host decoded into binary garbage with no
+// error, and for a third of them (length not a multiple of four) base64 also
+// dropped trailing bits, so the address could not even be recovered afterwards.
 func (t *HTTPTransport) ListNodes(ctx context.Context) (*api.NodeList, error) {
-	result := &api.NodeList{}
-	if err := t.doRequest(ctx, "/wallet/listnodes", nil, result); err != nil {
+	var resp struct {
+		Nodes []struct {
+			Address *struct {
+				Host string `json:"host"`
+				Port int32  `json:"port"`
+			} `json:"address"`
+		} `json:"nodes"`
+	}
+	if err := t.fetchJSON(ctx, "/wallet/listnodes", nil, &resp); err != nil {
 		return nil, err
+	}
+
+	result := &api.NodeList{Nodes: make([]*api.Node, 0, len(resp.Nodes))}
+	for _, n := range resp.Nodes {
+		node := &api.Node{}
+		if n.Address != nil {
+			host, err := hex.DecodeString(n.Address.Host)
+			if err != nil {
+				return nil, fmt.Errorf("decode node host %q: %w", n.Address.Host, err)
+			}
+
+			node.Address = &api.Address{Host: host, Port: n.Address.Port}
+		}
+
+		result.Nodes = append(result.Nodes, node)
 	}
 
 	return result, nil

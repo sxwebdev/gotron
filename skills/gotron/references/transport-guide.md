@@ -275,6 +275,11 @@ reached the caller as an opaque protojson error instead of a `BroadcastError` ca
   `httpAssetIssue` lists the fields in `core.AssetIssueContract`'s own declaration order so a
   missing one is visible side by side; `TestHTTPAssetIssueCarriesEveryProtoField` walks the message
   via protoreflect and fails naming any field that did not survive the conversion.
+- `ListNodes` — `/wallet/listnodes` sends each peer `address.host` as **hex** of the IP string, and
+  through protojson it decoded as base64 into binary garbage with no error. For hosts whose hex
+  length is not a multiple of four base64 also dropped trailing bits, so the address could not be
+  recovered from the garbage either. It goes through `fetchJSON` and `hex.DecodeString`, which
+  refuses a non-hex host; `{}` (listnodes disabled) is an empty list.
 
 **HTTP endpoints map to `/wallet/<methodname>` paths** — with two exceptions that are camelCase and
 return HTTP 405 in lowercase: **`/wallet/getReward`** and **`/wallet/getBrokerage`**.
