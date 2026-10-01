@@ -1,0 +1,615 @@
+{
+ "entrys": [
+  {
+   "constant": true,
+   "name": "name",
+   "outputs": [
+    {
+     "type": "string"
+    }
+   ],
+   "type": "Function",
+   "stateMutability": "View"
+  },
+  {
+   "constant": true,
+   "name": "deprecated",
+   "outputs": [
+    {
+     "type": "bool"
+    }
+   ],
+   "type": "Function",
+   "stateMutability": "View"
+  },
+  {
+   "name": "addBlackList",
+   "inputs": [
+    {
+     "name": "_evilUser",
+     "type": "address"
+    }
+   ],
+   "type": "Function",
+   "stateMutability": "Nonpayable"
+  },
+  {
+   "constant": true,
+   "name": "upgradedAddress",
+   "outputs": [
+    {
+     "type": "address"
+    }
+   ],
+   "type": "Function",
+   "stateMutability": "View"
+  },
+  {
+   "constant": true,
+   "name": "decimals",
+   "outputs": [
+    {
+     "type": "uint8"
+    }
+   ],
+   "type": "Function",
+   "stateMutability": "View"
+  },
+  {
+   "constant": true,
+   "name": "maximumFee",
+   "outputs": [
+    {
+     "type": "uint256"
+    }
+   ],
+   "type": "Function",
+   "stateMutability": "View"
+  },
+  {
+   "constant": true,
+   "name": "_totalSupply",
+   "outputs": [
+    {
+     "type": "uint256"
+    }
+   ],
+   "type": "Function",
+   "stateMutability": "View"
+  },
+  {
+   "name": "unpause",
+   "type": "Function",
+   "stateMutability": "Nonpayable"
+  },
+  {
+   "constant": true,
+   "name": "getBlackListStatus",
+   "inputs": [
+    {
+     "name": "_maker",
+     "type": "address"
+    }
+   ],
+   "outputs": [
+    {
+     "type": "bool"
+    }
+   ],
+   "type": "Function",
+   "stateMutability": "View"
+  },
+  {
+   "constant": true,
+   "name": "paused",
+   "outputs": [
+    {
+     "type": "bool"
+    }
+   ],
+   "type": "Function",
+   "stateMutability": "View"
+  },
+  {
+   "constant": true,
+   "name": "calcFee",
+   "inputs": [
+    {
+     "name": "_value",
+     "type": "uint256"
+    }
+   ],
+   "outputs": [
+    {
+     "type": "uint256"
+    }
+   ],
+   "type": "Function",
+   "stateMutability": "View"
+  },
+  {
+   "name": "pause",
+   "type": "Function",
+   "stateMutability": "Nonpayable"
+  },
+  {
+   "constant": true,
+   "name": "owner",
+   "outputs": [
+    {
+     "type": "address"
+    }
+   ],
+   "type": "Function",
+   "stateMutability": "View"
+  },
+  {
+   "constant": true,
+   "name": "symbol",
+   "outputs": [
+    {
+     "type": "string"
+    }
+   ],
+   "type": "Function",
+   "stateMutability": "View"
+  },
+  {
+   "name": "setParams",
+   "inputs": [
+    {
+     "name": "newBasisPoints",
+     "type": "uint256"
+    },
+    {
+     "name": "newMaxFee",
+     "type": "uint256"
+    }
+   ],
+   "type": "Function",
+   "stateMutability": "Nonpayable"
+  },
+  {
+   "constant": true,
+   "name": "basisPointsRate",
+   "outputs": [
+    {
+     "type": "uint256"
+    }
+   ],
+   "type": "Function",
+   "stateMutability": "View"
+  },
+  {
+   "constant": true,
+   "name": "isBlackListed",
+   "inputs": [
+    {
+     "type": "address"
+    }
+   ],
+   "outputs": [
+    {
+     "type": "bool"
+    }
+   ],
+   "type": "Function",
+   "stateMutability": "View"
+  },
+  {
+   "name": "removeBlackList",
+   "inputs": [
+    {
+     "name": "_clearedUser",
+     "type": "address"
+    }
+   ],
+   "type": "Function",
+   "stateMutability": "Nonpayable"
+  },
+  {
+   "constant": true,
+   "name": "MAX_UINT",
+   "outputs": [
+    {
+     "type": "uint256"
+    }
+   ],
+   "type": "Function",
+   "stateMutability": "View"
+  },
+  {
+   "name": "transferOwnership",
+   "inputs": [
+    {
+     "name": "newOwner",
+     "type": "address"
+    }
+   ],
+   "type": "Function",
+   "stateMutability": "Nonpayable"
+  },
+  {
+   "inputs": [
+    {
+     "name": "_initialSupply",
+     "type": "uint256"
+    },
+    {
+     "name": "_name",
+     "type": "string"
+    },
+    {
+     "name": "_symbol",
+     "type": "string"
+    },
+    {
+     "name": "_decimals",
+     "type": "uint8"
+    }
+   ],
+   "type": "Constructor",
+   "stateMutability": "Nonpayable"
+  },
+  {
+   "name": "DestroyedBlackFunds",
+   "inputs": [
+    {
+     "indexed": true,
+     "name": "_blackListedUser",
+     "type": "address"
+    },
+    {
+     "name": "_balance",
+     "type": "uint256"
+    }
+   ],
+   "type": "Event"
+  },
+  {
+   "name": "Issue",
+   "inputs": [
+    {
+     "name": "amount",
+     "type": "uint256"
+    }
+   ],
+   "type": "Event"
+  },
+  {
+   "name": "Redeem",
+   "inputs": [
+    {
+     "name": "amount",
+     "type": "uint256"
+    }
+   ],
+   "type": "Event"
+  },
+  {
+   "name": "Deprecate",
+   "inputs": [
+    {
+     "name": "newAddress",
+     "type": "address"
+    }
+   ],
+   "type": "Event"
+  },
+  {
+   "name": "AddedBlackList",
+   "inputs": [
+    {
+     "indexed": true,
+     "name": "_user",
+     "type": "address"
+    }
+   ],
+   "type": "Event"
+  },
+  {
+   "name": "RemovedBlackList",
+   "inputs": [
+    {
+     "indexed": true,
+     "name": "_user",
+     "type": "address"
+    }
+   ],
+   "type": "Event"
+  },
+  {
+   "name": "Params",
+   "inputs": [
+    {
+     "name": "feeBasisPoints",
+     "type": "uint256"
+    },
+    {
+     "name": "maxFee",
+     "type": "uint256"
+    }
+   ],
+   "type": "Event"
+  },
+  {
+   "name": "Pause",
+   "type": "Event"
+  },
+  {
+   "name": "Unpause",
+   "type": "Event"
+  },
+  {
+   "name": "OwnershipTransferred",
+   "inputs": [
+    {
+     "indexed": true,
+     "name": "previousOwner",
+     "type": "address"
+    },
+    {
+     "indexed": true,
+     "name": "newOwner",
+     "type": "address"
+    }
+   ],
+   "type": "Event"
+  },
+  {
+   "name": "Approval",
+   "inputs": [
+    {
+     "indexed": true,
+     "name": "owner",
+     "type": "address"
+    },
+    {
+     "indexed": true,
+     "name": "spender",
+     "type": "address"
+    },
+    {
+     "name": "value",
+     "type": "uint256"
+    }
+   ],
+   "type": "Event"
+  },
+  {
+   "name": "Transfer",
+   "inputs": [
+    {
+     "indexed": true,
+     "name": "from",
+     "type": "address"
+    },
+    {
+     "indexed": true,
+     "name": "to",
+     "type": "address"
+    },
+    {
+     "name": "value",
+     "type": "uint256"
+    }
+   ],
+   "type": "Event"
+  },
+  {
+   "name": "transfer",
+   "inputs": [
+    {
+     "name": "_to",
+     "type": "address"
+    },
+    {
+     "name": "_value",
+     "type": "uint256"
+    }
+   ],
+   "outputs": [
+    {
+     "type": "bool"
+    }
+   ],
+   "type": "Function",
+   "stateMutability": "Nonpayable"
+  },
+  {
+   "name": "transferFrom",
+   "inputs": [
+    {
+     "name": "_from",
+     "type": "address"
+    },
+    {
+     "name": "_to",
+     "type": "address"
+    },
+    {
+     "name": "_value",
+     "type": "uint256"
+    }
+   ],
+   "outputs": [
+    {
+     "type": "bool"
+    }
+   ],
+   "type": "Function",
+   "stateMutability": "Nonpayable"
+  },
+  {
+   "constant": true,
+   "name": "balanceOf",
+   "inputs": [
+    {
+     "name": "who",
+     "type": "address"
+    }
+   ],
+   "outputs": [
+    {
+     "type": "uint256"
+    }
+   ],
+   "type": "Function",
+   "stateMutability": "View"
+  },
+  {
+   "constant": true,
+   "name": "oldBalanceOf",
+   "inputs": [
+    {
+     "name": "who",
+     "type": "address"
+    }
+   ],
+   "outputs": [
+    {
+     "type": "uint256"
+    }
+   ],
+   "type": "Function",
+   "stateMutability": "View"
+  },
+  {
+   "name": "approve",
+   "inputs": [
+    {
+     "name": "_spender",
+     "type": "address"
+    },
+    {
+     "name": "_value",
+     "type": "uint256"
+    }
+   ],
+   "outputs": [
+    {
+     "type": "bool"
+    }
+   ],
+   "type": "Function",
+   "stateMutability": "Nonpayable"
+  },
+  {
+   "name": "increaseApproval",
+   "inputs": [
+    {
+     "name": "_spender",
+     "type": "address"
+    },
+    {
+     "name": "_addedValue",
+     "type": "uint256"
+    }
+   ],
+   "outputs": [
+    {
+     "type": "bool"
+    }
+   ],
+   "type": "Function",
+   "stateMutability": "Nonpayable"
+  },
+  {
+   "name": "decreaseApproval",
+   "inputs": [
+    {
+     "name": "_spender",
+     "type": "address"
+    },
+    {
+     "name": "_subtractedValue",
+     "type": "uint256"
+    }
+   ],
+   "outputs": [
+    {
+     "type": "bool"
+    }
+   ],
+   "type": "Function",
+   "stateMutability": "Nonpayable"
+  },
+  {
+   "constant": true,
+   "name": "allowance",
+   "inputs": [
+    {
+     "name": "_owner",
+     "type": "address"
+    },
+    {
+     "name": "_spender",
+     "type": "address"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "remaining",
+     "type": "uint256"
+    }
+   ],
+   "type": "Function",
+   "stateMutability": "View"
+  },
+  {
+   "name": "deprecate",
+   "inputs": [
+    {
+     "name": "_upgradedAddress",
+     "type": "address"
+    }
+   ],
+   "type": "Function",
+   "stateMutability": "Nonpayable"
+  },
+  {
+   "constant": true,
+   "name": "totalSupply",
+   "outputs": [
+    {
+     "type": "uint256"
+    }
+   ],
+   "type": "Function",
+   "stateMutability": "View"
+  },
+  {
+   "name": "issue",
+   "inputs": [
+    {
+     "name": "amount",
+     "type": "uint256"
+    }
+   ],
+   "type": "Function",
+   "stateMutability": "Nonpayable"
+  },
+  {
+   "name": "redeem",
+   "inputs": [
+    {
+     "name": "amount",
+     "type": "uint256"
+    }
+   ],
+   "type": "Function",
+   "stateMutability": "Nonpayable"
+  },
+  {
+   "name": "destroyBlackFunds",
+   "inputs": [
+    {
+     "name": "_blackListedUser",
+     "type": "address"
+    }
+   ],
+   "type": "Function",
+   "stateMutability": "Nonpayable"
+  }
+ ]
+}

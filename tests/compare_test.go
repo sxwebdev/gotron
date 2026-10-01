@@ -1,8 +1,8 @@
 package tests
 
 import (
-	"bytes"
 	"context"
+	"encoding/hex"
 	"testing"
 	"time"
 
@@ -91,6 +91,12 @@ func TestCompare_AccountBalance(t *testing.T) {
 	t.Logf("gRPC balance: %s, HTTP balance: %s", grpcBalance, httpBalance)
 }
 
+// The comparisons below are of whole messages. Historical mainnet data does not
+// change, so anything short of proto.Equal is a decoding difference - the
+// earlier field-by-field versions compared counts and types only, and passed
+// for as long as HTTP returned every transaction with an empty contract
+// parameter, every receipt with a mis-decoded id, and every signature as noise.
+
 func TestCompare_BlockByNum(t *testing.T) {
 	grpcClient := newGRPCClient(t)
 	defer func() { _ = grpcClient.Close() }()
@@ -101,55 +107,20 @@ func TestCompare_BlockByNum(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Get block from both transports
-	grpcBlock, err := grpcClient.GetBlockByHeight(ctx, testBlockNum)
+	num := recentBlockNum(t)
+	grpcBlock, err := grpcClient.GetBlockByHeight(ctx, num)
 	require.NoError(t, err)
-	require.NotNil(t, grpcBlock)
 
-	httpBlock, err := httpClient.GetBlockByHeight(ctx, testBlockNum)
+	httpBlock, err := httpClient.GetBlockByHeight(ctx, num)
 	require.NoError(t, err)
-	require.NotNil(t, httpBlock)
 
-	grpcTxs := grpcBlock.GetTransactions()
-	httpTxs := httpBlock.GetTransactions()
+	require.NotEmpty(t, grpcBlock.GetTransactions())
+	requireProtoEqual(t, grpcBlock, httpBlock)
 
-	t.Logf("gRPC block has %d transactions", len(grpcTxs))
-	t.Logf("HTTP block has %d transactions", len(httpTxs))
-
-	require.Equal(t, len(grpcTxs), len(httpTxs), "Transaction count mismatch")
-
-	// Compare each transaction
-	mismatchCount := 0
-	for i := range grpcTxs {
-		grpcTx := grpcTxs[i]
-		httpTx := httpTxs[i]
-
-		grpcContracts := grpcTx.GetTransaction().GetRawData().GetContract()
-		httpContracts := httpTx.GetTransaction().GetRawData().GetContract()
-
-		if len(grpcContracts) != len(httpContracts) {
-			mismatchCount++
-			if mismatchCount <= 3 { // Only log first 3 mismatches
-				t.Logf("TX %d: gRPC contracts=%d, HTTP contracts=%d", i, len(grpcContracts), len(httpContracts))
-				t.Logf("  gRPC txid: %x", grpcTx.GetTxid())
-				t.Logf("  HTTP txid: %x", httpTx.GetTxid())
-
-				if len(grpcContracts) > 0 {
-					t.Logf("  gRPC contract[0] type: %v", grpcContracts[0].GetType())
-				}
-				if len(httpContracts) > 0 {
-					t.Logf("  HTTP contract[0] type: %v", httpContracts[0].GetType())
-				}
-			}
-		}
-	}
-
-	if mismatchCount > 0 {
-		t.Errorf("Total %d transactions have contract count mismatch", mismatchCount)
-	}
+	t.Logf("Block %d with %d transactions matches between gRPC and HTTP", num, len(grpcBlock.GetTransactions()))
 }
 
-func TestCompare_BlockTransactionDetails(t *testing.T) {
+func TestCompare_BlockByHash(t *testing.T) {
 	grpcClient := newGRPCClient(t)
 	defer func() { _ = grpcClient.Close() }()
 
@@ -159,50 +130,17 @@ func TestCompare_BlockTransactionDetails(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Get block from both transports
-	grpcBlock, err := grpcClient.GetBlockByHeight(ctx, testBlockNum)
+	ext, err := grpcClient.GetBlockByHeight(ctx, recentBlockNum(t))
 	require.NoError(t, err)
 
-	httpBlock, err := httpClient.GetBlockByHeight(ctx, testBlockNum)
+	grpcBlock, err := grpcClient.GetBlockByHash(ctx, ext.GetBlockid())
 	require.NoError(t, err)
 
-	grpcTxs := grpcBlock.GetTransactions()
-	httpTxs := httpBlock.GetTransactions()
+	httpBlock, err := httpClient.GetBlockByHash(ctx, ext.GetBlockid())
+	require.NoError(t, err)
 
-	require.Equal(t, len(grpcTxs), len(httpTxs), "Transaction count mismatch")
-
-	// Compare transaction details
-	for i := range grpcTxs {
-		grpcTx := grpcTxs[i]
-		httpTx := httpTxs[i]
-
-		// Compare txid
-		assert.Equal(t, grpcTx.GetTxid(), httpTx.GetTxid(), "TX %d: txid mismatch", i)
-
-		// Compare contract types
-		grpcContracts := grpcTx.GetTransaction().GetRawData().GetContract()
-		httpContracts := httpTx.GetTransaction().GetRawData().GetContract()
-
-		require.Equal(t, len(grpcContracts), len(httpContracts), "TX %d: contract count mismatch", i)
-
-		for j := range grpcContracts {
-			assert.Equal(t, grpcContracts[j].GetType(), httpContracts[j].GetType(),
-				"TX %d, Contract %d: type mismatch", i, j)
-
-			// Compare parameter type_url
-			assert.Equal(t,
-				grpcContracts[j].GetParameter().GetTypeUrl(),
-				httpContracts[j].GetParameter().GetTypeUrl(),
-				"TX %d, Contract %d: parameter type_url mismatch", i, j)
-		}
-
-		// Compare signatures count
-		grpcSigs := grpcTx.GetTransaction().GetSignature()
-		httpSigs := httpTx.GetTransaction().GetSignature()
-		assert.Equal(t, len(grpcSigs), len(httpSigs), "TX %d: signature count mismatch", i)
-	}
-
-	t.Logf("All %d transactions match between gRPC and HTTP", len(grpcTxs))
+	require.NotEmpty(t, grpcBlock.GetTransactions())
+	requireProtoEqual(t, grpcBlock, httpBlock)
 }
 
 func TestCompare_TransactionInfoByBlockNum(t *testing.T) {
@@ -215,46 +153,51 @@ func TestCompare_TransactionInfoByBlockNum(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Get transaction info from both transports
-	grpcTxInfo, err := grpcClient.GetTransactionInfoByBlockNum(ctx, testBlockNum)
+	num := recentBlockNum(t)
+	grpcTxInfo, err := grpcClient.GetTransactionInfoByBlockNum(ctx, num)
 	require.NoError(t, err)
 
-	httpTxInfo, err := httpClient.GetTransactionInfoByBlockNum(ctx, testBlockNum)
+	httpTxInfo, err := httpClient.GetTransactionInfoByBlockNum(ctx, num)
 	require.NoError(t, err)
 
-	grpcInfos := grpcTxInfo.GetTransactionInfo()
-	httpInfos := httpTxInfo.GetTransactionInfo()
+	require.NotEmpty(t, grpcTxInfo.GetTransactionInfo())
+	requireProtoEqual(t, grpcTxInfo, httpTxInfo)
 
-	require.Equal(t, len(grpcInfos), len(httpInfos), "TransactionInfo count mismatch")
+	t.Logf("All %d transaction infos match between gRPC and HTTP", len(grpcTxInfo.GetTransactionInfo()))
+}
 
-	// Compare transaction info details
-	for i := range grpcInfos {
-		grpcInfo := grpcInfos[i]
-		httpInfo := httpInfos[i]
+// TestCompare_TransactionByHash reads a sample of the block's transactions
+// and receipts one by one - the path a caller watching a payment takes.
+func TestCompare_TransactionByHash(t *testing.T) {
+	grpcClient := newGRPCClient(t)
+	defer func() { _ = grpcClient.Close() }()
 
-		// Compare basic fields
-		assert.Equal(t, grpcInfo.GetBlockNumber(), httpInfo.GetBlockNumber(),
-			"TX %d: blockNumber mismatch", i)
-		assert.Equal(t, grpcInfo.GetBlockTimeStamp(), httpInfo.GetBlockTimeStamp(),
-			"TX %d: blockTimeStamp mismatch", i)
-		assert.Equal(t, grpcInfo.GetFee(), httpInfo.GetFee(),
-			"TX %d: fee mismatch", i)
+	httpClient := newHTTPClient(t)
+	defer func() { _ = httpClient.Close() }()
 
-		// Compare transaction ID
-		if !bytes.Equal(grpcInfo.GetId(), httpInfo.GetId()) {
-			t.Errorf("TX %d: id mismatch: gRPC=%x, HTTP=%x", i, grpcInfo.GetId(), httpInfo.GetId())
-		}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
 
-		// Compare contract result count
-		assert.Equal(t, len(grpcInfo.GetContractResult()), len(httpInfo.GetContractResult()),
-			"TX %d: contractResult count mismatch", i)
+	block, err := grpcClient.GetBlockByHeight(ctx, recentBlockNum(t))
+	require.NoError(t, err)
+	txs := block.GetTransactions()
+	require.NotEmpty(t, txs)
 
-		// Compare logs count
-		assert.Equal(t, len(grpcInfo.GetLog()), len(httpInfo.GetLog()),
-			"TX %d: log count mismatch", i)
+	for i := 0; i < len(txs); i += max(1, len(txs)/10) {
+		hash := hex.EncodeToString(txs[i].GetTxid())
+
+		grpcTx, err := grpcClient.GetTransactionByHash(ctx, hash)
+		require.NoError(t, err)
+		httpTx, err := httpClient.GetTransactionByHash(ctx, hash)
+		require.NoError(t, err)
+		requireProtoEqual(t, grpcTx, httpTx, "transaction %s", hash)
+
+		grpcInfo, err := grpcClient.GetTransactionInfoByHash(ctx, hash)
+		require.NoError(t, err)
+		httpInfo, err := httpClient.GetTransactionInfoByHash(ctx, hash)
+		require.NoError(t, err)
+		requireProtoEqual(t, grpcInfo, httpInfo, "receipt %s", hash)
 	}
-
-	t.Logf("All %d transaction infos match between gRPC and HTTP", len(grpcInfos))
 }
 
 func TestCompare_Contract(t *testing.T) {
@@ -273,58 +216,13 @@ func TestCompare_Contract(t *testing.T) {
 	httpContract, err := httpClient.GetContract(ctx, usdtContract)
 	require.NoError(t, err)
 
-	assert.Equal(t, grpcContract.GetName(), httpContract.GetName(), "Contract name mismatch")
-	assert.Equal(t, grpcContract.GetConsumeUserResourcePercent(), httpContract.GetConsumeUserResourcePercent(),
-		"ConsumeUserResourcePercent mismatch")
-	assert.Equal(t, grpcContract.GetOriginEnergyLimit(), httpContract.GetOriginEnergyLimit(),
-		"OriginEnergyLimit mismatch")
-
-	// The byte fields are the ones that actually went wrong: HTTP handed hex
-	// straight to protojson, which base64-decoded it, so a 21-byte address came
-	// back as 31 bytes and no error. Comparing only the scalars above let that
-	// through for as long as it existed.
-	assert.Equal(t, grpcContract.GetOriginAddress(), httpContract.GetOriginAddress(),
-		"OriginAddress mismatch - this decides who pays a call's energy")
-	assert.Equal(t, grpcContract.GetContractAddress(), httpContract.GetContractAddress(),
-		"ContractAddress mismatch")
-	assert.Equal(t, grpcContract.GetBytecode(), httpContract.GetBytecode(), "Bytecode mismatch")
-	assert.Equal(t, grpcContract.GetCodeHash(), httpContract.GetCodeHash(), "CodeHash mismatch")
-
-	// And it really is an address, not merely the same on both sides.
+	// Every field, the ABI included. origin_address decides who pays a call's
+	// energy, and it really is an address, not merely the same on both sides.
 	require.Len(t, grpcContract.GetOriginAddress(), 21)
+	require.NotEmpty(t, grpcContract.GetAbi().GetEntrys())
+	requireProtoEqual(t, grpcContract, httpContract)
 
 	t.Logf("Contract %s matches between gRPC and HTTP", grpcContract.GetName())
-}
-
-func TestCompare_ContractABI(t *testing.T) {
-	grpcClient := newGRPCClient(t)
-	defer func() { _ = grpcClient.Close() }()
-
-	httpClient := newHTTPClient(t)
-	defer func() { _ = httpClient.Close() }()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	grpcABI, err := grpcClient.GetContractABI(ctx, usdtContract)
-	require.NoError(t, err)
-
-	httpABI, err := httpClient.GetContractABI(ctx, usdtContract)
-	require.NoError(t, err)
-
-	grpcEntries := grpcABI.GetEntrys()
-	httpEntries := httpABI.GetEntrys()
-
-	require.Equal(t, len(grpcEntries), len(httpEntries), "ABI entry count mismatch")
-
-	for i := range grpcEntries {
-		assert.Equal(t, grpcEntries[i].GetName(), httpEntries[i].GetName(),
-			"ABI entry %d: name mismatch", i)
-		assert.Equal(t, grpcEntries[i].GetType(), httpEntries[i].GetType(),
-			"ABI entry %d: type mismatch", i)
-	}
-
-	t.Logf("Contract ABI with %d entries matches between gRPC and HTTP", len(grpcEntries))
 }
 
 func TestCompare_AssetIssue(t *testing.T) {

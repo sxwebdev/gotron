@@ -63,7 +63,7 @@ func TestHTTPDecodingPathsSurfaceNodeRefusal(t *testing.T) {
 		call     func(*HTTPTransport) error
 	}{
 		{
-			// doBlockRequest
+			// fetchBlock
 			name:     "block by num",
 			endpoint: "/wallet/getblockbynum",
 			body:     refusalBadInteger,
@@ -74,7 +74,7 @@ func TestHTTPDecodingPathsSurfaceNodeRefusal(t *testing.T) {
 			},
 		},
 		{
-			// doBlockListRequest
+			// fetchBlockList
 			name:     "block list",
 			endpoint: "/wallet/getblockbylimitnext",
 			body:     refusalBadInteger,
@@ -85,7 +85,7 @@ func TestHTTPDecodingPathsSurfaceNodeRefusal(t *testing.T) {
 			},
 		},
 		{
-			// doRequestTransformed
+			// fetchTron
 			name:     "contract",
 			endpoint: "/wallet/getcontract",
 			body:     refusalInvalidHex,
@@ -96,9 +96,7 @@ func TestHTTPDecodingPathsSurfaceNodeRefusal(t *testing.T) {
 			},
 		},
 		{
-			// doRequest, which still backs a dozen endpoints - the asset reads
-			// this case used to name have since moved to fetchJSON, which the
-			// "reward" case below already covers.
+			// fetchTron, for a transaction rebuilt from raw_data_hex
 			name:     "transaction by id",
 			endpoint: "/wallet/gettransactionbyid",
 			body:     refusalInvalidHex,

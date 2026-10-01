@@ -2,6 +2,7 @@ package gotron_test
 
 import (
 	"os"
+	"path/filepath"
 	"regexp"
 	"testing"
 
@@ -52,7 +53,13 @@ var documentedTronutilsAPI = map[string]any{
 func TestDocsReferenceRealAPI(t *testing.T) {
 	t.Parallel()
 
-	docFiles := []string{"README.md", "doc.go", "skills/gotron/references/api-surface.md"}
+	docFiles := []string{"README.md", "doc.go"}
+	for _, pattern := range []string{"docs/*.md", "skills/gotron/*.md", "skills/gotron/references/*.md"} {
+		matches, err := filepath.Glob(pattern)
+		require.NoError(t, err)
+		require.NotEmpty(t, matches, "no documentation matches %s", pattern)
+		docFiles = append(docFiles, matches...)
+	}
 
 	pkgs := []struct {
 		name  string

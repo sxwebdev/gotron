@@ -268,7 +268,7 @@ func TestHTTPConstantCallOmitsAnEmptyContractAddress(t *testing.T) {
 	require.Equal(t, int64(2021), tx.GetEnergyUsed())
 
 	require.NotContains(t, *lastReq, "contract_address")
-	require.Equal(t, triggerOwnerAddr, (*lastReq)["owner_address"])
+	require.Equal(t, hex.EncodeToString(owner), (*lastReq)["owner_address"])
 	require.Equal(t, hex.EncodeToString(code), (*lastReq)["data"])
 }
 
@@ -288,7 +288,7 @@ func TestHTTPConstantCallKeepsARealContractAddress(t *testing.T) {
 		Data:            []byte{0x01},
 	})
 	require.NoError(t, err)
-	require.Equal(t, triggerContractAddr, (*lastReq)["contract_address"])
+	require.Equal(t, hex.EncodeToString(contractAddr), (*lastReq)["contract_address"])
 }
 
 func TestHTTPEstimateEnergyOmitsAnEmptyContractAddress(t *testing.T) {

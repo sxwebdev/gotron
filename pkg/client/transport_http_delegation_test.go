@@ -10,24 +10,27 @@ import (
 )
 
 // The two accounts of a real Nile delegation, and the node's own answers for
-// it. Every address in them is base58 because the request sets visible=true.
+// it. Every address in them is hex because the request leaves "visible" unset.
 const (
 	delegationOwner    = "TDsCgUWZkyBLEEJXP2B1X81bASueT1Uqtf"
 	delegationReceiver = "TMHy1fRsYsD4gCgTZbysd9yH9AQFQnTZQS"
 
-	liveDelegationIndex = `{"account": "TDsCgUWZkyBLEEJXP2B1X81bASueT1Uqtf","toAccounts": ["TMHy1fRsYsD4gCgTZbysd9yH9AQFQnTZQS"]}`
+	delegationOwnerHex    = "412abdbd69f79bce26e342ee3e8cadc51c12e5ffc7"
+	delegationReceiverHex = "417c359be6488615f660c834735f26e14dbbc1b3e0"
 
-	liveDelegationRecord = `{"delegatedResource": [{"from": "TDsCgUWZkyBLEEJXP2B1X81bASueT1Uqtf",` +
-		`"to": "TMHy1fRsYsD4gCgTZbysd9yH9AQFQnTZQS","frozen_balance_for_bandwidth": 308593660,` +
+	liveDelegationIndex = `{"account": "412abdbd69f79bce26e342ee3e8cadc51c12e5ffc7","toAccounts": ["417c359be6488615f660c834735f26e14dbbc1b3e0"]}`
+
+	liveDelegationRecord = `{"delegatedResource": [{"from": "412abdbd69f79bce26e342ee3e8cadc51c12e5ffc7",` +
+		`"to": "417c359be6488615f660c834735f26e14dbbc1b3e0","frozen_balance_for_bandwidth": 308593660,` +
 		`"frozen_balance_for_energy": 677377195,"expire_time_for_energy": 1785353340000}]}`
 )
 
-// A base58 address is made only of base64 characters, so protojson decodes one
-// into 24 bytes of a different account without reporting anything. The index
+// A hex address is made only of base64 characters, so protojson decodes one
+// into 31 bytes of a different account without reporting anything. The index
 // then names a receiver that does not exist, the record lookup for it comes
 // back empty, and an account with a live delegation is reported as lending
 // nothing at all - while the same read over gRPC returns it.
-func TestHTTPDelegationIndexV2DecodesBase58Addresses(t *testing.T) {
+func TestHTTPDelegationIndexV2DecodesHexAddresses(t *testing.T) {
 	tr := newRoutedTransport(t, map[string]string{
 		"/wallet/getdelegatedresourceaccountindexv2": liveDelegationIndex,
 	})
@@ -43,7 +46,7 @@ func TestHTTPDelegationIndexV2DecodesBase58Addresses(t *testing.T) {
 	require.Equal(t, delegationReceiver, tronutils.EncodeCheck(index.GetToAccounts()[0]))
 }
 
-func TestHTTPDelegatedResourceV2DecodesBase58Addresses(t *testing.T) {
+func TestHTTPDelegatedResourceV2DecodesHexAddresses(t *testing.T) {
 	tr := newRoutedTransport(t, map[string]string{
 		"/wallet/getdelegatedresourcev2": liveDelegationRecord,
 	})
@@ -138,11 +141,11 @@ func TestHTTPDelegationSurfacesNodeRefusal(t *testing.T) {
 	})
 }
 
-// Both delegation responses are hand-copied field by field, so a field added
-// by a future `make genproto` would stay permanently zero over HTTP with no
-// error and no failing test - which for a delegation reads as "nothing is
-// locked" or "nothing was lent out". Every field non-zero here, so an omission
-// cannot hide behind a legitimate zero.
+// Every field of both delegation messages has to survive decoding: a field
+// left zero reads as "nothing is locked" or "nothing was lent out". Every field
+// is non-zero here, so an omission cannot hide behind a legitimate zero - and a
+// field added by a future `make genproto` that the decoder mishandles fails
+// here, naming the field.
 func TestHTTPDelegationCarriesEveryProtoField(t *testing.T) {
 	owner, err := tronutils.DecodeCheck(delegationOwner)
 	require.NoError(t, err)
@@ -150,11 +153,11 @@ func TestHTTPDelegationCarriesEveryProtoField(t *testing.T) {
 	require.NoError(t, err)
 
 	tr := newRoutedTransport(t, map[string]string{
-		"/wallet/getdelegatedresourcev2": `{"delegatedResource":[{"from":"` + delegationOwner + `",` +
-			`"to":"` + delegationReceiver + `","frozen_balance_for_bandwidth":1,"frozen_balance_for_energy":1,` +
+		"/wallet/getdelegatedresourcev2": `{"delegatedResource":[{"from":"` + delegationOwnerHex + `",` +
+			`"to":"` + delegationReceiverHex + `","frozen_balance_for_bandwidth":1,"frozen_balance_for_energy":1,` +
 			`"expire_time_for_bandwidth":1,"expire_time_for_energy":1}]}`,
-		"/wallet/getdelegatedresourceaccountindexv2": `{"account":"` + delegationOwner + `",` +
-			`"fromAccounts":["` + delegationReceiver + `"],"toAccounts":["` + delegationReceiver + `"],` +
+		"/wallet/getdelegatedresourceaccountindexv2": `{"account":"` + delegationOwnerHex + `",` +
+			`"fromAccounts":["` + delegationReceiverHex + `"],"toAccounts":["` + delegationReceiverHex + `"],` +
 			`"timestamp":1}`,
 	})
 
@@ -193,12 +196,12 @@ func requireEveryFieldSet(t *testing.T, msg proto.Message) {
 // one names an account that simply does not exist.
 func TestHTTPDelegationRejectsMalformedAddresses(t *testing.T) {
 	tr := newRoutedTransport(t, map[string]string{
-		"/wallet/getdelegatedresourceaccountindexv2": `{"account":"TDsCgUWZkyBLEEJXP2B1X81bASueT1Uqtf","toAccounts":["not-an-address"]}`,
+		"/wallet/getdelegatedresourceaccountindexv2": `{"account":"412abdbd69f79bce26e342ee3e8cadc51c12e5ffc7","toAccounts":["not-an-address"]}`,
 	})
 
 	owner, err := tronutils.DecodeCheck(delegationOwner)
 	require.NoError(t, err)
 
 	_, err = tr.GetDelegatedResourceAccountIndexV2(t.Context(), owner)
-	require.ErrorIs(t, err, ErrInvalidAddress)
+	require.ErrorContains(t, err, "DelegatedResourceAccountIndex.toAccounts")
 }

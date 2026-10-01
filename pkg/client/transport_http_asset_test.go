@@ -107,8 +107,8 @@ func TestHTTPAssetIssueEmptyAnswer(t *testing.T) {
 	require.Empty(t, list.GetAssetIssue())
 }
 
-// Every field the proto declares has to be carried over. One left out of
-// toProto reads as zero, which for an asset means a supply of nothing or a
+// Every field the proto declares has to be carried over. One the decoder
+// leaves out reads as zero, which for an asset means a supply of nothing or a
 // frozen period that ended - and no other test would notice, because a value
 // that is never set looks exactly like a value the node did not send.
 func TestHTTPAssetIssueCarriesEveryProtoField(t *testing.T) {
@@ -132,5 +132,5 @@ func TestHTTPAssetIssueRejectsMalformedHex(t *testing.T) {
 	tr, _ := newStubTransport(t, http.StatusOK, `{"id":"1002000","name":"zz"}`)
 
 	_, err := tr.GetAssetIssueById(t.Context(), []byte("1002000"))
-	require.ErrorContains(t, err, "decode name")
+	require.ErrorContains(t, err, "AssetIssueContract.name")
 }

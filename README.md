@@ -870,11 +870,31 @@ for i := uint32(0); i < 10; i++ {
 }
 ```
 
+## Documentation
+
+- [pkg.go.dev](https://pkg.go.dev/github.com/sxwebdev/gotron) — API reference.
+- [Agent skill](skills/gotron/SKILL.md) — integration guide: connecting, typed amounts, the
+  build → sign → broadcast → confirm cycle, recipes, error handling, transport differences
+  ([full API](skills/gotron/references/api-surface.md), [errors and constants](skills/gotron/references/constants.md)).
+
+For contributors — how the library works inside:
+
+- [Architecture](docs/architecture.md) — layers, client wiring, error internals, design rules.
+- [Transport layer](docs/transport.md) — gRPC/HTTP/health-aware/metrics transports, how java-tron's
+  HTTP JSON is decoded, the remaining gRPC/HTTP differences, adding an RPC method.
+- [Testing](docs/testing.md) — unit, public-node and local private-network tests.
+
 ## Testing
 
 ```bash
-go test ./...
+go test ./pkg/...                          # unit tests, no network
+go test ./tests/...                        # integration tests against public Tron nodes
+
+make localnet-up && make test-local        # write paths and gRPC/HTTP parity on a local
+make localnet-down                         # single-witness java-tron (Docker)
 ```
+
+See [docs/testing.md](docs/testing.md) for details.
 
 ## License
 

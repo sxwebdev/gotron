@@ -1,304 +1,335 @@
 ---
 name: gotron
 description: >
-  Gotron is a Go SDK for the Tron blockchain (github.com/sxwebdev/gotron). Use this skill whenever
-  working in the gotron codebase — editing pkg/client, pkg/address, pkg/tronutils, or tests/,
-  adding new RPC methods, writing integration tests, working with the Transport interface (gRPC,
-  HTTP, round-robin), tier-based fallback, health checking, HealthAwareTransport, HealthConfig,
-  ErrNoHealthyNodes, NodeConfig.Tier, TRC20 token operations, address generation (BIP39/BIP44),
-  resource delegation (bandwidth/energy), account permissions and active signing keys,
-  Prometheus metrics (MetricsCollector), or any file
-  importing gotron packages. Also triggers when the user mentions Tron blockchain, TRX, SUN, TRC20,
-  USDT on Tron, or TronGrid.
+  How to integrate github.com/sxwebdev/gotron, the Go SDK for the Tron blockchain, into an
+  application: connecting to nodes (gRPC or HTTP, TronGrid API keys, failover tiers, health checks,
+  Prometheus metrics), generating and validating addresses, sending TRX and TRC20 tokens (USDT),
+  signing and broadcasting, waiting for confirmation, estimating fees and fee limits, Stake 2.0,
+  energy/bandwidth delegation, voting and rewards, multisig/active permissions, and deploying or
+  calling smart contracts. Use this skill whenever Go code imports gotron
+  (`github.com/sxwebdev/gotron`, `pkg/client`, `pkg/address`, `pkg/units`, `pkg/client/abi`) or the
+  user wants Go code that talks to Tron — TRX, SUN, TRC20, USDT on Tron, TronGrid, energy,
+  bandwidth, staking, a Tron wallet or payment-processing backend — even if gotron is not named.
 user-invocable: true
 ---
 
-# Gotron SDK
+# Integrating gotron
 
-## Overview
+gotron is a Go client for Tron nodes. It speaks gRPC or HTTP to one or many nodes, routes around
+unhealthy ones, and exposes a typed API: base58 address strings, amounts whose unit is part of the
+type, and unsigned transactions that you sign and broadcast yourself.
 
-Gotron is a comprehensive Go client for the Tron blockchain. It supports dual transport (gRPC and HTTP REST), round-robin load balancing across multiple nodes, optional Prometheus metrics, TRC20 token operations, address generation via BIP39/BIP44, and resource delegation (bandwidth/energy).
+This skill is for **using** the library. If you are changing gotron itself, read `docs/` in the
+repository instead (`docs/architecture.md`, `docs/transport.md`, `docs/testing.md`).
 
-The SDK follows a layered architecture:
+Read the reference files when you need detail beyond the recipes here:
 
-1. **Top layer** — `tron.go` (package `gotron`): thin wrapper exposing `Tron` struct that embeds `*client.Client`
-2. **Client layer** — `pkg/client/`: main API surface with all blockchain operations
-3. **Transport layer** — pluggable `Transport` interface with gRPC, HTTP, RoundRobin, and Metrics implementations
-4. **Utility layers** — `pkg/address/`, `pkg/tronutils/`, `pkg/units/`
-5. **Schema layer** — `schema/pb/` generated protobuf types
+- `references/api-surface.md` — every public type and method, with the chain behaviour behind
+  fees, delegation and contract calls. Look a signature up there before guessing it.
+- `references/constants.md` — sentinel errors, error types, enums, permission ids, metric names.
 
-## Architecture
+## Install
 
-### Transport chain
-
-Default chain (health-checking enabled):
-
-```
-Client.transport
-  -> MetricsTransport (optional, wraps next)
-    -> HealthAwareTransport (default; tier-based fallback + per-node health)
-      -> GRPCTransport | HTTPTransport (per node)
+```bash
+go get github.com/sxwebdev/gotron@latest
 ```
 
-Legacy chain (`cfg.Health.Disabled = true`):
+Packages you will import:
 
-```
-Client.transport
-  -> MetricsTransport (optional)
-    -> RoundRobinTransport (atomic counter, no health)
-      -> GRPCTransport | HTTPTransport (per node)
-```
+| Package                                                          | For                                                                            |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `github.com/sxwebdev/gotron/pkg/client`                          | the client: every chain operation, `Config`, errors, `SUN`, `TokenAmount`      |
+| `github.com/sxwebdev/gotron/pkg/address`                         | key generation, mnemonics, address validation                                  |
+| `github.com/sxwebdev/gotron/pkg/client/abi`                      | ABI loading and encoding for contract calls and deployments                    |
+| `github.com/sxwebdev/gotron/schema/pb/core`, `.../schema/pb/api` | protobuf types in results (`core.TransactionInfo`, `api.TransactionExtention`) |
+| `github.com/sxwebdev/gotron`                                     | optional thin wrapper: `gotron.New`, aliases `gotron.SUN`, `gotron.Energy`, …  |
 
-`client.New(cfg)` builds the chain automatically:
-
-- Creates one `GRPCTransport` or `HTTPTransport` per `NodeConfig`
-- Wraps all in `HealthAwareTransport` (default) or `RoundRobinTransport` (when `cfg.Health.Disabled`)
-- If `cfg.Metrics != nil`, wraps in `MetricsTransport`
-
-### Transport interface
-
-Defined in `pkg/client/transport.go`. Every new RPC method must be added to **all 6 transport files**:
-
-1. `Transport` interface (`transport.go`)
-2. `GRPCTransport` (`transport_grpc.go`)
-3. `HTTPTransport` (`transport_http.go`)
-4. `RoundRobinTransport` (`transport_roundrobin.go`) — kept as a public helper for legacy usage
-5. `HealthAwareTransport` (`health.go`) — default in the production stack
-6. `MetricsTransport` (`transport_metrics.go`)
-
-See `references/transport-guide.md` for the full interface and implementation patterns.
-
-### Error handling
-
-- Sentinel errors in `pkg/client/errors.go`: `ErrInvalidConfig`, `ErrNotConnected`, `ErrInvalidAddress`, `ErrTransactionNotFound`, etc.
-- `TransportError` struct wraps RPC errors with `Host`, `Protocol`, `Method` fields. Extract with `errors.AsType[*TransportError](err)` (Go 1.26+).
-- gRPC errors are wrapped via `transportErrorInterceptor`; HTTP errors via `HTTPTransport.wrapErr`.
-
-### Key conventions
-
-- Amounts are typed, never bare numbers: every TRX-denominated value is a `SUN` (1 TRX = 1,000,000 SUN) and every TRC20 amount is a `TokenAmount` in the token's own minimal units. The unit is part of the signature, so the compiler rejects the mix-up
-- Convert only at the edges — `FromTRX` / `SUN.TRX()`, `FromTokenDecimal` / `FromTokenUnits` / `TokenAmount.Decimal(decimals)`. Those constructors are the single place that rejects unrepresentable values, so per-method overflow guards are neither needed nor wanted
-- Resource units (energy, bandwidth) and percentages stay plain `decimal.Decimal` / `int64` — they are not money
-- All operations are stateless and context-driven
-- Addresses are base58-encoded strings at the Client API level, decoded to `[]byte` before passing to Transport
-- Config struct (not functional options) for client construction
-- No automatic retry on a single request — but failed network-level calls count toward the per-node failure threshold; the next request goes to the next healthy node automatically
-- `HealthAwareTransport` is the default; it manages per-node health, tier-based fallback, and a background probe loop. Set `cfg.Health.Disabled = true` to fall back to the legacy plain `RoundRobinTransport`
-
-## Instructions
-
-### Adding a new client method
-
-1. Add the low-level RPC to the `Transport` interface in `pkg/client/transport.go`
-2. Implement in `GRPCTransport` — call the appropriate `walletClient` method
-3. Implement in `HTTPTransport` — use `doRequest`, `doRequestTransformed`, or `doRequestRaw` depending on response format:
-   - `doRequest` — standard protojson-compatible responses
-   - `doRequestTransformed` — responses with Tron's non-standard Any types (needs hex->base64, field normalization)
-   - `doBlockRequest` — block responses where transactions need wrapping into `TransactionExtention`
-   - `doRequestRaw` — when you need custom parsing (e.g., `GetAccount`, `TriggerConstantContract`)
-4. Implement in `RoundRobinTransport` — delegate to `t.next().MethodName(ctx, ...)`
-5. Implement in `HealthAwareTransport` — pick a node via `h.next()`, call its method, then `h.recordOutcome(n, callErr)`
-6. Implement in `MetricsTransport` — wrap with timing: `start := time.Now()` ... `t.after("MethodName", start, err)`
-7. Add the high-level client method in the appropriate file under `pkg/client/` (e.g., `account.go`, `block.go`, `trc20.go`)
-8. Write integration tests in `tests/` with both `_GRPC` and `_HTTP` suffixed test functions
-
-### Writing tests
-
-- Tests live in `tests/` package (separate from `pkg/client`)
-- Use helpers from `tests/common_test.go`: `newGRPCClient(t)`, `newHTTPClient(t)`, `newMultiNodeClient(t)`
-- Use `testify/require` for assertions
-- Always test both protocols: `TestMethodName_GRPC` and `TestMethodName_HTTP`
-- Use 10-second context timeout: `ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)`
-- Known test data: address `TZ4UXDV5ZhNW7fb2AMSbgfAEZ7hWsnYS2g` (Binance), USDT `TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t`, block `79831098`
-- Public nodes: gRPC `tron-grpc.publicnode.com:443` (TLS), HTTP `https://tron-rpc.publicnode.com`
-
-See `references/testing-patterns.md` for complete test patterns.
-
-### Working with addresses
-
-Use `pkg/address` for generation/validation:
-
-- `address.Generate()` — random address
-- `address.FromMnemonic(mnemonic, passphrase, index)` — BIP44 derivation (path: `m/44'/195'/0'/0/index`)
-- `address.FromPrivateKey(hex)` — import existing key
-- `address.Validate(addr)` — validate base58 format
-- `client.AddressFromPrivateKeyRaw(raw)` — derive a signer address from
-  short-lived 32-byte key material through a wipeable secp256k1 object; the
-  caller-owned slice is not changed
-
-### Working with account permissions
-
-Permission helpers live in `pkg/client/account_permissions.go`:
-
-- `GetAccountPermission` and `ValidatePermissionSigner` inspect an owner/active permission before a service accepts a signing key. Permission `0` falls back to java-tron's implicit default owner for legacy accounts whose permission fields are absent.
-- `ContractOperations` builds Tron's 32-byte contract-type bitmap; the bitmap cannot restrict a `TriggerSmartContract` permission to one contract address or ABI method.
-- `NewOwnerPermission`, `NewActivePermission`, and `UpdateAccountPermissions` build an unsigned, complete-set `AccountPermissionUpdateContract`. Preserve every owner/witness/active permission that must survive the update.
-- `SetPermissionID` accepts an unsigned `*api.TransactionExtention`, stamps every contract, and refreshes `Txid`; it rejects an extension that already contains signatures. Transaction permission `0` is owner, `2..9` are active, and witness permission `1` cannot authorize transactions.
-- Use `NewWitnessPermission` for SR witness permissions. Permission names are limited in Java UTF-16 code units, and the node enforces its dynamic `getTotalSignNum` key-count limit.
-
-An active signer may submit a transaction whose contract `owner_address` is a different account. Resources and balances belong to that owner account; the active key is authorization only.
-
-### Working with TRC20 tokens
-
-All TRC20 methods are in `pkg/client/trc20.go`. The low-level `TRC20Call` method handles ABI encoding. Higher-level methods:
-
-- `TRC20GetName`, `TRC20GetSymbol`, `TRC20GetDecimals` — read-only (constant=true)
-- `TRC20ContractBalance` — balance query
-- `TRC20Send` — transfer tokens (requires signing + broadcast)
-- `TRC20Approve`, `TRC20TransferFrom` — approval flow
-
-### Deploying and calling contracts
-
-All in `pkg/client/contract.go`; every write method returns an **unsigned** transaction, so sign with `SignTransaction` and send with `BroadcastTransaction`.
-
-- **Deploy:** `DeployContract(ctx, DeployContractRequest{...})`. Build the `ABI` field with `abi.LoadContractABI` — it takes solc's top-level array *or* Tron's `{"entrys":[…]}` envelope, neither of which `protojson` can parse (an array has no message to unmarshal into, and solc's lowercase `"function"`/`"nonpayable"` do not match the capitalised proto enums). Put constructor arguments in `ConstructorParams` in the `abi` jsonString form; Tron has no field for them, so they are ABI-encoded and appended to the bytecode, and appending them yourself as well encodes them twice. Set `FeeLimit` — the node's default is usually too low to finish a deployment.
-- **Contract address:** `DeployedContractAddress(tx)` derives it locally as `keccak256(txID ‖ owner)` (low 20 bytes, `0x41` prefix), so it is known before broadcasting. Read it **after** the last `raw_data` edit — the fee limit is inside `raw_data` and changes the txID, hence the address. Pinned in tests against USDT and `TQuCVz7…` and their real creation transactions.
-- **Price it first:** `EstimateDeployContract(ctx, req)` takes the same request and returns an `EstimateTransferResult`. A deployment whose fee limit is too low is still mined and charged for — only the receipt says `OUT_OF_ENERGY` — so this is the one operation where guessing costs real money. The energy comes from a constant call with an **empty contract address**, which is how java-tron runs a deployment; `EstimateEnergy` needs `vm.estimateEnergy` (public mainnet nodes lack it) and pads by ~0.4%, while the constant call reproduced two real Nile receipts exactly. `ConsumeUserResourcePercent` does not apply to the deployment itself — it governs later calls.
-- **Call:** `TriggerContract(ctx, from, contract, method, jsonString, feeLimit, callValue, tokenID, tokenAmount)`; read-only via `TriggerConstantContractCustom` (accepts an empty `from`).
-- **A revert is not signalled by the result code.** The node answers `result.result = true` with code `SUCCESS` and reports the failure only in `result.message` (`"REVERT opcode executed"`), leaving `constant_result` empty and `energy_used` at the pre-revert amount — 8624 vs 64285 for a real USDT transfer. `TriggerConstantContract` keys on the message and returns `ErrContractCallFailed`, with the extention alongside the error so the partial result stays readable.
-
-### Estimating fees
-
-Cost estimators all return `*EstimateResult { Energy, Bandwidth, Fee }` — `Energy` and `Bandwidth` in raw resource points, `Fee` as a `SUN`.
-
-- **Per transaction:** `EstimateBandwidth(tx)` for bandwidth points, `EstimateEnergy(...)` for contract energy.
-  Both live in `pkg/client/estimate_resources.go`.
-- **Activation only:** `EstimateActivationFee(ctx, from, to)` (local fake tx, fast) or `EstimateSystemContractActivation(ctx, caller, receiver)` (real CreateAccount RPC, more accurate). Both return zeros for already-activated receivers and are in `pkg/client/activate.go`.
-- **Full transfer:** `EstimateTRXTransfer(ctx, from, to, amount SUN)` and `EstimateTRC20Transfer(ctx, from, to, contract, amount TokenAmount)` — separate calls because the two amounts sit on different scales. Both return `EstimateTransferResult`, which separates three different questions: `Usage` (what the transaction consumes), `Available` (what the sender already has — the two bandwidth pools kept apart), and `Charges` (the itemised TRX charges: `Bandwidth`, `Energy`, `AccountCreation`, `UnstakedCreation`). `Fee == Charges.Total()` is what actually leaves the account. Bandwidth is all-or-nothing per pool (staked in full, else free allowance in full, else TRX for every byte — the pools never add up), energy is additive (only the shortfall is charged), and account creation is never reduced because the free allowance cannot pay for it. **The creation fees belong to system contracts only.** A TRX transfer to a new address is charged 1 TRX (+0.1 without staked bandwidth) as a *fee*; a contract call that creates an account is charged 25000 *energy* (`NEW_ACCT_CALL`) and no fee; a TRC20 `transfer()` creates no account at all. So `EstimateTRC20Transfer` adds no creation fee for any recipient — whatever the contract does about the account is already inside the energy the constant call measured, and a fee on top would double-count it. There is no aggregate "if I had no resources" number: it is one multiplication from `Usage`, and the old `Total` that tried to be it double-counted a CreateAccount transaction that never reaches the chain.
-- **Unactivated recipients are valid.** Sending TRX or TRC20 to an unactivated address activates it; do not gate transfers on `IsAccountActivated`. The sentinel `ErrAccountNotActivated` exists for callers that explicitly require an activated address.
-
-### Health checking and tier-based fallback
-
-`HealthAwareTransport` (default) groups nodes by `NodeConfig.Tier` (0 = primary,
-1 = fallback, 2+ = next). Requests go to the lowest-numbered tier that has at
-least one healthy node; a higher tier is only used when every node of every
-lower tier is unhealthy. As soon as a primary recovers, traffic returns to it.
-
-Tunables live in `Config.Health` (`HealthConfig`):
-
-- `FailureThreshold` / `SuccessThreshold` — how many consecutive failures/successes flip a node
-- `HealthyInterval` / `UnhealthyInterval` / `InactiveTierInterval` / `ProbeTimeout` — probe cadence
-- `Probe` — defaults to `GetNowBlock`; pass a custom function to override
-- `ClassifyErr` — distinguishes network failures (count toward unhealthy) from logical errors; default = `isNetworkError` in `health_classify.go`
-- `Logger` — optional `client.Logger` interface (one method: `Infof(format string, args ...any)`); defaults to a no-op logger so events are silent unless you bridge it to slog/log/zap/etc.
-- `Disabled` — fall back to the legacy plain `RoundRobinTransport`
-
-When every node of every tier is unhealthy, calls return `ErrNoHealthyNodes`.
-The background probe loop keeps trying every node so they re-enter the pool
-the moment they recover.
-
-For full implementation patterns and unit-testing strategy (synctest), see
-`references/transport-guide.md` and `references/testing-patterns.md`.
-
-### Prometheus metrics
-
-Enable by passing `cfg.Metrics = client.NewMetrics(prometheus.DefaultRegisterer)`. Recorded metrics:
-
-- `gotron_rpc_requests_total` (counter: blockchain, method, status)
-- `gotron_rpc_duration_seconds` (histogram: blockchain, method)
-- `gotron_rpc_in_flight` (gauge)
-- `gotron_rpc_retries_total`, `gotron_rpc_pool_total`, `gotron_rpc_pool_healthy`, `gotron_rpc_pool_disabled`
-
-Implement custom collectors via the `MetricsCollector` interface (3 methods: `RecordRequest`, `RecordRetry`, `SetPoolHealth`).
-
-## Example: Adding a new RPC method
-
-**Input:** "Add support for `GetNodeInfo` RPC"
-
-**Steps Claude follows:**
-
-1. Add to `Transport` interface in `pkg/client/transport.go`:
+## Connect
 
 ```go
-GetNodeInfo(ctx context.Context) (*core.NodeInfo, error)
+c, err := client.New(client.Config{
+    Nodes: []client.NodeConfig{
+        {Protocol: client.ProtocolGRPC, Address: "grpc.trongrid.io:50051", UseTLS: true,
+            Headers: map[string]string{"TRON-PRO-API-KEY": apiKey}},
+    },
+})
+if err != nil { return err }
+defer c.Close()
 ```
 
-2. Implement in `transport_grpc.go`:
+- **HTTP** works the same: `{Protocol: client.ProtocolHTTP, Address: "https://api.trongrid.io"}`.
+  Both transports return the same data for every method; pick whichever your provider offers.
+  gRPC is cheaper for block-heavy work. The few remaining differences are under
+  [Choosing a transport](#choosing-a-transport).
+- **Several nodes** are load-balanced. `Tier` makes fallbacks: requests go to the lowest tier that
+  has a healthy node, and return to it as soon as it recovers.
+
+  ```go
+  Nodes: []client.NodeConfig{
+      {Protocol: client.ProtocolGRPC, Address: "my-node:50051", Tier: 0},                // primary
+      {Protocol: client.ProtocolHTTP, Address: "https://api.trongrid.io", Tier: 1,
+          Headers: map[string]string{"TRON-PRO-API-KEY": apiKey}},                     // fallback
+  },
+  ```
+
+- **Health checking** is on by default (background probe per node). Tune it with
+  `Config.Health` (`FailureThreshold`, `HealthyInterval`, `ProbeTimeout`, `Logger`, …); the zero
+  value is sensible. Only network failures mark a node unhealthy — a refused request does not.
+- **There is no automatic retry.** A failed call returns its error; the next call simply avoids the
+  failing node. Retry in your code where it is safe (reads always; broadcasts — see
+  [Errors](#errors)).
+- **Metrics:** `Config.Metrics = client.NewMetrics(prometheus.DefaultRegisterer)` records request
+  counts, latency and pool health (`gotron_rpc_*`).
+- `Config.Network` is a label only. Which chain you are on is decided by the nodes you list.
+
+## The three rules
+
+**1. Addresses are base58check strings** (`T…`). Validate user input with
+`address.Validate(addr)`. Methods return `client.ErrInvalidAddress` for anything malformed.
+
+**2. Amounts are typed, and the two types are not interchangeable.**
+
+- `client.SUN` is every TRX-denominated value: transfers, balances, stakes, fee limits, fees.
+  1 TRX = 1,000,000 SUN. Build one with `client.FromTRX(decimal)` (errors on more than 6 decimal
+  places) or `client.SUN(n)` for a known integer of SUN; read it back with `.TRX()`.
+- `client.TokenAmount` is every TRC20 amount, in the token's own minimal units. Build it with
+  `client.FromTokenDecimal(decimal, decimals)` using the decimals the contract reports, or
+  `client.FromTokenUnits(*big.Int)`; render it with `.Decimal(decimals)`.
+- One USDT is `TokenAmount` 1,000,000; one TRX is `SUN` 1,000,000. The compiler keeps them apart —
+  do not convert one into the other through `int64`.
+- Energy, bandwidth, percentages and vote counts are plain numbers, not money.
+
+**3. Every write is build → sign → broadcast → confirm.** Write methods (`CreateTransferTransaction`,
+`TRC20Send`, `Stake`, `DeployContract`, …) return an **unsigned** `*api.TransactionExtention` and
+touch nothing on chain. You sign `ext.Transaction`, broadcast it, then wait for its receipt.
+If you edit `ext.Transaction.RawData` after building (fee limit, expiration), call
+`ext.UpdateHash()` before signing, or the signature covers a txid nobody will find.
+
+## Send TRX
 
 ```go
-func (t *GRPCTransport) GetNodeInfo(ctx context.Context) (*core.NodeInfo, error) {
-    return t.walletClient.GetNodeInfo(ctx, new(api.EmptyMessage))
-}
+amount, err := client.FromTRX(decimal.RequireFromString("1.5"))
+if err != nil { return err }
+
+ext, err := c.CreateTransferTransaction(ctx, from, to, amount)
+if err != nil { return err }
+
+signer, err := address.FromPrivateKey(privateKeyHex)
+if err != nil { return err }
+if err := c.SignTransaction(ext.Transaction, signer.PrivateKeyECDSA); err != nil { return err }
+
+if _, err := c.BroadcastTransaction(ctx, ext.Transaction); err != nil { return err }
+
+txid := hex.EncodeToString(ext.Txid)
+info, err := waitReceipt(ctx, c, txid) // below
 ```
 
-3. Implement in `transport_http.go`:
+- Sending to an address that does not exist yet creates it; that costs a fee on top
+  (1 TRX + 0.1 TRX without staked bandwidth on mainnet). Do not gate payments on
+  `IsAccountActivated`.
+- Price it first with `c.EstimateTRXTransfer(ctx, from, to, amount)`: `est.Fee` is what will
+  actually leave the sender beyond `amount`, and `est.Charges` itemises it.
+- When the key's lifetime in memory matters, keep it as 32 raw bytes and sign with
+  `c.SignTransactionRaw(tx, key)`, then `clear(key)`.
+
+## Wait for confirmation
+
+A transaction is in a block once its receipt exists. `GetTransactionInfoByHash` returns
+`client.ErrTransactionInfoNotFound` until then.
 
 ```go
-func (t *HTTPTransport) GetNodeInfo(ctx context.Context) (*core.NodeInfo, error) {
-    result := &core.NodeInfo{}
-    if err := t.doRequest(ctx, "/wallet/getnodeinfo", nil, result); err != nil {
-        return nil, err
+func waitReceipt(ctx context.Context, c *client.Client, txid string) (*core.TransactionInfo, error) {
+    tick := time.NewTicker(time.Second)
+    defer tick.Stop()
+    for {
+        info, err := c.GetTransactionInfoByHash(ctx, txid)
+        if err == nil {
+            return info, nil
+        }
+        if !errors.Is(err, client.ErrTransactionInfoNotFound) {
+            return nil, err
+        }
+        select {
+        case <-ctx.Done():
+            return nil, ctx.Err()
+        case <-tick.C:
+        }
     }
-    return result, nil
 }
 ```
 
-4. Implement in `transport_roundrobin.go`:
+Then check the outcome — a mined transaction can still have failed and been charged:
+
+- `info.GetResult() == core.TransactionInfo_FAILED` (the enum's success value is spelled
+  `TransactionInfo_SUCESS`), with the reason in `string(info.GetResMessage())`.
+- For contract calls also check `info.GetReceipt().GetResult()`: `REVERT`, `OUT_OF_ENERGY` and the
+  like mean the call did nothing but the energy was paid.
+- A block is irreversible about 19 blocks later. If a payment must not be rolled back, also wait
+  until `c.GetLastBlockHeight(ctx)` is at least `info.GetBlockNumber() + 19`.
+- `info.GetFee()` is the total TRX burned, in SUN.
+
+## TRC20 tokens (USDT)
 
 ```go
-func (t *RoundRobinTransport) GetNodeInfo(ctx context.Context) (*core.NodeInfo, error) {
-    return t.next().GetNodeInfo(ctx)
-}
+const usdt = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"
+
+decimals, err := c.TRC20GetDecimals(ctx, usdt)                 // *big.Int, 6 for USDT
+amount, err := client.FromTokenDecimal(decimal.RequireFromString("25.5"), int32(decimals.Int64()))
+
+balance, err := c.TRC20ContractBalance(ctx, from, usdt)        // TokenAmount
+fmt.Println(balance.Decimal(int32(decimals.Int64())))
+
+est, err := c.EstimateTRC20Transfer(ctx, from, to, usdt, amount)
+if err != nil { return err } // wraps client.ErrContractCallFailed if the transfer would revert
+
+params, err := c.ChainParams(ctx)
+feeLimit := client.SUN(est.Usage.SenderEnergy().
+    Mul(decimal.NewFromInt(params.EnergyFee)).
+    Mul(decimal.NewFromFloat(1.2)).Ceil().IntPart()) // 20% headroom
+
+ext, err := c.TRC20Send(ctx, from, to, usdt, amount, feeLimit)
+// sign, broadcast, waitReceipt as for TRX
 ```
 
-5. Implement in `health.go`:
+- **The fee limit caps the call's whole energy, priced in SUN — staked energy counts against it
+  too.** Size it from `est.Usage`, not from `est.Charges`, which is only the part that will be
+  burned. Too low, and the transaction is mined, fails with `OUT_OF_ENERGY` and is still charged.
+- `est.Fee` is what the sender will actually pay given its current staked energy and bandwidth.
+- A transfer to an address that never held the token costs about twice the energy (a new storage
+  slot). The estimate already measures that against the real recipient; there is no account
+  creation fee for TRC20.
+- `TRC20Approve` and `TRC20TransferFrom` cover the allowance flow; `TRC20GetName`/`TRC20GetSymbol`
+  read metadata.
+
+## Staking, delegation, voting
+
+All amounts are `SUN` of staked TRX; resources are `client.ResourceTypeEnergy` /
+`client.ResourceTypeBandwidth`. Each call returns an unsigned transaction.
 
 ```go
-func (h *HealthAwareTransport) GetNodeInfo(ctx context.Context) (*core.NodeInfo, error) {
-    n, err := h.next()
-    if err != nil {
-        return nil, err
-    }
-    res, callErr := n.transport.GetNodeInfo(ctx)
-    h.recordOutcome(n, callErr)
-    return res, callErr
-}
+ext, err := c.Stake(ctx, owner, client.ResourceTypeEnergy, client.MustFromTRX(decimal.NewFromInt(1000)))
+ext, err  = c.DelegateResource(ctx, owner, receiver, client.ResourceTypeEnergy, amount, false, 0)
+ext, err  = c.ReclaimResource(ctx, owner, receiver, client.ResourceTypeEnergy, amount)
+ext, err  = c.Unstake(ctx, owner, client.ResourceTypeEnergy, amount)  // starts the unstake delay
+ext, err  = c.WithdrawUnstaked(ctx, owner)                             // after the delay
+ext, err  = c.CancelAllUnstakes(ctx, owner)                            // returns pending unstakes to stake
+ext, err  = c.VoteWitnesses(ctx, owner, []client.Vote{{WitnessAddress: sr, Count: 1000}})
+ext, err  = c.ClaimRewards(ctx, owner)
 ```
 
-6. Implement in `transport_metrics.go`:
+- `c.GetStakeInfo(ctx, addr)` summarises staked, unstaking and withdrawable amounts;
+  `c.GetDelegatedResourcesV2(ctx, addr)` lists what an account lends out.
+- `GetCanDelegatedMaxSize` answers in staked TRX, not energy. Convert stake to resource units with
+  `ConvertStakedToEnergy` / `ConvertStakedToBandwidth` and the current network weights.
+- `VoteWitnesses` **replaces** the whole vote set; pass every vote you want to keep. Votes are
+  TRON POWER (1 per staked TRX), not SUN.
+- A locked delegation (`lock=true`, `lockPeriod` in blocks) cannot be reclaimed until it expires.
+
+## Smart contracts
 
 ```go
-func (t *MetricsTransport) GetNodeInfo(ctx context.Context) (*core.NodeInfo, error) {
-    start := time.Now()
-    result, err := t.transport.GetNodeInfo(ctx)
-    t.after("GetNodeInfo", start, err)
-    return result, err
+contractABI, err := abi.LoadContractABI(abiJSON) // solc's array or Tron's {"entrys": [...]}
+req := client.DeployContractRequest{
+    From:              owner,
+    Name:              "MyToken",
+    ABI:               contractABI,
+    Bytecode:          bytecodeHex,
+    ConstructorParams: `[{"uint256":"1000000"},{"string":"My Token"}]`, // never append them yourself
+    FeeLimit:          client.MustFromTRX(decimal.NewFromInt(1000)),
+    OriginEnergyLimit: 10_000_000,
 }
+est, err := c.EstimateDeployContract(ctx, req) // price it: a failed deployment is still charged
+ext, err := c.DeployContract(ctx, req)
+contractAddr, err := client.DeployedContractAddress(ext.Transaction) // known before broadcast
 ```
 
-7. Add client method in `pkg/client/network.go`:
+- **Calling:** `c.TriggerContract(ctx, from, contract, "transfer(address,uint256)",
+`[{"address":"T…"},{"uint256":"5"}]`, feeLimit, callValue, tokenID, tokenAmount)` returns an
+  unsigned transaction.
+- **Reading:** `c.TriggerConstantContractCustom(ctx, from, contract, "balanceOf(address)", params)`
+  runs the call without a transaction; `from` may be empty. Results are in
+  `ext.GetConstantResult()`.
+- **A revert is reported as an error** wrapping `client.ErrContractCallFailed`. The node itself
+  answers "success" with the failure only in a message; the extention is returned next to the
+  error so you can still read the partial result.
+- `c.GetContract` / `c.GetContractABI` read a deployed contract and its ABI.
 
-```go
-func (c *Client) GetNodeInfo(ctx context.Context) (*core.NodeInfo, error) {
-    return c.transport.GetNodeInfo(ctx)
-}
-```
+## Multisig and active permissions
 
-8. Add tests in `tests/network_test.go`:
+- `c.GetAccountPermission(ctx, account, id)` and `c.ValidatePermissionSigner(ctx, account, signer,
+id, contractTypes...)` check, before you accept a key, that it can actually sign what you need.
+- `client.SetPermissionID(ext, 2)` marks an unsigned transaction to be authorised by active
+  permission 2. It refreshes the txid itself and refuses a transaction that is already signed.
+- Sign once per required key: `c.SignTransaction(ext.Transaction, keyN)`. More than one signature
+  costs the multi-sign fee (1 TRX on mainnet), which no estimate includes.
+- `c.UpdateAccountPermissions(ctx, req)` replaces the **complete** permission set (100 TRX on
+  mainnet). Build permissions with `client.NewOwnerPermission`, `client.NewActivePermission` and
+  `client.ContractOperations`; copy every permission you want to keep. An operations bitmap allows
+  contract _types_ — it cannot restrict a key to one contract or method.
 
-```go
-func TestGetNodeInfo_GRPC(t *testing.T) {
-    c := newGRPCClient(t)
-    defer c.Close()
-    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-    defer cancel()
-    info, err := c.GetNodeInfo(ctx)
-    require.NoError(t, err)
-    require.NotNil(t, info)
-}
-```
+## Reading the chain
 
-## Domain references
+- Accounts: `GetAccount` (an address that was never activated returns `ErrAccountNotFound`),
+  `GetAccountBalance` (`SUN`), `GetAccountResource`, `IsAccountActivated`.
+- Blocks: `GetLastBlockHeight`, `GetLastBlock`, `GetBlockByHeight`, `GetBlockByHash`,
+  `GetBlockByLimitNext2(start, end)` (end exclusive). Each block transaction carries `Txid` and
+  `Transaction`; decode the contract with `tx.GetRawData().GetContract()[0].GetParameter().UnmarshalTo(&core.TransferContract{})`.
+- Receipts for a whole block: `GetTransactionInfoByBlockNum` — one call instead of one per
+  transaction; TRC20 transfers are in each receipt's `Log` (topic 0 is
+  `client.Trc20TransferEventSignature`).
+- Single transactions: `GetTransactionByHash`, `GetTransactionInfoByHash`,
+  `GetTransactionExtensionByHash` (both at once).
+- Network: `ChainParams` (current fees — never hard-code mainnet's), `ListWitnesses`,
+  `GetNodeInfo`.
 
-- Full API surface: see `references/api-surface.md`
-- Transport layer deep dive: see `references/transport-guide.md`
-- Constants, errors, enums: see `references/constants.md`
-- Testing conventions: see `references/testing-patterns.md`
+## Errors
 
-## Key principles
+Match with `errors.Is` / `errors.As`, never on message text: the node words the same refusal
+differently over gRPC and HTTP.
 
-- **All transports must stay in sync.** Every `Transport` interface method must have implementations in **all 6 transport files** (`transport_grpc.go`, `transport_http.go`, `transport_roundrobin.go`, `health.go`, `transport_metrics.go`, plus the interface declaration in `transport.go`). The compiler enforces the interface, but forgetting one of the wrappers — especially `HealthAwareTransport` (default in production) — will surface only at runtime.
-- **HTTP transport needs JSON transformation.** Tron's HTTP API returns non-standard JSON (hex strings instead of base64, `type_url`/`value` instead of `@type`). Use the appropriate `doRequest*` variant.
-- **Addresses are strings at the Client boundary.** Convert to `[]byte` with `tronutils.DecodeCheck(addr)` before passing to transport. This keeps the public API ergonomic while the transport layer works with raw bytes.
-- **Decimal precision matters.** Never use `float64` for an amount, and never carry one as a bare `int64`. Build a `SUN` or a `TokenAmount`; the constructors take `decimal.Decimal` / `*big.Int` and reject anything unrepresentable.
-- **Tests hit real public nodes.** No mocks — integration tests use `tron-grpc.publicnode.com:443` and `https://tron-rpc.publicnode.com`. Always add both `_GRPC` and `_HTTP` variants.
+| What you get                                                                          | Meaning                                                                                                  | What to do                                                |
+| ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| `*client.ContractValidateError` (also `errors.Is(err, client.ErrInvalidTransaction)`) | the node refused to **build** the transaction: insufficient balance, unknown contract, locked delegation | fix the request; retrying elsewhere gives the same answer |
+| `*client.BroadcastError` with `.Code`                                                 | the node refused to **accept** a signed transaction                                                      | see codes below                                           |
+| `client.ErrContractCallFailed`                                                        | a constant call or estimate reverted                                                                     | the real transaction would revert too                     |
+| `client.ErrTransactionInfoNotFound`                                                   | not in a block yet                                                                                       | keep polling                                              |
+| `client.ErrAccountNotFound`                                                           | address never activated                                                                                  | expected for new addresses                                |
+| `client.ErrInvalidAddress`, `client.ErrInvalidAmount`                                 | bad input, caught before any RPC                                                                         | validate earlier                                          |
+| `client.ErrNoHealthyNodes`                                                            | every node is down right now                                                                             | back off and retry                                        |
+| `client.ErrNodeRefusedRequest`                                                        | an HTTP node rejected a malformed read                                                                   | fix the request                                           |
+| `*client.TransportError`                                                              | network failure; `.Host`, `.Protocol`, `.Method` say where                                               | retry reads                                               |
+
+Broadcast codes worth handling (`api.Return_*`):
+
+- `DUP_TRANSACTION_ERROR` — the network already has this exact transaction. When you re-broadcast
+  after a timeout, treat it as success and wait for the receipt.
+- `TRANSACTION_EXPIRATION_ERROR`, `TAPOS_ERROR` — the transaction is stale. Build a new one; do not
+  re-sign the old one.
+- `SIGERROR` — wrong key, wrong permission id, or a txid that no longer matches `raw_data`.
+- `BANDWITH_ERROR` (sic) — not enough TRX to pay for bandwidth.
+
+## Choosing a transport
+
+gRPC and HTTP return identical data for every method; the library tests each one against the
+other on the same node. What still differs comes from the Tron node itself:
+
+- A refusal to build a transaction: over gRPC `ContractValidateError.Code` is set and the message
+  starts with `Contract validate error :`. Over HTTP `Code` is zero and the message starts with a
+  Java class name. Match on the type, not on `Code` or the text.
+- A deployment **without** an ABI gets an empty ABI field over HTTP, so its txid and contract
+  address differ from what gRPC would build. Always take the address from
+  `DeployedContractAddress` of the transaction you actually sign.
+- `EstimateEnergy` only works on nodes started with `vm.estimateEnergy` (public mainnet nodes are
+  not). `EstimateTRC20Transfer` and `EstimateDeployContract` measure with a constant call and work
+  everywhere.
+
+## Pitfalls
+
+- Never pass a bare number where an amount is expected, and never convert `TokenAmount` to `SUN`.
+- Never hard-code fees: read `c.ChainParams(ctx)`. Testnets and private networks differ from mainnet.
+- Never edit `RawData` after signing; edit, `UpdateHash()`, then sign.
+- Do not add `EstimateActivationFee` on top of `EstimateTRXTransfer`: the transfer estimate already
+  prices creating the recipient.
+- A broadcast that returns no error is not a confirmation. Wait for the receipt and check its result.
+- `GetBlockByLimitNext2` excludes `end`. Public nodes keep no deep history: an old block may come
+  back empty rather than as an error.

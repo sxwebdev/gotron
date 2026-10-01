@@ -32,8 +32,6 @@
 
 ## Package gotron
 
-**File:** `tron.go`
-
 ```go
 type Tron struct { *client.Client }
 type Config = client.Config
@@ -71,8 +69,6 @@ var FromTokenDecimal = client.FromTokenDecimal
 ## Package pkg/client
 
 ### Client construction
-
-**File:** `client.go`, `config.go`
 
 ```go
 type Client struct { /* unexported: transport, config */ }
@@ -116,7 +112,7 @@ type HealthConfig struct {
     InactiveTierInterval time.Duration // default 5m  — healthy nodes in inactive tier (fallbacks)
     ProbeTimeout         time.Duration // default 5s
     Probe                func(ctx context.Context, t Transport) error // default = GetNowBlock
-    ClassifyErr          func(err error) bool                         // default = isNetworkError
+    ClassifyErr          func(err error) bool                         // default: only network-level failures count
     Logger               Logger                                       // nil = no-op (silent)
 }
 
@@ -129,8 +125,6 @@ type Logger interface {
 ```
 
 ### Account operations
-
-**File:** `account.go`
 
 ```go
 func (c *Client) GetAccount(ctx context.Context, addr string) (*core.Account, error)
@@ -151,8 +145,6 @@ type EstimateActivateAccountResult struct {
 ```
 
 ### Activation operations
-
-**File:** `activate.go`
 
 Two estimators for the cost of activating a Tron address. Both return `*EstimateResult` and return zeros if the recipient is already activated.
 
@@ -183,8 +175,6 @@ precise than the transfer estimator's: they compare against `AvailableForDelegat
 bandwidth can make it report staked bandwidth the account does not have.
 
 ### Account permission operations
-
-**File:** `account_permissions.go`
 
 ```go
 const (
@@ -224,8 +214,6 @@ Two fees are attached to these paths and neither appears in any estimate. Broadc
 
 ### Block operations
 
-**File:** `block.go`
-
 ```go
 func (c *Client) GetLastBlock(ctx context.Context) (*api.BlockExtention, error)
 func (c *Client) GetLastBlockHeight(ctx context.Context) (uint64, error)
@@ -237,8 +225,6 @@ func (c *Client) GetBlockByLatestNum2(ctx context.Context, height uint64) (*api.
 ```
 
 ### Transaction operations
-
-**File:** `transactions.go`
 
 ```go
 func (c *Client) GetTransactionByHash(ctx context.Context, hash string) (*core.Transaction, error)
@@ -258,15 +244,11 @@ library. They keep the secret in the caller's slice and in one wipeable
 `SignTransactionRaw` over `SignTransaction` whenever the key's lifetime in
 memory matters.
 
-**File:** `transfer.go`
-
 ```go
 func (c *Client) CreateTransferTransaction(ctx context.Context, from, to string, amount SUN) (*api.TransactionExtention, error)
 ```
 
 ### TRC20 token operations
-
-**File:** `trc20.go`
 
 ```go
 // Every amount is a TokenAmount (the token's own minimal units) and every fee
@@ -285,8 +267,6 @@ func (c *Client) ParseTRC20StringProperty(data string) (string, error)
 ```
 
 ### Resource operations
-
-**File:** `resources.go`
 
 ```go
 func (c *Client) GetAccountResource(ctx context.Context, addr string) (*api.AccountResourceMessage, error)
@@ -329,8 +309,7 @@ delegation moves the stake, and what that yields depends on the network weights
 at the time. Convert with `ConvertStakedToBandwidth` / `ConvertStakedToEnergy`.
 
 ```go
-// Renamed from "Resources" — represents an account's currently usable resources
-// plus its hard limits. Used as return type by AvailableForDelegateResources
+// An account's currently usable resources plus its hard limits. Used as return type by AvailableForDelegateResources
 // and TotalAvailableResources.
 type AvailableResources struct {
     Energy         decimal.Decimal `json:"energy"`
@@ -342,14 +321,12 @@ type AvailableResources struct {
 
 `AvailableForDelegateResources` caps each field by what the account staked itself (from
 `core.Account.FrozenV2`), which is what delegation is allowed to draw on. Note this is a cap on a
-*limit*, not on a remainder: `Bandwidth` is `min(staked limit, staked remaining + free remaining)`,
+_limit_, not on a remainder: `Bandwidth` is `min(staked limit, staked remaining + free remaining)`,
 so an account with free bandwidth left can report more staked bandwidth than it actually has. For
 "will this specific transaction be free" use `AvailableBandwidthWithoutFree` and
 `AvailableFreeBandwidth`, or let `EstimateTRXTransfer` answer it.
 
 ### Resource pricing helpers
-
-**File:** `converter.go`
 
 Convert between staked TRX and the resources that stake yields, at the network's current weights
 (`GetAccountResource` supplies `TotalNetWeight` / `TotalNetLimit` / `TotalEnergyWeight`, and
@@ -372,8 +349,6 @@ mistaken for a real answer.
 
 Tron Stake 2.0. All amounts are in SUN. Legacy Stake 1.0 (FreezeBalance/UnfreezeBalance) is
 deliberately not implemented.
-
-**File:** `staking.go`
 
 ```go
 func (c *Client) Stake(ctx context.Context, owner string, resource ResourceType, amount SUN) (*api.TransactionExtention, error)
@@ -414,8 +389,6 @@ type StakeInfo struct {
 
 ### Witness and reward operations
 
-**File:** `witness.go`
-
 ```go
 func (c *Client) VoteWitnesses(ctx context.Context, owner string, votes []Vote) (*api.TransactionExtention, error)
 func (c *Client) ClaimRewards(ctx context.Context, owner string) (*api.TransactionExtention, error)
@@ -439,14 +412,10 @@ type Vote struct {
 
 Cost estimators for transactions and transfers. Use these to compute fees before broadcasting.
 
-**File:** `estimate_resources.go`
-
 ```go
 // EstimateBandwidth returns proto.Size(tx) + 64 (Tron's protocol overhead) as
 // bandwidth points. Sizing needs a signature, so the measurement is taken on a
-// clone: tx itself is left untouched and the call is idempotent. It used to fill
-// the signature in place, which corrupted the transaction the caller was about
-// to sign - the only reason anyone calls this.
+// clone: tx itself is left untouched and the call is idempotent.
 func (c *Client) EstimateBandwidth(tx *core.Transaction) (decimal.Decimal, error)
 
 // EstimateEnergy queries the node's /wallet/estimateenergy or gRPC EstimateEnergy
@@ -463,8 +432,6 @@ have not: `tron-rpc.publicnode.com` answers `CONTRACT_VALIDATE_ERROR: this node 
 estimate energy`, which the client surfaces as an error. The portable way to price a contract call
 is `TriggerConstantContract` / `TriggerConstantContractCustom` and its `GetEnergyUsed()` — that is
 what `EstimateTRC20Transfer` uses.
-
-**File:** `estimate_transfer.go`
 
 ```go
 // TRX and TRC20 estimates are separate entry points because their amounts sit
@@ -514,10 +481,9 @@ Charges:   bandwidth=0 energy=0 accountCreation=1 TRX unstakedCreation=0.1 TRX
 Fee:       1.1 TRX
 ```
 
-There is deliberately **no aggregate "if the account had no resources" figure.** The previous
-shape carried one (`Total`) and it was both derived and wrong — it summed the transfer transaction
-with a phantom second CreateAccount transaction that never reaches the chain, reporting 1.367 TRX
-where 1.1 is charged. Callers who want a worst case multiply `Usage` by the chain fees themselves.
+There is deliberately **no aggregate "if the account had no resources" figure** — it would have to
+invent a CreateAccount transaction that never reaches the chain. Callers who want a worst case
+multiply `Usage` by the chain fees themselves.
 
 **Charges follow the chain's two different resource rules — do not simplify either to
 `needed - available`.**
@@ -528,7 +494,7 @@ where 1.1 is charged. Callers who want a worst case multiply `Usage` by the chai
   400 staked pays in full for a 500-byte transfer. Verified over 575 mainnet transactions — not one
   had both `receipt.net_usage` and `receipt.net_fee` non-zero.
 - **A transaction that creates an account is never billed by the byte at all.** java-tron routes it
-  through `consumeForCreateNewAccount`, which tries the *staked* pool alone and otherwise charges a
+  through `consumeForCreateNewAccount`, which tries the _staked_ pool alone and otherwise charges a
   flat `getCreateAccountFee` — the free allowance is not consulted on that path. So the bandwidth
   charge and the creation charge are mutually exclusive, and `Charges.Bandwidth` is always zero
   when `Charges.AccountCreation` is set. Verified over 12 account-creating transfers: every sender
@@ -546,11 +512,11 @@ where 1.1 is charged. Callers who want a worst case multiply `Usage` by the chai
 - **The creation fees belong to system contracts only.** There are two ways an account comes into
   existence and they are billed completely differently:
 
-  | how the account is created | cost | billed as |
-  | --- | --- | --- |
+  | how the account is created                         | cost                                     | billed as   |
+  | -------------------------------------------------- | ---------------------------------------- | ----------- |
   | TRX transfer (`TransferContract`) to a new address | 1 TRX, +0.1 TRX without staked bandwidth | **TRX fee** |
-  | a contract call that creates it | 25000 energy (`NEW_ACCT_CALL`) | **energy** |
-  | TRC20 `transfer()` | nothing — no account is created | — |
+  | a contract call that creates it                    | 25000 energy (`NEW_ACCT_CALL`)           | **energy**  |
+  | TRC20 `transfer()`                                 | nothing — no account is created          | —           |
 
   So `EstimateTRC20Transfer` adds **no** creation fee for any recipient state, and that is not a
   special case for TRC20: whatever a contract does about the account is already inside the energy
@@ -569,7 +535,7 @@ where 1.1 is charged. Callers who want a worst case multiply `Usage` by the chai
 `AvailableBandwidthWithoutFree` and `AvailableFreeBandwidth` separately.
 
 **A contract can pay for its own calls, and the estimate must credit that.**
-`consume_user_resource_percent` is the share of every call the *caller* pays; the contract's owner
+`consume_user_resource_percent` is the share of every call the _caller_ pays; the contract's owner
 covers the rest from its own staked energy, capped per call by `origin_energy_limit`, and only what
 the owner cannot cover falls back to the caller (java-tron, `ReceiptCapsule.payEnergyBill`). Calling
 a contract you own is a self-call and is billed to you in full. `Usage.Energy` stays the whole call
@@ -589,7 +555,7 @@ also answer, but it needs a node started with `vm.estimateEnergy` (the public ma
 and it pads: against two real Nile deployments the constant call reproduced `receipt.energy_usage_total`
 exactly — 1372886 and 1365499 — while `EstimateEnergy` reported about 0.4% more. The deployer pays the
 deployment's energy in full, so `Usage.ContractEnergy` is zero and `req.ConsumeUserResourcePercent`
-does not apply — that field governs the contract's *later* calls. The creation charges are zero too:
+does not apply — that field governs the contract's _later_ calls. The creation charges are zero too:
 a deployment does create the contract's account, but the chain bills it inside the energy rather than
 as the 1 TRX activation fee.
 
@@ -600,8 +566,6 @@ deliberate: the alternative is an estimate an order of magnitude too low (8624 a
 USDT), which a caller then sets as a fee limit on a transfer that runs out of energy.
 
 ### Contract operations
-
-**File:** `contract.go`
 
 Every write method returns an **unsigned** transaction. Sign it with `SignTransaction` and send it
 with `BroadcastTransaction`; nothing here broadcasts on its own.
@@ -717,8 +681,6 @@ pre-revert energy as the cost of the whole call.
 
 ### Asset operations (TRC10)
 
-**File:** `asset.go`
-
 ```go
 func (c *Client) GetAssetIssueById(ctx context.Context, id string) (*core.AssetIssueContract, error)
 func (c *Client) GetAssetIssueListByName(ctx context.Context, name string) (*api.AssetIssueList, error)
@@ -728,8 +690,6 @@ Read-only TRC10 lookups. TRC10 is Tron's native token standard and is unrelated 
 contract-based — see [TRC20 token operations](#trc20-token-operations) for those.
 
 ### Network operations
-
-**File:** `network.go`
 
 ```go
 func (c *Client) ListNodes(ctx context.Context) (*api.NodeList, error)
@@ -742,8 +702,6 @@ func (c *Client) TotalTransaction(ctx context.Context) (*api.NumberMessage, erro
 it names whichever node the tier logic picked — it is not pinned to a configured address.
 
 ### Chain parameters
-
-**File:** `chain_params.go`
 
 ```go
 func (c *Client) ChainParams(ctx context.Context) (*ChainParams, error)
@@ -778,8 +736,6 @@ constructors is only needed for advanced cases (custom transport graphs in
 tests, embedding gotron in a higher-level multi-chain harness, etc.).
 
 ### Common types
-
-**File:** `types.go`
 
 ```go
 // EstimateResult is the result shape of the two activation estimators only —
@@ -823,8 +779,6 @@ func (r ResourceType) String() string           // "BANDWIDTH" / "ENERGY" / "UNK
 func (r ResourceType) ToProto() core.ResourceCode // -1 for an invalid value, so validate first
 ```
 
-**File:** `chain_params.go`
-
 ```go
 // ChainParams is the subset of getchainparameters this SDK prices with. Fees are
 // per unit in SUN; the two creation fees are flat amounts in SUN.
@@ -838,8 +792,6 @@ type ChainParams struct {
 }
 ```
 
-**File:** `constants.go`
-
 ```go
 const (
     TrxDecimals        = 6
@@ -848,8 +800,6 @@ const (
 ```
 
 ### Sentinel errors
-
-**File:** `errors.go`
 
 Match these with `errors.Is`; the package wraps them with `fmt.Errorf("%w: …")` rather than
 returning bare strings.
@@ -899,8 +849,6 @@ type BroadcastError  struct { Code api.ReturnResponseCode; Message string }
 
 ## Package pkg/client/abi
 
-**File:** `abi/abi.go`
-
 Argument encoding for contract calls. `TriggerContract`, `TriggerConstantContractCustom` and
 `EstimateEnergy` use it internally; reach for it directly when you need the calldata itself.
 
@@ -927,7 +875,7 @@ func GetInputsParser(ABI *core.SmartContract_ABI, method string) (eABI.Arguments
 The `jsonString` every contract method takes is what `LoadFromJSON` parses:
 
 ```json
-[{"address":"TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"},{"uint256":"1000000"}]
+[{ "address": "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t" }, { "uint256": "1000000" }]
 ```
 
 Addresses go in base58 (`T…`) — they are decoded with `tronutils.DecodeCheck`, so a hex or bare
@@ -979,8 +927,6 @@ mainnet — there is no network selector.
 ---
 
 ## Package pkg/units
-
-**File:** `units.go`
 
 Amount types. Tron has two unrelated amount scales, so each gets its own type and the unit is part
 of every signature rather than of a doc comment.

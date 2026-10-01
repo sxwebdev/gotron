@@ -2,8 +2,6 @@
 
 ## Sentinel Errors
 
-**File:** `pkg/client/errors.go`
-
 ```go
 // Common
 ErrInvalidConfig            = errors.New("invalid client configuration")
@@ -26,24 +24,24 @@ ErrTransactionInfoNotFound  = errors.New("transaction info not found")
 // Resources
 ErrInvalidResourceType      = errors.New("invalid resource type")
 
-// Account (file: account.go)
+// Account
 ErrAccountNotFound          = errors.New("account not found")
 
-// Account permissions (file: account_permissions.go)
+// Account permissions
 ErrInvalidPermissionID     = errors.New("invalid permission id")
 ErrInvalidPermission       = errors.New("invalid permission")
 ErrPermissionNotFound      = errors.New("permission not found")
 ErrPermissionDenied        = errors.New("permission denied")
 
-// Transport (file: transport_http.go)
+// Transport (HTTP only)
 ErrNodeRefusedRequest       = errors.New("node refused the request")
 
 // Health-checker / tier fallback
 ErrNoHealthyNodes           = errors.New("no healthy nodes available in any tier")
 ```
 
-`ErrNoHealthyNodes` is returned by `HealthAwareTransport.next()` when every
-node of every tier is currently marked unhealthy. The background probe loop
+`ErrNoHealthyNodes` is returned when every node of every tier is currently
+marked unhealthy. The background probe loop
 keeps retrying — callers should retry with backoff. Detect with
 `errors.Is(err, client.ErrNoHealthyNodes)`.
 
@@ -86,16 +84,13 @@ type HTTPStatusError struct {
 }
 ```
 
-Returned by `HTTPTransport` when the remote responds with a non-2xx status,
-wrapped inside a `TransportError`. The default classifier
-(`isNetworkError` in `health_classify.go`) treats 5xx, 408 and 429 as
-network-level failures (count toward unhealthy threshold) and other 4xx
-codes as logical errors (do not affect node health). Inspect with
+Returned by an HTTP node that answers with a non-2xx status, wrapped inside a
+`TransportError`. The default health classifier treats 5xx, 408 and 429 as
+network-level failures (they count toward a node's unhealthy threshold) and
+other 4xx codes as logical errors (they do not affect node health). Inspect with
 `errors.AsType[*HTTPStatusError](err)` (Go 1.26+).
 
 ## Network Types
-
-**File:** `pkg/client/types.go`
 
 ```go
 type Network string
@@ -106,8 +101,6 @@ NetworkNile    Network = "nile"
 ```
 
 ## Account Permission IDs
-
-**File:** `pkg/client/account_permissions.go`
 
 ```go
 const (
@@ -120,8 +113,6 @@ const (
 
 ## Protocol Types
 
-**File:** `pkg/client/config.go`
-
 ```go
 type Protocol string
 
@@ -130,8 +121,6 @@ ProtocolHTTP Protocol = "http"
 ```
 
 ## Resource Types
-
-**File:** `pkg/client/types.go`
 
 ```go
 type ResourceType int32
@@ -144,8 +133,6 @@ Methods: `Validate()`, `String()` ("BANDWIDTH"/"ENERGY"), `ToProto()` -> `core.R
 
 ## TRX Constants
 
-**File:** `pkg/client/constants.go`
-
 ```go
 TrxDecimals        = 6            // 1 TRX = 1,000,000 SUN
 TrxAssetIdentifier = "trx"
@@ -153,48 +140,23 @@ TrxAssetIdentifier = "trx"
 
 ## TRC20 Method Signatures
 
-**File:** `pkg/client/trc20.go`
+Exported from `pkg/client`:
 
 ```go
-trc20TransferMethodSignature     = "0xa9059cbb"   // transfer(address,uint256)
-trc20ApproveMethodSignature      = "0x095ea7b3"   // approve(address,uint256)
-Trc20TransferFromMethodSignature = "0x23b872dd"   // transferFrom(address,address,uint256)
-trc20BalanceOf                   = "0x70a08231"   // balanceOf(address)
-trc20NameSignature               = "0x06fdde03"   // name()
-trc20SymbolSignature             = "0x95d89b41"   // symbol()
-trc20DecimalsSignature           = "0x313ce567"   // decimals()
-
-// Event signature (exported)
-Trc20TransferEventSignature = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+Trc20TransferFromMethodSignature = "0x23b872dd" // transferFrom(address,address,uint256)
+Trc20TransferEventSignature      = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef" // Transfer event topic[0]
 ```
+
+The other selectors (`transfer`, `approve`, `balanceOf`, `name`, `symbol`, `decimals`) are used by
+the `TRC20*` methods and are not exported; call those methods instead of building the data
+yourself.
 
 ## Address Constants
 
-**File:** `pkg/address/address.go`
-
-```go
-bip44Purpose   = 44
-tronCoinType   = 195
-defaultAccount = 0
-defaultChange  = 0
-addressLength  = 21
-prefixByte     = 0x41  // Tron mainnet address prefix
-```
-
-BIP44 derivation path: `m/44'/195'/0'/0/{index}`
-
-## gRPC Constants
-
-**File:** `pkg/client/transport_grpc.go`
-
-```go
-defaultMaxSizeOption = grpc.MaxCallRecvMsgSize(32 * 10e6)  // ~320MB
-// Also configured: grpc.MaxCallRecvMsgSize(1024*1024*100)  // 100MB in dial options
-```
+- Address length: 21 bytes, prefix byte `0x41` (base58check renders it as a leading `T`).
+- BIP44 derivation path used by `address.FromMnemonic` / `address.NewGenerator`: `m/44'/195'/0'/0/{index}`.
 
 ## Prometheus Metric Names
-
-**File:** `pkg/client/metrics.go`
 
 | Metric                        | Type      | Labels                     |
 | ----------------------------- | --------- | -------------------------- |
@@ -205,33 +167,3 @@ defaultMaxSizeOption = grpc.MaxCallRecvMsgSize(32 * 10e6)  // ~320MB
 | `gotron_rpc_pool_total`       | Gauge     | blockchain                 |
 | `gotron_rpc_pool_healthy`     | Gauge     | blockchain                 |
 | `gotron_rpc_pool_disabled`    | Gauge     | blockchain                 |
-
-## HTTP Endpoint Mapping
-
-Key endpoints used by `HTTPTransport`:
-
-| Client Method                | HTTP Endpoint                          |
-| ---------------------------- | -------------------------------------- |
-| GetAccount                   | `/wallet/getaccount`                   |
-| GetAccountResource           | `/wallet/getaccountresource`           |
-| CreateAccount                | `/wallet/createaccount`                |
-| GetNowBlock                  | `/wallet/getnowblock`                  |
-| GetBlockByNum                | `/wallet/getblockbynum`                |
-| GetBlockById                 | `/wallet/getblockbyid`                 |
-| GetBlockByLimitNext          | `/wallet/getblockbylimitnext`          |
-| GetBlockByLatestNum          | `/wallet/getblockbylatestnum`          |
-| GetTransactionById           | `/wallet/gettransactionbyid`           |
-| GetTransactionInfoById       | `/wallet/gettransactioninfobyid`       |
-| GetTransactionInfoByBlockNum | `/wallet/gettransactioninfobyblocknum` |
-| BroadcastTransaction         | `/wallet/broadcasthex`                 |
-| CreateTransaction            | `/wallet/createtransaction`            |
-| TriggerContract              | `/wallet/triggersmartcontract`         |
-| TriggerConstantContract      | `/wallet/triggerconstantcontract`      |
-| EstimateEnergy               | `/wallet/estimateenergy`               |
-| DeployContract               | `/wallet/deploycontract`               |
-| GetContract                  | `/wallet/getcontract`                  |
-| DelegateResource             | `/wallet/delegateresource`             |
-| UnDelegateResource           | `/wallet/undelegateresource`           |
-| AccountPermissionUpdate      | `/wallet/accountpermissionupdate`      |
-| ListNodes                    | `/wallet/listnodes`                    |
-| GetChainParameters           | `/wallet/getchainparameters`           |

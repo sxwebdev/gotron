@@ -1,0 +1,16 @@
+# Single-witness java-tron private network for the local tests
+# (tests/local_*_test.go). Start it with `make localnet-up`.
+name: gotron-localnet
+
+services:
+  tron:
+    image: tronprotocol/java-tron:GreatVoyage-v4.8.2.3
+    container_name: gotron-node
+    command: ["-c", "/java-tron/private.conf", "--witness"]
+    volumes:
+      - ./tron-private.conf:/java-tron/private.conf:ro
+    ports:
+      - "127.0.0.1:18190:18190" # HTTP  /wallet/*
+      - "127.0.0.1:18191:18191" # HTTP  /walletsolidity/*
+      - "127.0.0.1:50051:50051" # gRPC  full node
+      - "127.0.0.1:50052:50052" # gRPC  solidity

@@ -130,7 +130,7 @@ func TestHTTPTxRequestRejectsMalformedHex(t *testing.T) {
 func TestHTTPGetAccountMapsStakeBalances(t *testing.T) {
 	// Shape captured from a live node: "type" is omitted for BANDWIDTH and
 	// "amount" is omitted when zero.
-	const body = `{"address":"TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t","balance":42,
+	const body = `{"address":"41a614f803b6fd780986a42c78ec9c7f77e6ded13c","balance":42,
 		"frozenV2":[{"amount":13000000000},{"type":"ENERGY","amount":75550000000},{"type":"TRON_POWER"}],
 		"unfrozenV2":[{"type":"ENERGY","unfreeze_amount":5000000,"unfreeze_expire_time":1785236015936}]}`
 

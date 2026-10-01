@@ -9,12 +9,12 @@ import (
 	"github.com/sxwebdev/gotron/schema/pb/core"
 )
 
-// A live /wallet/getaccount answer, trimmed to the fields that need converting
-// but otherwise verbatim - including the shapes protojson cannot read: a
-// protobuf map rendered as an array of key/value objects, and base58 addresses
-// inside the permission keys.
+// A live /wallet/getaccount answer (requested without "visible", so addresses
+// are hex), trimmed to the fields that need converting but otherwise verbatim -
+// including the shapes protojson cannot read: a protobuf map rendered as an
+// array of key/value objects, and hex where protojson expects base64.
 const liveAccountWithPermissions = `{
-	"address": "TZ4UXDV5ZhNW7fb2AMSbgfAEZ7hWsnYS2g",
+	"address": "41fd49eda0f23ff7ec1d03b52c3a45991c24cd440e",
 	"balance": 123456,
 	"net_window_size": 28800000,
 	"net_window_optimized": true,
@@ -30,14 +30,14 @@ const liveAccountWithPermissions = `{
 	"owner_permission": {
 		"permission_name": "owner",
 		"threshold": 1,
-		"keys": [{"address": "TZ4UXDV5ZhNW7fb2AMSbgfAEZ7hWsnYS2g", "weight": 1}]
+		"keys": [{"address": "41fd49eda0f23ff7ec1d03b52c3a45991c24cd440e", "weight": 1}]
 	},
 	"witness_permission": {
 		"type": "Witness",
 		"id": 1,
 		"permission_name": "witness",
 		"threshold": 1,
-		"keys": [{"address": "TN2W4cc7a4dsYyTLiLMWa9m7jVpdLjGvYs", "weight": 1}]
+		"keys": [{"address": "418440ffd578f7a5abf3537b5f46a6980d382db581", "weight": 1}]
 	},
 	"active_permission": [{
 		"type": "Active",
@@ -46,8 +46,8 @@ const liveAccountWithPermissions = `{
 		"threshold": 2,
 		"operations": "7fff1fc0033e0300000000000000000000000000000000000000000000000000",
 		"keys": [
-			{"address": "TZ4UXDV5ZhNW7fb2AMSbgfAEZ7hWsnYS2g", "weight": 1},
-			{"address": "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", "weight": 1}
+			{"address": "41fd49eda0f23ff7ec1d03b52c3a45991c24cd440e", "weight": 1},
+			{"address": "41a614f803b6fd780986a42c78ec9c7f77e6ded13c", "weight": 1}
 		]
 	}],
 	"assetV2": [{"key": "1004977", "value": 8888880000}, {"key": "1005026", "value": 970000}],
@@ -63,11 +63,10 @@ func mustDecode(t *testing.T, addr string) []byte {
 	return decoded
 }
 
-// These fields were parsed out of the response and then dropped on the floor:
-// the struct had them, the conversion to core.Account did not copy them. gRPC
-// returns every one of them, so the same account read over the two transports
-// disagreed - silently, because a field nobody sets looks exactly like a field
-// the node did not send.
+// Every one of these fields is something gRPC returns. The hand-written struct
+// HTTP used to parse into dropped them, so the same account read over the two
+// transports disagreed - silently, because a field nobody sets looks exactly
+// like a field the node did not send.
 func TestHTTPGetAccountKeepsResourceAndPermissions(t *testing.T) {
 	tr, _ := newStubTransport(t, http.StatusOK, liveAccountWithPermissions)
 
@@ -130,7 +129,7 @@ func TestHTTPGetAccountKeepsAssetMaps(t *testing.T) {
 // rather than an empty message full of zero-valued sub-messages.
 func TestHTTPGetAccountWithoutOptionalSections(t *testing.T) {
 	tr, _ := newStubTransport(t, http.StatusOK,
-		`{"address":"TZ4UXDV5ZhNW7fb2AMSbgfAEZ7hWsnYS2g","balance":1}`)
+		`{"address":"41fd49eda0f23ff7ec1d03b52c3a45991c24cd440e","balance":1}`)
 
 	acc, err := tr.GetAccount(t.Context(), &core.Account{Address: mustDecode(t, testAddr)})
 	require.NoError(t, err)
@@ -150,7 +149,7 @@ func TestHTTPGetAccountRejectsUnreadableAddress(t *testing.T) {
 	tr, _ := newStubTransport(t, http.StatusOK, `{"address":"not-an-address","balance":1}`)
 
 	_, err := tr.GetAccount(t.Context(), &core.Account{Address: mustDecode(t, testAddr)})
-	require.ErrorIs(t, err, ErrInvalidAddress)
+	require.ErrorContains(t, err, "Account.address")
 }
 
 // A permission key that will not decode is refused too: EncodeCheck turns any
@@ -158,11 +157,11 @@ func TestHTTPGetAccountRejectsUnreadableAddress(t *testing.T) {
 // the account owner does not control.
 func TestHTTPGetAccountRejectsUnreadablePermissionKey(t *testing.T) {
 	tr, _ := newStubTransport(t, http.StatusOK,
-		`{"address":"TZ4UXDV5ZhNW7fb2AMSbgfAEZ7hWsnYS2g",`+
+		`{"address":"41fd49eda0f23ff7ec1d03b52c3a45991c24cd440e",`+
 			`"owner_permission":{"permission_name":"owner","keys":[{"address":"nope","weight":1}]}}`)
 
 	_, err := tr.GetAccount(t.Context(), &core.Account{Address: mustDecode(t, testAddr)})
-	require.ErrorIs(t, err, ErrInvalidAddress)
+	require.ErrorContains(t, err, "Key.address")
 }
 
 // The same map-as-array shape, one message over.
@@ -200,7 +199,7 @@ func TestHTTPGetAccountResourceKeepsAssetAndPowerFields(t *testing.T) {
 // as an ordinary account over HTTP.
 func TestHTTPGetAccountKeepsIsWitness(t *testing.T) {
 	tr, _ := newStubTransport(t, http.StatusOK,
-		`{"address":"TZ4UXDV5ZhNW7fb2AMSbgfAEZ7hWsnYS2g","balance":1,"is_witness":true}`)
+		`{"address":"41fd49eda0f23ff7ec1d03b52c3a45991c24cd440e","balance":1,"is_witness":true}`)
 
 	acc, err := tr.GetAccount(t.Context(), &core.Account{Address: mustDecode(t, testAddr)})
 	require.NoError(t, err)
@@ -211,22 +210,22 @@ func TestHTTPGetAccountKeepsIsWitness(t *testing.T) {
 // 0, which is Owner - the one type PermissionAllows grants everything.
 func TestHTTPGetAccountRejectsUnknownPermissionType(t *testing.T) {
 	tr, _ := newStubTransport(t, http.StatusOK,
-		`{"address":"TZ4UXDV5ZhNW7fb2AMSbgfAEZ7hWsnYS2g","active_permission":[`+
+		`{"address":"41fd49eda0f23ff7ec1d03b52c3a45991c24cd440e","active_permission":[`+
 			`{"type":"Delegated","id":2,"permission_name":"a","threshold":1,"operations":"`+
 			`0000000000000000000000000000000000000000000000000000000000000000",`+
-			`"keys":[{"address":"TZ4UXDV5ZhNW7fb2AMSbgfAEZ7hWsnYS2g","weight":1}]}]}`)
+			`"keys":[{"address":"41fd49eda0f23ff7ec1d03b52c3a45991c24cd440e","weight":1}]}]}`)
 
 	_, err := tr.GetAccount(t.Context(), &core.Account{Address: mustDecode(t, testAddr)})
-	require.ErrorIs(t, err, ErrInvalidPermission)
+	require.ErrorContains(t, err, `unknown protocol.Permission.PermissionType value "Delegated"`)
 }
 
 // Tron omits "type" for the owner permission because Owner is the protobuf zero
 // value, so an absent type must still parse.
 func TestHTTPGetAccountAcceptsOwnerPermissionWithoutType(t *testing.T) {
 	tr, _ := newStubTransport(t, http.StatusOK,
-		`{"address":"TZ4UXDV5ZhNW7fb2AMSbgfAEZ7hWsnYS2g","owner_permission":`+
+		`{"address":"41fd49eda0f23ff7ec1d03b52c3a45991c24cd440e","owner_permission":`+
 			`{"permission_name":"owner","threshold":1,`+
-			`"keys":[{"address":"TZ4UXDV5ZhNW7fb2AMSbgfAEZ7hWsnYS2g","weight":1}]}}`)
+			`"keys":[{"address":"41fd49eda0f23ff7ec1d03b52c3a45991c24cd440e","weight":1}]}}`)
 
 	acc, err := tr.GetAccount(t.Context(), &core.Account{Address: mustDecode(t, testAddr)})
 	require.NoError(t, err)

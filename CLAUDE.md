@@ -28,6 +28,12 @@ go test -race ./pkg/client/ -v          # includes the synctest health-checker t
 make test                               # == go test ./tests/... -v
 go test ./tests/ -v -run TestGetAccount_GRPC -timeout 30s   # a single integration test
 
+# Local private network — write paths and gRPC/HTTP parity of every Transport method. The node is
+# defined in tests/localnet (config + docker compose). Local tests skip unless GOTRON_LOCAL_NODE=1.
+make localnet-up     # start a single-witness java-tron, wait for blocks
+make test-local      # GOTRON_LOCAL_NODE=1 go test -race ./tests/ -run Local -v
+make localnet-down   # remove it (the chain starts from genesis next time)
+
 # Regenerate protobuf / ABI (rarely needed; require buf + abigen installed via `make install-dev-tools`)
 make genproto
 make genabi
@@ -80,14 +86,15 @@ must be added consistently to all of them or the build breaks. Order:
 
 1. `transport.go` — add the signature under the right section comment.
 2. `transport_grpc.go` — delegate to `t.walletClient.<Method>`.
-3. `transport_http.go` — implement against the REST endpoint (pick the right `doRequest*` helper).
+3. `transport_http.go` — implement against the REST endpoint (`fetchTron` for reads, `doTxRequest`
+   for transaction-creating endpoints).
 4. `transport_roundrobin.go` — `return t.next().<Method>(...)`.
 5. `health.go` — `next()` → call → `recordOutcome(n, err)`.
 6. `transport_metrics.go` — time it via the `after(...)` helper.
 7. `pkg/client/<domain>.go` — the ergonomic `Client` method (string args → proto → transport).
 
-`skills/gotron/references/transport-guide.md` has the full checklist with code templates. Consult it
-before adding transport methods.
+`docs/transport.md` has the full checklist with code templates (including the tests a new method
+needs). Consult it before adding transport methods.
 
 ## Conventions and gotchas
 
@@ -106,13 +113,16 @@ before adding transport methods.
     plain — they are not money. Vote counts are TRON POWER, also not money.
 - **Addresses.** The `Client` layer uses base58check strings (`T...`); the transport layer uses raw
   `[]byte`. Convert with `tronutils.DecodeCheck` / `tronutils.EncodeCheck`.
-- **HTTP transport is the tricky one.** Tron's REST JSON uses hex (not base64) for bytes, `txID`/
-  `blockID` casing, and returns transaction-creating endpoints at the top level (not wrapped in
-  `TransactionExtention`) — reporting validation failures as **HTTP 200 with an `Error` field**.
-  Every tx-creating endpoint must go through **`doTxRequest`**, which rebuilds the tx from
-  `raw_data_hex` and turns `Error` into a real error. Feeding such a response to plain `doRequest`
-  yields a silently-empty message and `nil` error. `/wallet/getReward` and `/wallet/getBrokerage` are
-  the only camelCase endpoints (405 in lowercase). Details in the transport guide.
+- **HTTP transport is the tricky one.** java-tron's REST JSON is not protojson: bytes are hex (which
+  protojson silently mis-reads as base64), maps are `[{"key","value"}]` arrays, `Any` is
+  `{"type_url","value"}`, int64 must not pass through float64. Every read goes through **`fetchTron`**
+  (`decodeTronJSON` in `tronjson.go`, driven by the message's protobuf descriptor) and is requested
+  **without `visible`** — never hand a body to protojson directly. Transaction-creating endpoints
+  return the tx at the top level and report validation failures as **HTTP 200 with an `Error`
+  field**; they go through **`doTxRequest`**, which rebuilds the tx from `raw_data_hex` and turns
+  `Error` into a `ContractValidateError`. `/wallet/getReward` and `/wallet/getBrokerage` are the only
+  camelCase endpoints (405 in lowercase). Details and the accepted gRPC/HTTP differences are in the
+  transport guide.
 - **Typed errors.** Return/wrap the sentinels in `errors.go` (`ErrInvalidAddress`, `ErrInvalidAmount`,
   `ErrAccountNotFound`, `ErrNoHealthyNodes`, …) with `fmt.Errorf("%w: …", ErrX, …)` so callers can
   `errors.Is`.
@@ -120,13 +130,15 @@ before adding transport methods.
 ## Testing conventions
 
 - **Two layers.** Integration tests in `tests/` (`package tests`) hit live nodes and must have both a
-  `_GRPC` and `_HTTP` variant (round-robin cases: `_MultiNode`). Deterministic transport/health logic
+  `_GRPC` and `_HTTP` variant (round-robin cases: `_MultiNode`). `tests/local_*_test.go` run against a
+  local private network and hold the parity test (gRPC vs HTTP, `proto.Equal`) of every `Transport`
+  method — a new method gets one. Deterministic transport/health logic
   is unit-tested in `pkg/client/` (`package client`) using Go 1.26 `testing/synctest` for
   virtual-time tests with no network or sleeps. Shared constants/helpers live in `tests/common_test.go`
   (`newGRPCClient`/`newHTTPClient`/`newMultiNodeClient`, known mainnet addresses like `testAddress`,
   `usdtContract`, `stakedAddress`).
 - **Doc-consistency test.** `docs_test.go` (`TestDocsReferenceRealAPI`) parses `README.md`, `doc.go`,
-  and `skills/gotron/references/api-surface.md` and fails if they reference a `pkg/address` or
+  `docs/*.md` and every file of the skill, and fails if they reference a `pkg/address` or
   `pkg/tronutils` symbol that isn't in the compile-checked allow-list. **If you rename or document an
   API symbol, update `docs_test.go` and the docs together**, or this test breaks.
 - **House style.** Tests are independent and cover every real external state — do not shape cases to
@@ -134,9 +146,19 @@ before adding transport methods.
   each with a failing test, rather than chasing coverage. There is a `go-test` skill and a
   `go-code-review` skill in this environment that encode this stance.
 
-## Skill docs
+## Documentation
 
-`skills/gotron/references/` contains deep reference material kept in sync with the code:
-`api-surface.md` (full public API), `transport-guide.md` (transport internals + add-a-method
-checklist), `testing-patterns.md` (test layout and synctest patterns). Read the relevant one before
-non-trivial work in that area — they are more detailed than this file.
+Two audiences, two places — keep them apart:
+
+- **`docs/` — for working on gotron itself.** `architecture.md` (layers, client wiring, error
+  internals, design rules), `transport.md` (the `Transport` implementations, HTTP decoding, accepted
+  gRPC/HTTP differences, add-a-method checklist, endpoint map), `testing.md` (test layout, synctest,
+  the local private network). Read the relevant one before non-trivial work in that area — they are
+  more detailed than this file. Internal knowledge (how something works inside, why it was built
+  that way, bugs it guards against) goes here.
+- **`skills/gotron/` — for people integrating the library.** It is published (`skills repo add
+  sxwebdev/gotron`), so it describes how to *use* gotron: `SKILL.md` (connect, the three rules,
+  recipes, errors, transport choice, pitfalls) and `references/` (`api-surface.md` — the full public
+  API; `constants.md` — errors, enums, metric names). No internal file names, unexported symbols or
+  implementation history there. When a public method or its behaviour changes, update
+  `api-surface.md` (and `SKILL.md` if a recipe uses it).

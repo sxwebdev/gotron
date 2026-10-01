@@ -1,10 +1,16 @@
-# Testing Patterns
+# Testing
+
+How gotron is tested, for people working on the library. See [architecture.md](architecture.md)
+for the layout of the code under test and [transport.md](transport.md) for what the transport
+parity tests hold each implementation to.
 
 ## Test Location and Package
 
 Two test layers:
 
 - **Integration tests** live in `tests/` as `package tests` and hit real public Tron nodes.
+- **Local-network tests** live in `tests/local_*_test.go` and run only with `GOTRON_LOCAL_NODE=1`
+  against a single-witness java-tron private network — see "Local private network" below.
 - **Unit tests** for transport-layer components (the health-checker, classifier) live alongside the source in `pkg/client/` as `package client` and use `testing/synctest` for deterministic virtual-time tests with no network.
 
 ## Test Helpers
@@ -31,7 +37,7 @@ httpAddress = "https://tron-rpc.publicnode.com"
 ```go
 testAddress  = "TZ4UXDV5ZhNW7fb2AMSbgfAEZ7hWsnYS2g"  // Binance hot wallet (always active, has balance)
 usdtContract = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"  // USDT TRC20 contract
-testBlockNum = uint64(79831098)                         // known block with transactions
+recentBlockNum(t)                                        // head - 100: irreversible, still served
 
 stakedAddress  = "TUFaFimz7DYk8DVzUznvBgzBAFGppLEJaL"  // active Stake 2.0 position (bandwidth + energy),
                                                         // non-zero brokerage, active SR votes
@@ -104,14 +110,14 @@ func TestGetAccount_HTTP(t *testing.T) {
 
 Unit tests in `pkg/client/`:
 
-| File                             | What it tests                                                                   |
-| -------------------------------- | ------------------------------------------------------------------------------- |
-| `metrics_test.go`                | `MetricsTransport`, built-in Prometheus metrics, mock helpers                   |
-| `health_test.go`                 | `HealthAwareTransport` behaviour with `synctest`: tier fallback, recovery, etc. |
-| `health_helpers_test.go`         | `controllableTransport` mock + `newHarness` for health tests                    |
-| `staking_test.go`                | Stake/Unstake contract building, `GetStakeInfo` aggregation, ms-vs-s expiry     |
-| `witness_test.go`                | Vote set building and order, reward/brokerage unwrapping                        |
-| `transport_http_stake_test.go`   | `doTxRequest` on recorded live responses, `frozenV2` mapping, reward fields     |
+| File                           | What it tests                                                                   |
+| ------------------------------ | ------------------------------------------------------------------------------- |
+| `metrics_test.go`              | `MetricsTransport`, built-in Prometheus metrics, mock helpers                   |
+| `health_test.go`               | `HealthAwareTransport` behaviour with `synctest`: tier fallback, recovery, etc. |
+| `health_helpers_test.go`       | `controllableTransport` mock + `newHarness` for health tests                    |
+| `staking_test.go`              | Stake/Unstake contract building, `GetStakeInfo` aggregation, ms-vs-s expiry     |
+| `witness_test.go`              | Vote set building and order, reward/brokerage unwrapping                        |
+| `transport_http_stake_test.go` | `doTxRequest` on recorded live responses, `frozenV2` mapping, reward fields     |
 
 ## Running Tests
 
@@ -193,5 +199,48 @@ func TestHealthAware_PrimaryFails_FailoverToTier1(t *testing.T) {
 3. Use `require` (not `assert`) for critical checks — fail fast on errors
 4. Always set a context timeout (10 seconds is the convention)
 5. Always `defer c.Close()` after creating the client
-6. Use known test data (`testAddress`, `usdtContract`, `testBlockNum`) for reproducible results
+6. Use known test data (`testAddress`, `usdtContract`, `recentBlockNum(t)`) for reproducible results.
+   Do not hard-code an old block: public nodes keep no old history and answer `{}` for it on both
+   transports, so a gRPC-vs-HTTP comparison of it compares two empty blocks and passes. Require the
+   data you compare to be non-empty, and compare whole messages with `requireProtoEqual`
 7. For TRC20 tests, use the USDT contract which is always available on mainnet
+
+## Local private network
+
+Public nodes cannot exercise the write paths (deploying, staking, delegating, a refused broadcast)
+and give no way to put a known transaction on chain and read it back through both transports. The
+`tests/local_*_test.go` files do, against one java-tron node defined in the repo
+(`tests/localnet/`: `tron-private.conf` + `docker-compose.yml`):
+
+```bash
+make localnet-up    # docker compose up, waits for the first blocks
+make test-local     # GOTRON_LOCAL_NODE=1 go test -race ./tests/ -run Local -v
+make localnet-down  # drop the chain; the next up starts from genesis
+```
+
+- Endpoints default to `127.0.0.1:50051` (gRPC) and `http://127.0.0.1:18190` (HTTP); override with
+  `GOTRON_LOCAL_GRPC` / `GOTRON_LOCAL_HTTP`. Without `GOTRON_LOCAL_NODE=1` every local test skips.
+- The genesis witness (private key `0x…01`, `TMVQGm1qAQYVdetCeGRRkTWYYrLXuHK2HC`) holds all TRX.
+- Chain parameters are **not** mainnet's. Assert fees against `ChainParams` from the node, never
+  mainnet constants. `CancelAllUnfreezeV2` is off on a fresh network; the fixture turns it on with a
+  committee proposal (parameter 77), which applies at the first maintenance after the proposal
+  expires (~1–2 minutes). The unstake delay is 14 days, so `WithdrawExpireUnfreeze` can only be
+  tested as a refusal.
+
+**Files:**
+
+| File                        | What                                                                                                                                                                                                                                      |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `local_common_test.go`      | clients, bare transports, keys, `sendAndConfirm`, `requireProtoEqual` (prototext diff)                                                                                                                                                    |
+| `local_fixture_test.go`     | `localFixture(t)`: one transaction of every kind, built once over gRPC — TetherToken (46-entry ABI, `testdata/`), a TRC20 transfer (log), a contract call with an internal transaction, stake/delegate/vote/unstake/cancel, a TRC10 issue |
+| `local_parity_read_test.go` | every read method, gRPC vs HTTP, `proto.Equal`                                                                                                                                                                                            |
+| `local_parity_tx_test.go`   | every transaction-building method: same transaction but for timestamp/expiration/ref block, or the same refusal reason                                                                                                                    |
+| `local_flow_test.go`        | `_GRPC`/`_HTTP` end-to-end flows through `Client`: TRX transfers, deploy + TRC20, internal tx, stake/delegate, refused broadcasts                                                                                                         |
+
+`GOTRON_LOCAL_FIXTURE_CACHE=<file>` caches the fixture between runs (it is rebuilt when the node no
+longer has its transactions), which saves about a minute per run while iterating.
+
+**Parity rule:** the bare `GRPCTransport` and `HTTPTransport` are called with the same input and the
+answers compared with `proto.Equal`. gRPC is the reference — its wire format is protobuf. Any
+difference is a decoding bug unless it is listed as accepted in the transport guide, with a comment
+at the comparison that normalises it.

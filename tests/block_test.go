@@ -84,11 +84,16 @@ func TestGetTransactionInfoByBlockNum_GRPC(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	txInfoList, err := c.GetTransactionInfoByBlockNum(ctx, testBlockNum)
+	num := recentBlockNum(t)
+	txInfoList, err := c.GetTransactionInfoByBlockNum(ctx, num)
 	require.NoError(t, err)
-	require.NotNil(t, txInfoList)
+	require.NotEmpty(t, txInfoList.GetTransactionInfo(), "a mainnet block without transactions")
+	for _, info := range txInfoList.GetTransactionInfo() {
+		require.Len(t, info.GetId(), 32)
+		require.Equal(t, int64(num), info.GetBlockNumber())
+	}
 
-	t.Logf("gRPC: Block %d has %d transaction infos", testBlockNum, len(txInfoList.GetTransactionInfo()))
+	t.Logf("gRPC: Block %d has %d transaction infos", num, len(txInfoList.GetTransactionInfo()))
 }
 
 func TestGetTransactionInfoByBlockNum_HTTP(t *testing.T) {
@@ -98,9 +103,14 @@ func TestGetTransactionInfoByBlockNum_HTTP(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	txInfoList, err := c.GetTransactionInfoByBlockNum(ctx, testBlockNum)
+	num := recentBlockNum(t)
+	txInfoList, err := c.GetTransactionInfoByBlockNum(ctx, num)
 	require.NoError(t, err)
-	require.NotNil(t, txInfoList)
+	require.NotEmpty(t, txInfoList.GetTransactionInfo(), "a mainnet block without transactions")
+	for _, info := range txInfoList.GetTransactionInfo() {
+		require.Len(t, info.GetId(), 32)
+		require.Equal(t, int64(num), info.GetBlockNumber())
+	}
 
-	t.Logf("HTTP: Block %d has %d transaction infos", testBlockNum, len(txInfoList.GetTransactionInfo()))
+	t.Logf("HTTP: Block %d has %d transaction infos", num, len(txInfoList.GetTransactionInfo()))
 }
