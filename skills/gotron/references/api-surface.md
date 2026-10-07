@@ -340,10 +340,35 @@ func (c *Client) ConvertStakedToBandwidth(totalNetWeight, totalNetLimit int64, s
 func (c *Client) ConvertBandwidthToStaked(totalNetWeight, totalNetLimit int64, bandwidth decimal.Decimal) SUN
 ```
 
-The two `…ToStaked` directions round up via `units.CeilToSUN`, so they answer "how much must I
-stake", never "how much might be enough". All four return zero rather than an error when the
-divisor the network supplies is zero, so check the weights yourself if a silent zero would be
-mistaken for a real answer.
+The two `…ToStaked` directions return the exact share rounded up to a SUN. All four return zero
+rather than an error when the divisor the network supplies is zero, so check the weights yourself
+if a silent zero would be mistaken for a real answer.
+
+The exact share is not what the chain counts. java-tron truncates a stake's resources, and before
+the network enabled `getAllowHardenResourceCalculation` it computed them in doubles, so a stake
+that reaches a number of units exactly can come a unit short on chain. For what to delegate, use
+`ResourceRates`:
+
+```go
+// The network totals a stake's resources are computed from. Weights from GetAccountResource,
+// TotalEnergyCurrentLimit and AllowHardenResourceCalculation from ChainParams.
+type ResourceRates struct {
+    TotalEnergyCurrentLimit int64
+    TotalEnergyWeight       int64 // TRX
+    TotalNetLimit           int64
+    TotalNetWeight          int64 // TRX
+    Harden                  bool  // ChainParams.AllowHardenResourceCalculation
+}
+
+func (r ResourceRates) Limit(resource ResourceType, staked SUN) int64        // what the chain counts for the account
+func (r ResourceRates) StakeFor(resource ResourceType, resourceUnits int64) SUN // least stake whose Limit reaches them
+func (r ResourceRates) CallStakeFor(energy int64) SUN                         // StakeFor rounded up to whole TRX
+```
+
+`CallStakeFor` is for energy a smart-contract call will spend (a token transfer): the virtual
+machine counts an account's energy stake in whole TRX, so a stake with a fraction of a TRX gives a
+call less than the account shows. `StakeFor` and `CallStakeFor` return `math.MaxInt64` when the
+network supplies no limit or weight, or the stake would not fit an int64.
 
 ### Staking operations
 
@@ -789,6 +814,7 @@ type ChainParams struct {
     FreeNetLimit                        int64
     CreateNewAccountFeeInSystemContract int64 // 1 TRX on mainnet
     CreateAccountFee                    int64 // 0.1 TRX on mainnet
+    AllowHardenResourceCalculation      bool  // resources computed in integers (ResourceRates.Harden)
 }
 ```
 

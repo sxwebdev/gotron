@@ -18,6 +18,7 @@ func chainParamsFake() *fakeTransport {
 				{Key: "getFreeNetLimit", Value: 600},
 				{Key: "getCreateAccountFee", Value: 100_000},
 				{Key: "getCreateNewAccountFeeInSystemContract", Value: 1_000_000},
+				{Key: "getAllowHardenResourceCalculation", Value: 1},
 				{Key: "unknownKey", Value: 5}, // must be ignored
 			}}, nil
 		},
@@ -34,6 +35,22 @@ func TestChainParams(t *testing.T) {
 	require.Equal(t, int64(600), p.FreeNetLimit)
 	require.Equal(t, int64(100_000), p.CreateAccountFee)
 	require.Equal(t, int64(1_000_000), p.CreateNewAccountFeeInSystemContract)
+	require.True(t, p.AllowHardenResourceCalculation)
+}
+
+// A network that never enabled the proposal has no such parameter: doubles.
+func TestChainParamsWithoutHarden(t *testing.T) {
+	c := newTestClient(&fakeTransport{
+		getChainParameters: func(context.Context) (*core.ChainParameters, error) {
+			return &core.ChainParameters{ChainParameter: []*core.ChainParameters_ChainParameter{
+				{Key: "getEnergyFee", Value: 420},
+				{Key: "getAllowHardenResourceCalculation", Value: 0},
+			}}, nil
+		},
+	})
+	p, err := c.ChainParams(context.Background())
+	require.NoError(t, err)
+	require.False(t, p.AllowHardenResourceCalculation)
 }
 
 func TestChainParam(t *testing.T) {

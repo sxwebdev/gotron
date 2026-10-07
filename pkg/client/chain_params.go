@@ -14,6 +14,10 @@ type ChainParams struct {
 	FreeNetLimit                        int64
 	CreateNewAccountFeeInSystemContract int64
 	CreateAccountFee                    int64
+	// AllowHardenResourceCalculation is the proposal under which the chain
+	// computes a stake's resources in integers instead of doubles
+	// (ResourceRates.Harden); false on a network that never enabled it.
+	AllowHardenResourceCalculation bool
 }
 
 // ChainParam get chain parameters
@@ -53,6 +57,8 @@ func (c *Client) ChainParams(ctx context.Context) (*ChainParams, error) {
 			res.CreateAccountFee = item.Value
 		case "getCreateNewAccountFeeInSystemContract":
 			res.CreateNewAccountFeeInSystemContract = item.Value
+		case "getAllowHardenResourceCalculation":
+			res.AllowHardenResourceCalculation = item.Value != 0
 		}
 	}
 
