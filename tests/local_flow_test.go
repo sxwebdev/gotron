@@ -265,6 +265,13 @@ func testLocalStakeAndDelegate(t *testing.T, c *client.Client) {
 	require.NoError(t, err)
 	require.Equal(t, trx(5_000), maxEnergy)
 
+	// More than the stake: the node's verdict, through this transport, is the
+	// sentinel for either resource.
+	_, err = c.DelegateResource(ctx, owner.Address, receiver.Address, client.ResourceTypeEnergy, trx(5_001), false, 0)
+	require.ErrorIs(t, err, client.ErrDelegateStakeShort)
+	_, err = c.DelegateResource(ctx, owner.Address, receiver.Address, client.ResourceTypeBandwidth, trx(1_001), false, 0)
+	require.ErrorIs(t, err, client.ErrDelegateStakeShort)
+
 	ext, err = c.DelegateResource(ctx, owner.Address, receiver.Address, client.ResourceTypeEnergy, trx(2_000), false, 0)
 	require.NoError(t, err)
 	sendAndConfirm(t, c, ext, owner)

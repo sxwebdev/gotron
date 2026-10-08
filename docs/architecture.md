@@ -69,7 +69,15 @@ probe cadence, error classification, shutdown — are in [transport.md](transpor
 - `HTTPStatusError` is a non-2xx HTTP answer, wrapped inside a `TransportError`.
 - `ContractValidateError` is a node refusing to _build_ a transaction. Both transports produce it
   (gRPC through `Result.code` via `checkTransaction`, HTTP through the `Error` field in
-  `parseTxResponse`) and it unwraps to `ErrInvalidTransaction`.
+  `parseTxResponse`) and it unwraps to `ErrInvalidTransaction`. Its `Is` method matches the message
+  to the verdicts the package names (`ErrDelegateStakeShort`, `ErrDelegateBelowMinimum`): the
+  actuator's text, in every wording java-tron has used, must end the message after the prefix the
+  transport puts in front of it, so a near-miss refusal does not match. `Is` switches on the target
+  rather than looking it up in a map, as `errors.Is` hands it any target, uncomparable ones too.
+  `DelegateResource` refuses an amount under `MinDelegateBalance` itself, as a
+  `ContractValidateError` with code `CONTRACT_VALIDATE_ERROR` and the current verdict, bare: callers
+  branching on the type, `ErrInvalidTransaction` or `ErrDelegateBelowMinimum` take the same path as
+  for a node's refusal, but there is no transport prefix and no `TransportError`.
 - `BroadcastError` is a rejected broadcast, built by `Client.BroadcastTransaction` from
   `Return.code` / `Return.message`.
 - `ErrNodeRefusedRequest` is an HTTP read the node refused with `{"Error": …}` (see `apiError`).

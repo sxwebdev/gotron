@@ -24,6 +24,10 @@ ErrTransactionInfoNotFound  = errors.New("transaction info not found")
 // Resources
 ErrInvalidResourceType      = errors.New("invalid resource type")
 
+// Delegation refusals (matched on *ContractValidateError by errors.Is)
+ErrDelegateStakeShort       = errors.New("delegate balance exceeds the owner's available stake")
+ErrDelegateBelowMinimum     = errors.New("delegate balance below the minimum delegation")
+
 // Account
 ErrAccountNotFound          = errors.New("account not found")
 
@@ -90,6 +94,14 @@ network-level failures (they count toward a node's unhealthy threshold) and
 other 4xx codes as logical errors (they do not affect node health). Inspect with
 `errors.AsType[*HTTPStatusError](err)` (Go 1.26+).
 
+`ErrDelegateStakeShort` and `ErrDelegateBelowMinimum` are never returned bare:
+a `*ContractValidateError` from `DelegateResource` matches them with
+`errors.Is` when its message is the node's verdict — the owner's stake of the
+resource, less what its own usage holds, is under the amount; or the amount is
+under `MinDelegateBalance`. Both wordings java-tron has used (before and since
+GreatVoyage-v4.7.3) and both transports' prefixes match. The client refuses an
+amount under the minimum itself, without asking a node.
+
 ## Network Types
 
 ```go
@@ -136,6 +148,8 @@ Methods: `Validate()`, `String()` ("BANDWIDTH"/"ENERGY"), `ToProto()` -> `core.R
 ```go
 TrxDecimals        = 6            // 1 TRX = 1,000,000 SUN
 TrxAssetIdentifier = "trx"
+
+MinDelegateBalance SUN = 1_000_000 // least stake a DelegateResource may lend (1 TRX)
 ```
 
 ## TRC20 Method Signatures

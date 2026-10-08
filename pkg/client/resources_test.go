@@ -108,7 +108,7 @@ func TestDelegateAndReclaimRejectEmptyTransaction(t *testing.T) {
 		},
 	})
 
-	_, err := c.DelegateResource(t.Context(), testAddr, testAddr2, ResourceTypeEnergy, 1, false, 0)
+	_, err := c.DelegateResource(t.Context(), testAddr, testAddr2, ResourceTypeEnergy, MinDelegateBalance, false, 0)
 	require.ErrorIs(t, err, ErrInvalidTransaction)
 
 	_, err = c.ReclaimResource(t.Context(), testAddr, testAddr2, ResourceTypeEnergy, 1)
@@ -137,7 +137,7 @@ func TestDelegateAndReclaimSurfaceNodeError(t *testing.T) {
 		},
 	})
 
-	_, err := c.DelegateResource(t.Context(), testAddr, testAddr2, ResourceTypeEnergy, 1, false, 0)
+	_, err := c.DelegateResource(t.Context(), testAddr, testAddr2, ResourceTypeEnergy, MinDelegateBalance, false, 0)
 	require.ErrorContains(t, err, "delegateBalance must be greater than 1 TRX")
 
 	_, err = c.ReclaimResource(t.Context(), testAddr, testAddr2, ResourceTypeEnergy, 1)

@@ -3,6 +3,7 @@ package client
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/sxwebdev/gotron/pkg/units"
 	"github.com/sxwebdev/gotron/schema/pb/api"
@@ -79,6 +80,60 @@ type ContractValidateError struct {
 // a kind of invalid transaction, and callers matching that sentinel before this
 // type existed should not have to change.
 func (e *ContractValidateError) Unwrap() error { return ErrInvalidTransaction }
+
+// Is matches a refusal to the verdicts this package names
+// (ErrDelegateStakeShort, ErrDelegateBelowMinimum), so a caller can branch on
+// errors.Is instead of on java-tron's wording, which differs between releases
+// and is prefixed differently by gRPC and HTTP. errors.As and the
+// ErrInvalidTransaction match through Unwrap are unaffected.
+func (e *ContractValidateError) Is(target error) bool {
+	// A switch, not a map: errors.Is hands Is any target, and hashing one of
+	// an uncomparable type would panic where == just answers false.
+	switch target {
+	case ErrDelegateStakeShort:
+		return refusalIsOneOf(e.Message, delegateStakeShortVerdicts)
+	case ErrDelegateBelowMinimum:
+		return refusalIsOneOf(e.Message, delegateBelowMinimumVerdicts)
+	default:
+		return false
+	}
+}
+
+// The actuators' own texts (java-tron DelegateResourceActuator.validate). Each
+// verdict is matched whole, so no other refusal about delegateBalance reads as
+// one of them.
+var (
+	// GreatVoyage-v4.7.3 and later, then v4.7.0 to v4.7.2.
+	delegateStakeShortVerdicts = []string{
+		"delegateBalance must be less than or equal to available FreezeEnergyV2 balance",
+		"delegateBalance must be less than or equal to available FreezeBandwidthV2 balance",
+		"delegateBalance must be less than available FreezeEnergyV2 balance",
+		"delegateBalance must be less than available FreezeBandwidthV2 balance",
+	}
+	// Both releases refuse under 1 TRX; v4.7.0 to v4.7.2 worded it as "more
+	// than".
+	delegateBelowMinimumVerdicts = []string{
+		delegateBelowMinimumVerdict,
+		"delegateBalance must be more than 1TRX",
+	}
+)
+
+const delegateBelowMinimumVerdict = "delegateBalance must be greater than or equal to 1 TRX"
+
+// refusalIsOneOf reports whether msg is one of the verdicts, bare or after the
+// prefix the node puts in front of the actuator's message: "Contract validate
+// error : " over gRPC, the exception class and " : " over HTTP. The verdict
+// has to end the message and start at a word, so a longer sentence that only
+// contains one is not it.
+func refusalIsOneOf(msg string, verdicts []string) bool {
+	msg = strings.TrimSpace(msg)
+	for _, v := range verdicts {
+		if rest, ok := strings.CutSuffix(msg, v); ok && (rest == "" || strings.HasSuffix(rest, " ")) {
+			return true
+		}
+	}
+	return false
+}
 
 func (e *ContractValidateError) Error() string {
 	switch {
@@ -166,6 +221,19 @@ var (
 	// the same refusal. The transaction-creating endpoints report the same class
 	// of refusal as a ContractValidateError, which carries the code gRPC gives.
 	ErrNodeRefusedRequest = errors.New("node refused the request")
+
+	// ErrDelegateStakeShort matches a DelegateResource the node refused because
+	// the owner's stake of the resource, less what its own usage holds, is
+	// below the amount. It is the chain's state now, not a malformed request:
+	// the same delegation can build once the owner stakes more or its usage
+	// recovers. Match it with errors.Is on the error DelegateResource returns.
+	ErrDelegateStakeShort = errors.New("delegate balance exceeds the owner's available stake")
+
+	// ErrDelegateBelowMinimum matches a DelegateResource for less than
+	// MinDelegateBalance. No node builds one, so DelegateResource refuses it
+	// before calling the node, with the node's own verdict; a refusal from the
+	// node matches as well.
+	ErrDelegateBelowMinimum = errors.New("delegate balance below the minimum delegation")
 
 	// ErrNoHealthyNodes is returned when no node in any tier is currently
 	// marked healthy. The health-checker runs continuously and will return

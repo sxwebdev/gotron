@@ -134,7 +134,12 @@ func (c *Client) GetCanDelegatedMaxSize(ctx context.Context, addr string, resour
 	return SUN(response.GetMaxSize()), nil
 }
 
-// DelegateResource delegates a resource from one account to another
+// DelegateResource delegates a resource from one account to another.
+//
+// delegateBalance is staked TRX, at least MinDelegateBalance. A refusal is a
+// *ContractValidateError; errors.Is tells ErrDelegateStakeShort (the owner
+// lacks the stake now) and ErrDelegateBelowMinimum (refused without asking a
+// node) from the rest.
 func (c *Client) DelegateResource(ctx context.Context, owner, receiver string, resource ResourceType, delegateBalance SUN, lock bool, lockPeriod int64) (*api.TransactionExtention, error) {
 	if err := address.Validate(owner); err != nil {
 		return nil, fmt.Errorf("%w: owner address is required", ErrInvalidAddress)
@@ -150,6 +155,18 @@ func (c *Client) DelegateResource(ctx context.Context, owner, receiver string, r
 
 	if delegateBalance <= 0 {
 		return nil, fmt.Errorf("%w: delegate balance must be greater than zero", ErrInvalidAmount)
+	}
+
+	// No node builds a delegation under the minimum: the bound has been
+	// TRX_PRECISION in every java-tron release with DelegateResource, so asking
+	// one only costs a round trip. The refusal is the kind a node gives - a
+	// *ContractValidateError with its code and its current verdict - so a
+	// caller branching on the type, on ErrInvalidTransaction or on
+	// ErrDelegateBelowMinimum takes the same path. It carries no transport
+	// prefix and no TransportError, and comes before the node's other checks,
+	// such as whether the owner exists.
+	if delegateBalance < MinDelegateBalance {
+		return nil, &ContractValidateError{Code: api.Return_CONTRACT_VALIDATE_ERROR, Message: delegateBelowMinimumVerdict}
 	}
 
 	addrFromBytes, err := tronutils.DecodeCheck(owner)

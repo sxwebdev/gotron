@@ -273,6 +273,10 @@ func (c *Client) GetAccountResource(ctx context.Context, addr string) (*api.Acco
 func (c *Client) GetDelegatedResources(ctx context.Context, address string) ([]Delegation, error)   // Stake 1.0 index
 func (c *Client) GetDelegatedResourcesV2(ctx context.Context, address string) ([]Delegation, error) // Stake 2.0
 func (c *Client) GetCanDelegatedMaxSize(ctx context.Context, addr string, resource ResourceType) (SUN, error)
+// DelegateResource refuses a delegateBalance under MinDelegateBalance itself, without a node
+// round trip: a *ContractValidateError with code CONTRACT_VALIDATE_ERROR and the node's verdict,
+// bare (no transport prefix, no TransportError), matching errors.Is ErrDelegateBelowMinimum.
+// A node's refusal for want of stake matches errors.Is ErrDelegateStakeShort.
 func (c *Client) DelegateResource(ctx context.Context, owner, receiver string, resource ResourceType, delegateBalance SUN, lock bool, lockPeriod int64) (*api.TransactionExtention, error)
 func (c *Client) ReclaimResource(ctx context.Context, owner, receiver string, resource ResourceType, delegateBalance SUN) (*api.TransactionExtention, error)
 func (c *Client) AvailableForDelegateResources(ctx context.Context, addr string) (*AvailableResources, error)
@@ -363,12 +367,24 @@ type ResourceRates struct {
 func (r ResourceRates) Limit(resource ResourceType, staked SUN) int64        // what the chain counts for the account
 func (r ResourceRates) StakeFor(resource ResourceType, resourceUnits int64) SUN // least stake whose Limit reaches them
 func (r ResourceRates) CallStakeFor(energy int64) SUN                         // StakeFor rounded up to whole TRX
+func (r ResourceRates) MinDelegateUnits(resource ResourceType) int64          // fewest units whose StakeFor reaches MinDelegateBalance
 ```
 
 `CallStakeFor` is for energy a smart-contract call will spend (a token transfer): the virtual
 machine counts an account's energy stake in whole TRX, so a stake with a fraction of a TRX gives a
 call less than the account shows. `StakeFor` and `CallStakeFor` return `math.MaxInt64` when the
 network supplies no limit or weight, or the stake would not fit an int64.
+
+A delegation lends at least `MinDelegateBalance` (1 TRX, a protocol constant every node enforces).
+`MinDelegateUnits` is the fewest units whose least stake reaches it. Fewer units cannot be
+delegated at their own size: lend the minimum for them, which gives at least `MinDelegateUnits-1`
+and so covers any of them. From `MinDelegateUnits` up, `StakeFor` reaches the minimum by itself.
+The minimum alone usually gives a unit less than `MinDelegateUnits`, so do not size that many units
+by it. It is 1 on a network that supplies no limit or weight.
+
+```go
+const MinDelegateBalance SUN = 1_000_000
+```
 
 ### Staking operations
 
@@ -852,6 +868,10 @@ ErrPermissionNotFound, ErrPermissionDenied
 // Contracts
 ErrContractCallFailed      // a constant call the VM refused, most often a revert
 
+// Delegation refusals: a *ContractValidateError matches them through errors.Is
+ErrDelegateStakeShort      // the owner's available stake of the resource is under the amount, now
+ErrDelegateBelowMinimum    // the amount is under MinDelegateBalance; no node builds it
+
 // Transport
 ErrNoHealthyNodes          // every node in every tier is currently unhealthy; retry with backoff
 ```
@@ -865,7 +885,9 @@ type TransportError struct { Host, Protocol, Method string; Err error }
 // node health and retrying elsewhere gives the same answer. Both transports
 // produce it (gRPC through Result.Code, HTTP through the "Error" field or a
 // nested result object), and it unwraps to ErrInvalidTransaction so the older
-// sentinel check still matches.
+// sentinel check still matches. errors.Is also matches it to the verdicts the
+// package names (ErrDelegateStakeShort, ErrDelegateBelowMinimum) whatever the
+// node release's wording and the transport's prefix.
 type ContractValidateError struct { Code api.ReturnResponseCode; Message string }
 type HTTPStatusError struct { Code int; Body string }
 type BroadcastError  struct { Code api.ReturnResponseCode; Message string }

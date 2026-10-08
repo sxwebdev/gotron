@@ -7,6 +7,12 @@ import (
 	"github.com/sxwebdev/gotron/pkg/units"
 )
 
+// MinDelegateBalance is the least stake a DelegateResource may lend.
+// java-tron's DelegateResourceActuator refuses less on every node and whatever
+// the owner holds (ErrDelegateBelowMinimum): the bound is a protocol constant,
+// not a network parameter, so a delegation sized under it is never built.
+const MinDelegateBalance SUN = units.SunPerTRX
+
 // ResourceRates are the network-wide totals a stake's energy and bandwidth are
 // computed from, as java-tron computes them. GetAccountResource supplies the
 // weights and TotalNetLimit, ChainParams TotalEnergyCurrentLimit and
@@ -92,6 +98,26 @@ func (r ResourceRates) CallStakeFor(energy int64) SUN {
 		return staked
 	}
 	return (staked + units.SunPerTRX - 1) / units.SunPerTRX * units.SunPerTRX
+}
+
+// MinDelegateUnits is the fewest units of resource whose StakeFor reaches
+// MinDelegateBalance. Fewer units need less stake than a delegation may lend,
+// so the node refuses a delegation sized for them (ErrDelegateBelowMinimum):
+// lend the minimum for them instead, which gives at least MinDelegateUnits-1
+// units and so covers any of them. From MinDelegateUnits up, StakeFor is the
+// delegation and reaches the minimum by itself. The minimum alone usually
+// gives a unit less than MinDelegateUnits, so do not size MinDelegateUnits
+// units by it.
+//
+// Limit never falls as the stake grows, so StakeFor(n) reaches the minimum
+// exactly when a stake a SUN short of it gives fewer than n units: the answer
+// is one unit past what that stake gives, in whichever mode r computes. A
+// network with no limit or no weight gives 1, as no stake reaches any units
+// there; so do totals no node reports, such as a negative limit. The figure
+// cannot overflow: a stake under a TRX gives under the whole limit, which is
+// an int64.
+func (r ResourceRates) MinDelegateUnits(resource ResourceType) int64 {
+	return max(r.Limit(resource, MinDelegateBalance-1)+1, 1)
 }
 
 func (r ResourceRates) totals(resource ResourceType) (limit, weight int64) {

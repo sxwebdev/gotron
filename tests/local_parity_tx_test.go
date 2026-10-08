@@ -360,6 +360,43 @@ func TestLocalParity_Stake(t *testing.T) {
 	})
 }
 
+// The node's own refusals of a delegation match the sentinels over both
+// transports, each with the prefix it puts in front of the verdict. The client
+// refuses a delegation under the minimum without asking a node, so the
+// transports are asked directly; gRPC reports through the result, which the
+// client turns into the error built here.
+func TestLocalDelegateRefusals(t *testing.T) {
+	chain := localFixture(t)
+	ctx := localContext(t, 20*time.Second)
+	staker, receiver := mustDecode(t, chain.Staker.Address), mustDecode(t, chain.Receiver.Address)
+	g, h := localTransports(t)
+
+	cases := []struct {
+		name     string
+		resource core.ResourceCode
+		balance  client.SUN
+		want     error
+	}{
+		{"under the minimum", core.ResourceCode_ENERGY, client.MinDelegateBalance - 1, client.ErrDelegateBelowMinimum},
+		{"beyond the energy stake", core.ResourceCode_ENERGY, trx(10_000_000), client.ErrDelegateStakeShort},
+		{"beyond the bandwidth stake", core.ResourceCode_BANDWIDTH, trx(10_000_000), client.ErrDelegateStakeShort},
+	}
+	for _, tc := range cases {
+		for name, tr := range map[string]client.Transport{"grpc": g, "http": h} {
+			t.Run(tc.name+"/"+name, func(t *testing.T) {
+				ext, err := tr.DelegateResource(ctx, &core.DelegateResourceContract{
+					OwnerAddress: staker, ReceiverAddress: receiver, Balance: tc.balance.Int64(), Resource: tc.resource,
+				})
+				if err == nil {
+					require.NotEqual(t, api.Return_SUCCESS, ext.GetResult().GetCode(), "expected a refusal")
+					err = &client.ContractValidateError{Code: ext.GetResult().GetCode(), Message: string(ext.GetResult().GetMessage())}
+				}
+				require.ErrorIs(t, err, tc.want)
+			})
+		}
+	}
+}
+
 func TestLocalParity_Witness_Transactions(t *testing.T) {
 	chain := localFixture(t)
 	ctx := localContext(t, 20*time.Second)
