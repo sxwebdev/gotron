@@ -23,6 +23,8 @@ type fakeTransport struct {
 	broadcastTransaction    func(ctx context.Context, tx *core.Transaction) (*api.Return, error)
 	getContract             func(ctx context.Context, address []byte) (*core.SmartContract, error)
 	deployContract          func(ctx context.Context, c *core.CreateSmartContract) (*api.TransactionExtention, error)
+	updateSetting           func(ctx context.Context, c *core.UpdateSettingContract) (*api.TransactionExtention, error)
+	updateEnergyLimit       func(ctx context.Context, c *core.UpdateEnergyLimitContract) (*api.TransactionExtention, error)
 
 	getDelegatedResource               func(ctx context.Context, m *api.DelegatedResourceMessage) (*api.DelegatedResourceList, error)
 	getDelegatedResourceV2             func(ctx context.Context, m *api.DelegatedResourceMessage) (*api.DelegatedResourceList, error)
@@ -197,11 +199,17 @@ func (f *fakeTransport) DeployContract(ctx context.Context, c *core.CreateSmartC
 	return nil, nil
 }
 
-func (f *fakeTransport) UpdateSetting(context.Context, *core.UpdateSettingContract) (*api.TransactionExtention, error) {
+func (f *fakeTransport) UpdateSetting(ctx context.Context, c *core.UpdateSettingContract) (*api.TransactionExtention, error) {
+	if f.updateSetting != nil {
+		return f.updateSetting(ctx, c)
+	}
 	return nil, nil
 }
 
-func (f *fakeTransport) UpdateEnergyLimit(context.Context, *core.UpdateEnergyLimitContract) (*api.TransactionExtention, error) {
+func (f *fakeTransport) UpdateEnergyLimit(ctx context.Context, c *core.UpdateEnergyLimitContract) (*api.TransactionExtention, error) {
+	if f.updateEnergyLimit != nil {
+		return f.updateEnergyLimit(ctx, c)
+	}
 	return nil, nil
 }
 

@@ -79,9 +79,17 @@ func (c *Client) EstimateEnergy(ctx context.Context, from, contractAddress, meth
 		return nil, err
 	}
 
-	if tx.GetResult().GetCode() > 0 {
-		return nil, fmt.Errorf("%s", string(tx.GetResult().GetMessage()))
+	if code := tx.GetResult().GetCode(); code != 0 {
+		msg := string(tx.GetResult().GetMessage())
+		// The node would not run the estimate: a request it refuses (no
+		// contract at the address, the estimate API off), not a call that
+		// failed — callers branching on ErrContractCallFailed take that for
+		// "the real transaction reverts too".
+		if code == api.Return_CONTRACT_VALIDATE_ERROR {
+			return nil, &ContractValidateError{Code: code, Message: msg}
+		}
+		return nil, &ContractCallError{Code: code, Message: msg}
 	}
 
-	return tx, err
+	return tx, nil
 }

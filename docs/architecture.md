@@ -68,9 +68,13 @@ probe cadence, error classification, shutdown — are in [transport.md](transpor
   `transportErrorInterceptor` (`transport_grpc.go`), HTTP ones from `HTTPTransport.wrapErr`.
 - `HTTPStatusError` is a non-2xx HTTP answer, wrapped inside a `TransportError`.
 - `ContractValidateError` is a node refusing to _build_ a transaction. Both transports produce it
-  (gRPC through `Result.code` via `checkTransaction`, HTTP through the `Error` field in
+  (gRPC through `Result.code` via `checkTransaction`, or `refusal` for the builders that leave the
+  transaction itself to their caller — `CreateAccount`, `CreateTransferTransaction`,
+  `UpdateSettingContract`, `UpdateEnergyLimitContract`; HTTP through the `Error` field in
   `parseTxResponse`) and it unwraps to `ErrInvalidTransaction`. Its `Is` method matches the message
-  to the verdicts the package names (`ErrDelegateStakeShort`, `ErrDelegateBelowMinimum`): the
+  to the verdicts the package names (`ErrDelegateStakeShort`, `ErrDelegateBelowMinimum`,
+  `ErrAccountExists`, `ErrCreateAccountFeeShort`, `ErrContractNotExist`,
+  `ErrEstimateEnergyUnsupported`; `isVerdict`): the
   actuator's text, in every wording java-tron has used, must end the message after the prefix the
   transport puts in front of it, so a near-miss refusal does not match. `Is` switches on the target
   rather than looking it up in a map, as `errors.Is` hands it any target, uncomparable ones too.
@@ -78,6 +82,16 @@ probe cadence, error classification, shutdown — are in [transport.md](transpor
   `ContractValidateError` with code `CONTRACT_VALIDATE_ERROR` and the current verdict, bare: callers
   branching on the type, `ErrInvalidTransaction` or `ErrDelegateBelowMinimum` take the same path as
   for a node's refusal, but there is no transport prefix and no `TransportError`.
+- `ContractCallError` is a contract call that did not run to completion: a constant call
+  (`TriggerConstantContract`, which reports a revert with code `SUCCESS` and the message only, and a
+  call it would not run at all — no contract — with `CONTRACT_VALIDATE_ERROR`) or an estimate
+  (`EstimateEnergy`, `CONTRACT_EXE_ERROR` for a revert). It unwraps to `ErrContractCallFailed`, as
+  every failed constant call did before the type, and its `Is` matches `ErrContractNotExist` on that
+  verdict. An estimate the node will not run (`CONTRACT_VALIDATE_ERROR`: no contract, or
+  `vm.estimateEnergy` off — `ErrEstimateEnergyUnsupported`) is a `ContractValidateError` instead: a
+  refused request, which a caller must not take for a call that reverts. The verdict texts are
+  GreatVoyage-v4.8.2.3's, asked over both transports by `tests/local_build_refusal_test.go`; the
+  estimate-off one is what the public nodes answer.
 - `BroadcastError` is a rejected broadcast, built by `Client.BroadcastTransaction` from
   `Return.code` / `Return.message`.
 - `ErrNodeRefusedRequest` is an HTTP read the node refused with `{"Error": …}` (see `apiError`).

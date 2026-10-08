@@ -82,18 +82,33 @@ type ContractValidateError struct {
 func (e *ContractValidateError) Unwrap() error { return ErrInvalidTransaction }
 
 // Is matches a refusal to the verdicts this package names
-// (ErrDelegateStakeShort, ErrDelegateBelowMinimum), so a caller can branch on
+// (ErrDelegateStakeShort, ErrDelegateBelowMinimum, ErrAccountExists,
+// ErrCreateAccountFeeShort, ErrContractNotExist, ErrEstimateEnergyUnsupported),
+// so a caller can branch on
 // errors.Is instead of on java-tron's wording, which differs between releases
 // and is prefixed differently by gRPC and HTTP. errors.As and the
 // ErrInvalidTransaction match through Unwrap are unaffected.
 func (e *ContractValidateError) Is(target error) bool {
+	return isVerdict(e.Message, target)
+}
+
+// isVerdict reports whether msg, a node's refusal, is the verdict target names.
+func isVerdict(msg string, target error) bool {
 	// A switch, not a map: errors.Is hands Is any target, and hashing one of
 	// an uncomparable type would panic where == just answers false.
 	switch target {
 	case ErrDelegateStakeShort:
-		return refusalIsOneOf(e.Message, delegateStakeShortVerdicts)
+		return refusalIsOneOf(msg, delegateStakeShortVerdicts)
 	case ErrDelegateBelowMinimum:
-		return refusalIsOneOf(e.Message, delegateBelowMinimumVerdicts)
+		return refusalIsOneOf(msg, delegateBelowMinimumVerdicts)
+	case ErrAccountExists:
+		return refusalIsOneOf(msg, accountExistsVerdicts)
+	case ErrCreateAccountFeeShort:
+		return refusalIsOneOf(msg, createAccountFeeShortVerdicts)
+	case ErrContractNotExist:
+		return refusalIsOneOf(msg, contractNotExistVerdicts)
+	case ErrEstimateEnergyUnsupported:
+		return refusalIsOneOf(msg, estimateEnergyUnsupportedVerdicts)
 	default:
 		return false
 	}
@@ -119,6 +134,25 @@ var (
 )
 
 const delegateBelowMinimumVerdict = "delegateBalance must be greater than or equal to 1 TRX"
+
+// The texts of the other verdicts, as GreatVoyage-v4.8.2.3 answers them over
+// both transports (tests/local_build_refusal_test.go asks a node for each).
+var (
+	// CreateAccountActuator.validate.
+	accountExistsVerdicts         = []string{"Account has existed"}
+	createAccountFeeShortVerdicts = []string{"Validate CreateAccountActuator error, insufficient fee."}
+	// Wallet.triggerConstantContract and Wallet.estimateEnergy for a
+	// constant call or an estimate, Wallet.triggerContract for a call to be
+	// built, and VMActuator for a call that reaches the VM without one.
+	contractNotExistVerdicts = []string{
+		"Smart contract is not exist.",
+		"No contract or not a valid smart contract",
+		"No contract or not a smart contract",
+	}
+	// Wallet.estimateEnergy on a node without vm.estimateEnergy, as the
+	// public nodes answer it.
+	estimateEnergyUnsupportedVerdicts = []string{"this node does not support estimate energy"}
+)
 
 // refusalIsOneOf reports whether msg is one of the verdicts, bare or after the
 // prefix the node puts in front of the actuator's message: "Contract validate
@@ -146,6 +180,40 @@ func (e *ContractValidateError) Error() string {
 	default:
 		return "contract validate error"
 	}
+}
+
+// ContractCallError is returned when a contract call did not run to
+// completion, as a constant call (TriggerConstantContract) or an energy
+// estimate (EstimateEnergy). Code says how: SUCCESS from a constant call whose
+// VM failure (a revert) is in Message only, CONTRACT_EXE_ERROR from an
+// estimate whose call failed in the VM, and CONTRACT_VALIDATE_ERROR from a
+// constant call the node would not run at all (no contract at the address).
+// An estimate the node would not run is a ContractValidateError instead.
+//
+// It matches ErrContractCallFailed, as every failed constant call did before
+// the type existed, and ErrContractNotExist on that verdict.
+type ContractCallError struct {
+	// Code is the node's response code; SUCCESS (0) for a reverted constant
+	// call, which the node reports through the message alone.
+	Code api.ReturnResponseCode
+	// Message is the node's reason, verbatim (gRPC puts "Contract validate
+	// error : " in front of a refusal, HTTP does not).
+	Message string
+}
+
+func (e *ContractCallError) Error() string {
+	if e.Message != "" {
+		return ErrContractCallFailed.Error() + ": " + e.Message
+	}
+	return ErrContractCallFailed.Error() + ": " + e.Code.String()
+}
+
+// Unwrap keeps errors.Is(err, ErrContractCallFailed) true.
+func (e *ContractCallError) Unwrap() error { return ErrContractCallFailed }
+
+// Is matches ErrContractNotExist: the address holds no contract.
+func (e *ContractCallError) Is(target error) bool {
+	return target == ErrContractNotExist && isVerdict(e.Message, target)
 }
 
 // BroadcastError is returned by Client.BroadcastTransaction when the node
@@ -199,10 +267,13 @@ var (
 	// Resources errors
 	ErrInvalidResourceType = errors.New("invalid resource type")
 
-	// ErrContractCallFailed marks a constant contract call the node executed but
-	// that did not complete - most often a revert.
+	// ErrContractCallFailed marks a contract call that did not complete - most
+	// often a revert - as a constant call (any *ContractCallError from
+	// TriggerConstantContract, a call to an address without a contract
+	// included) or an estimate (a *ContractCallError from EstimateEnergy; an
+	// estimate the node refuses to run is a *ContractValidateError).
 	//
-	// Such a call is not signalled by the result code: the node answers
+	// A reverted constant call is not signalled by the result code: the node answers
 	// result.result = true with code SUCCESS and reports the failure only in
 	// result.message ("REVERT opcode executed"), leaving constant_result empty
 	// and energy_used at whatever was burned before the revert. Treating that as
@@ -234,6 +305,31 @@ var (
 	// before calling the node, with the node's own verdict; a refusal from the
 	// node matches as well.
 	ErrDelegateBelowMinimum = errors.New("delegate balance below the minimum delegation")
+
+	// ErrAccountExists matches a refusal to create an account that is already
+	// on chain (a ContractValidateError from CreateAccount).
+	ErrAccountExists = errors.New("account already exists")
+
+	// ErrCreateAccountFeeShort matches a CreateAccount the node refused
+	// because the owner's balance does not hold the fee the system contract
+	// burns for a new account (getCreateNewAccountFeeInSystemContract),
+	// whatever bandwidth it has staked. It is the chain's state now: the same
+	// request builds once the owner holds the fee.
+	ErrCreateAccountFeeShort = errors.New("owner balance below the account creation fee")
+
+	// ErrContractNotExist matches a call to an address that holds no
+	// contract: an account, or an address the network has never seen. A
+	// ContractValidateError from TriggerContract or EstimateEnergy matches it,
+	// and so does a ContractCallError from TriggerConstantContract. Every
+	// node and every retry answers the same until a contract is deployed
+	// there.
+	ErrContractNotExist = errors.New("contract does not exist")
+
+	// ErrEstimateEnergyUnsupported matches the ContractValidateError of an
+	// EstimateEnergy on a node that does not serve the estimate API (the
+	// public nodes do not): another node may, and TriggerConstantContract
+	// prices a call on any.
+	ErrEstimateEnergyUnsupported = errors.New("node does not support estimate energy")
 
 	// ErrNoHealthyNodes is returned when no node in any tier is currently
 	// marked healthy. The health-checker runs continuously and will return

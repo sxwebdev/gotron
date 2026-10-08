@@ -37,11 +37,11 @@ func (c *Client) UpdateEnergyLimitContract(ctx context.Context, from, contractAd
 		return nil, err
 	}
 
-	if tx.GetResult().GetCode() > 0 {
-		return nil, fmt.Errorf("%s", string(tx.GetResult().GetMessage()))
+	if err := refusal(tx); err != nil {
+		return nil, err
 	}
 
-	return tx, err
+	return tx, nil
 }
 
 // UpdateSettingContract change contract owner consumption ratio
@@ -67,11 +67,11 @@ func (c *Client) UpdateSettingContract(ctx context.Context, from, contractAddres
 		return nil, err
 	}
 
-	if tx.GetResult().GetCode() > 0 {
-		return nil, fmt.Errorf("%s", string(tx.GetResult().GetMessage()))
+	if err := refusal(tx); err != nil {
+		return nil, err
 	}
 
-	return tx, err
+	return tx, nil
 }
 
 // TriggerConstantContractCustom and return tx result
@@ -125,11 +125,8 @@ func (c *Client) TriggerConstantContract(ctx context.Context, ct *core.TriggerSm
 		return nil, err
 	}
 
-	if msg := tx.GetResult().GetMessage(); len(msg) > 0 {
-		return tx, fmt.Errorf("%w: %s", ErrContractCallFailed, msg)
-	}
-	if code := tx.GetResult().GetCode(); code != 0 {
-		return tx, fmt.Errorf("%w: %s", ErrContractCallFailed, code)
+	if msg, code := tx.GetResult().GetMessage(), tx.GetResult().GetCode(); len(msg) > 0 || code != 0 {
+		return tx, &ContractCallError{Code: code, Message: string(msg)}
 	}
 
 	return tx, nil

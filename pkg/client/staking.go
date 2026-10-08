@@ -253,3 +253,14 @@ func checkTransaction(tx *api.TransactionExtention) error {
 	}
 	return nil
 }
+
+// refusal is the node's refusal to build a transaction, reported in the
+// result code of what it answered, as the ContractValidateError every builder
+// returns; nil when the code says it built one. Unlike checkTransaction it
+// leaves the transaction itself to the caller.
+func refusal(tx *api.TransactionExtention) error {
+	if code := tx.GetResult().GetCode(); code != 0 {
+		return &ContractValidateError{Code: code, Message: string(tx.GetResult().GetMessage())}
+	}
+	return nil
+}

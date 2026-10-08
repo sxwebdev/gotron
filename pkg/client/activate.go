@@ -2,11 +2,10 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/sxwebdev/gotron/schema/pb/core"
-	"google.golang.org/protobuf/proto"
 )
 
 // EstimateActivationFee estimates the activation fee for a Tron address.
@@ -94,23 +93,11 @@ func (t *Client) EstimateSystemContractActivation(ctx context.Context, caller st
 
 	tx, err := t.CreateAccount(ctx, caller, receiver, core.AccountType_Normal)
 	if err != nil {
-		// Receiver became activated between IsAccountActivated and CreateAccount,
-		// or any other case where the node refuses on already-existing account.
-		if strings.Contains(err.Error(), "Account has existed") {
+		// Receiver became activated between IsAccountActivated and CreateAccount.
+		if errors.Is(err, ErrAccountExists) {
 			return &EstimateResult{}, nil
 		}
 		return nil, fmt.Errorf("create account: %w", err)
-	}
-
-	if proto.Size(tx) == 0 {
-		return nil, fmt.Errorf("bad transaction")
-	}
-
-	if tx.GetResult().GetCode() != 0 {
-		if strings.Contains(string(tx.GetResult().GetMessage()), "Account has existed") {
-			return &EstimateResult{}, nil
-		}
-		return nil, fmt.Errorf("%s", tx.GetResult().GetMessage())
 	}
 
 	estimatedBandwidth, err := t.EstimateBandwidth(tx.GetTransaction())

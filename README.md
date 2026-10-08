@@ -829,7 +829,11 @@ if errors.Is(err, client.ErrAccountNotFound) {
 // - client.ErrInvalidConfig
 // - client.ErrTransactionNotFound
 // - client.ErrInvalidResourceType
-// - client.ErrContractCallFailed — a constant call the VM refused (usually a revert)
+// - client.ErrContractCallFailed — a constant call or an estimate that did not complete
+//   (usually a revert); a *client.ContractCallError carries the node's code
+// - client.ErrContractNotExist — a call to an address that holds no contract
+// - client.ErrAccountExists, client.ErrCreateAccountFeeShort — CreateAccount refusals
+// - client.ErrEstimateEnergyUnsupported — EstimateEnergy on a node without the estimate API
 // - client.ErrInvalidPermissionID — outside [0,9], or witness permission 1 asked to sign
 // - client.ErrInvalidPermission — a malformed permission, or one whose type a node reported
 //   as a name this SDK does not know

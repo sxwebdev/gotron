@@ -470,7 +470,8 @@ func (c *Client) EstimateEnergy(
 
 **`EstimateEnergy` needs a node that opted in** (`vm.estimateEnergy = true`), and the public ones
 have not: `tron-rpc.publicnode.com` answers `CONTRACT_VALIDATE_ERROR: this node does not support
-estimate energy`, which the client surfaces as an error. The portable way to price a contract call
+estimate energy`, which the client surfaces as a `*ContractValidateError` matching
+`ErrEstimateEnergyUnsupported`. The portable way to price a contract call
 is `TriggerConstantContract` / `TriggerConstantContractCustom` and its `GetEnergyUsed()` — that is
 what `EstimateTRC20Transfer` uses.
 
@@ -643,8 +644,9 @@ func (c *Client) TriggerContract(
 ) (*api.TransactionExtention, error)
 
 // Read-only calls. Nothing is broadcast; the answer is in GetConstantResult(),
-// the metered cost in GetEnergyUsed(). A call the VM refused returns an error
-// wrapping ErrContractCallFailed, with the extention alongside it.
+// the metered cost in GetEnergyUsed(). A call the VM refused returns a
+// *ContractCallError (errors.Is ErrContractCallFailed), with the extention
+// alongside it; to an address without a contract it matches ErrContractNotExist.
 func (c *Client) TriggerConstantContract(ctx context.Context, ct *core.TriggerSmartContract) (*api.TransactionExtention, error)
 func (c *Client) TriggerConstantContractCustom(ctx context.Context, from, contractAddress, method, jsonString string) (*api.TransactionExtention, error)
 
@@ -866,7 +868,18 @@ ErrInvalidPermissionID, ErrInvalidPermission
 ErrPermissionNotFound, ErrPermissionDenied
 
 // Contracts
-ErrContractCallFailed      // a constant call the VM refused, most often a revert
+ErrContractCallFailed      // a constant call or estimate that did not complete, most often a revert
+
+// A call to an address that holds no contract; matched on *ContractCallError
+// from TriggerConstantContract, and on *ContractValidateError from
+// TriggerContract or EstimateEnergy
+ErrContractNotExist
+// EstimateEnergy on a node without the estimate API (*ContractValidateError)
+ErrEstimateEnergyUnsupported
+
+// Account creation refusals: a *ContractValidateError from CreateAccount matches them through errors.Is
+ErrAccountExists           // the address is already on chain
+ErrCreateAccountFeeShort   // the owner's balance is under the fee the system contract burns for a new account
 
 // Delegation refusals: a *ContractValidateError matches them through errors.Is
 ErrDelegateStakeShort      // the owner's available stake of the resource is under the amount, now
@@ -891,6 +904,15 @@ type TransportError struct { Host, Protocol, Method string; Err error }
 type ContractValidateError struct { Code api.ReturnResponseCode; Message string }
 type HTTPStatusError struct { Code int; Body string }
 type BroadcastError  struct { Code api.ReturnResponseCode; Message string }
+
+// ContractCallError is a constant call (TriggerConstantContract) or an energy
+// estimate (EstimateEnergy) that did not run to completion. Code is SUCCESS for
+// a reverted constant call, reported in Message alone, CONTRACT_EXE_ERROR for an
+// estimate whose call failed, and CONTRACT_VALIDATE_ERROR for a constant call
+// the node would not run (no contract). It matches ErrContractCallFailed, and
+// ErrContractNotExist on that verdict. An estimate the node would not run is a
+// *ContractValidateError (ErrContractNotExist, ErrEstimateEnergyUnsupported).
+type ContractCallError struct { Code api.ReturnResponseCode; Message string }
 ```
 
 ---

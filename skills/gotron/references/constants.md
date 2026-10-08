@@ -24,6 +24,14 @@ ErrTransactionInfoNotFound  = errors.New("transaction info not found")
 // Resources
 ErrInvalidResourceType      = errors.New("invalid resource type")
 
+// Contracts
+ErrContractNotExist          = errors.New("contract does not exist")
+ErrEstimateEnergyUnsupported = errors.New("node does not support estimate energy")
+
+// Account creation refusals (matched on *ContractValidateError by errors.Is)
+ErrAccountExists            = errors.New("account already exists")
+ErrCreateAccountFeeShort    = errors.New("owner balance below the account creation fee")
+
 // Delegation refusals (matched on *ContractValidateError by errors.Is)
 ErrDelegateStakeShort       = errors.New("delegate balance exceeds the owner's available stake")
 ErrDelegateBelowMinimum     = errors.New("delegate balance below the minimum delegation")
@@ -101,6 +109,14 @@ resource, less what its own usage holds, is under the amount; or the amount is
 under `MinDelegateBalance`. Both wordings java-tron has used (before and since
 GreatVoyage-v4.7.3) and both transports' prefixes match. The client refuses an
 amount under the minimum itself, without asking a node.
+
+`ErrAccountExists` and `ErrCreateAccountFeeShort` are matched the same way on a
+`*ContractValidateError` from `CreateAccount`. `ErrContractNotExist` matches a
+`*ContractValidateError` from `TriggerContract` or `EstimateEnergy` and a
+`*ContractCallError` from `TriggerConstantContract` for an address that holds
+no contract; a `*ContractCallError` also matches `ErrContractCallFailed`.
+`ErrEstimateEnergyUnsupported` matches the `*ContractValidateError` of an
+`EstimateEnergy` on a node without the estimate API.
 
 ## Network Types
 

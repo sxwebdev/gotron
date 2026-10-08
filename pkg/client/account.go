@@ -88,8 +88,10 @@ func (c *Client) CreateAccount(ctx context.Context, from, addr string, accountTy
 		return nil, ErrInvalidTransaction
 	}
 
-	if tx.GetResult().GetCode() != 0 {
-		return nil, fmt.Errorf("%s", tx.GetResult().GetMessage())
+	// The same refusal type every builder returns: a node's verdict on the
+	// request, which errors.Is matches to the sentinels of errors.go.
+	if err := refusal(tx); err != nil {
+		return nil, err
 	}
 
 	return tx, nil
