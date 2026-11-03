@@ -272,6 +272,7 @@ func (c *Client) ParseTRC20StringProperty(data string) (string, error)
 func (c *Client) GetAccountResource(ctx context.Context, addr string) (*api.AccountResourceMessage, error)
 func (c *Client) GetDelegatedResources(ctx context.Context, address string) ([]Delegation, error)   // Stake 1.0 index
 func (c *Client) GetDelegatedResourcesV2(ctx context.Context, address string) ([]Delegation, error) // Stake 2.0
+func (c *Client) GetDelegationsReceivedV2(ctx context.Context, address string) ([]Delegation, error) // Stake 2.0, per lender
 func (c *Client) GetCanDelegatedMaxSize(ctx context.Context, addr string, resource ResourceType) (SUN, error)
 // DelegateResource refuses a delegateBalance under MinDelegateBalance itself, without a node
 // round trip: a *ContractValidateError with code CONTRACT_VALIDATE_ERROR and the node's verdict,

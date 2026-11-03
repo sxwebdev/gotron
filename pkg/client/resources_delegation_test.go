@@ -149,6 +149,63 @@ func TestGetDelegatedResourcesValidation(t *testing.T) {
 	}
 }
 
+func TestGetDelegationsReceivedV2AsksEachLender(t *testing.T) {
+	// The index of a receiver lists its lenders under FromAccounts; each pair
+	// is asked lender first. Asking the receiver as the lender reads what it
+	// lends, which is nothing here, and every lender's stake would read gone.
+	receiver, err := tronutils.DecodeCheck(testAddr2)
+	require.NoError(t, err)
+	lender, err := tronutils.DecodeCheck(testAddr)
+	require.NoError(t, err)
+
+	var asked []*api.DelegatedResourceMessage
+	c := newTestClient(&fakeTransport{
+		getDelegatedResourceAccountIndexV2: func(_ context.Context, addr []byte) (*core.DelegatedResourceAccountIndex, error) {
+			require.Equal(t, receiver, addr)
+			return &core.DelegatedResourceAccountIndex{FromAccounts: [][]byte{lender}, ToAccounts: [][]byte{receiver}}, nil
+		},
+		getDelegatedResourceV2: func(_ context.Context, m *api.DelegatedResourceMessage) (*api.DelegatedResourceList, error) {
+			asked = append(asked, m)
+			return &api.DelegatedResourceList{DelegatedResource: []*core.DelegatedResource{delegationRecord(t, 0, 3_000_000, 0, 0)}}, nil
+		},
+	})
+
+	got, err := c.GetDelegationsReceivedV2(context.Background(), testAddr2)
+	require.NoError(t, err)
+	require.Len(t, asked, 1)
+	require.Equal(t, lender, asked[0].GetFromAddress())
+	require.Equal(t, receiver, asked[0].GetToAddress())
+	require.Len(t, got, 1)
+	require.Equal(t, testAddr, got[0].From)
+	require.Equal(t, testAddr2, got[0].To)
+	require.Equal(t, SUN(3_000_000), got[0].Energy)
+}
+
+func TestGetDelegationsReceivedV2Validation(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		addr    string
+		wantErr error
+	}{
+		{"empty", "", ErrEmptyAddress},
+		{"invalid", "bad!", ErrInvalidAddress},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			called := false
+			c := newTestClient(&fakeTransport{
+				getDelegatedResourceAccountIndexV2: func(context.Context, []byte) (*core.DelegatedResourceAccountIndex, error) {
+					called = true
+					return nil, nil
+				},
+			})
+
+			_, err := c.GetDelegationsReceivedV2(context.Background(), tc.addr)
+			require.ErrorIs(t, err, tc.wantErr)
+			require.False(t, called)
+		})
+	}
+}
+
 func TestGetCanDelegatedMaxSize(t *testing.T) {
 	t.Run("returns SUN and sends the resource type", func(t *testing.T) {
 		var got *api.CanDelegatedMaxSizeRequestMessage

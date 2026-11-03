@@ -38,13 +38,39 @@ func (c *Client) GetDelegatedResourcesV2(ctx context.Context, address string) ([
 		c.transport.GetDelegatedResourceAccountIndexV2, c.transport.GetDelegatedResourceV2)
 }
 
-// delegationsOut walks the account index and reads each delegation, converting
-// the chain's raw form - byte addresses, SUN as int64, Unix-millisecond lock
-// expiries - into the same string/SUN/time.Time shape GetStakeInfo uses. The
-// two Stake versions differ only in which pair of RPCs they call.
+// GetDelegationsReceivedV2 lists what address holds from others under Stake
+// 2.0, one record per lender: To is address, From the account that lent it.
+//
+// The account's own resource message only sums what everyone lends it, so it
+// cannot tell which lender took its stake back; this reads each lender's
+// delegation to address apart. The cost is one call for the index and one per
+// lender.
+func (c *Client) GetDelegationsReceivedV2(ctx context.Context, address string) ([]Delegation, error) {
+	return c.delegations(ctx, address, true,
+		c.transport.GetDelegatedResourceAccountIndexV2, c.transport.GetDelegatedResourceV2)
+}
+
+// delegationsOut is delegations of what address lends out.
 func (c *Client) delegationsOut(
 	ctx context.Context,
 	address string,
+	index func(context.Context, []byte) (*core.DelegatedResourceAccountIndex, error),
+	fetch func(context.Context, *api.DelegatedResourceMessage) (*api.DelegatedResourceList, error),
+) ([]Delegation, error) {
+	return c.delegations(ctx, address, false, index, fetch)
+}
+
+// delegations walks the account index and reads each delegation, converting
+// the chain's raw form - byte addresses, SUN as int64, Unix-millisecond lock
+// expiries - into the same string/SUN/time.Time shape GetStakeInfo uses. The
+// two Stake versions differ only in which pair of RPCs they call. The index
+// holds both sides: received walks its lenders (FromAccounts) and asks for
+// each one's delegation to address, otherwise its receivers (ToAccounts) and
+// address's delegation to each.
+func (c *Client) delegations(
+	ctx context.Context,
+	address string,
+	received bool,
 	index func(context.Context, []byte) (*core.DelegatedResourceAccountIndex, error),
 	fetch func(context.Context, *api.DelegatedResourceMessage) (*api.DelegatedResourceList, error),
 ) ([]Delegation, error) {
@@ -62,12 +88,18 @@ func (c *Client) delegationsOut(
 		return nil, err
 	}
 
+	others, pair := ai.GetToAccounts(), func(other []byte) *api.DelegatedResourceMessage {
+		return &api.DelegatedResourceMessage{FromAddress: addrBytes, ToAddress: other}
+	}
+	if received {
+		others, pair = ai.GetFromAccounts(), func(other []byte) *api.DelegatedResourceMessage {
+			return &api.DelegatedResourceMessage{FromAddress: other, ToAddress: addrBytes}
+		}
+	}
+
 	var result []Delegation
-	for _, addrTo := range ai.GetToAccounts() {
-		list, err := fetch(ctx, &api.DelegatedResourceMessage{
-			FromAddress: addrBytes,
-			ToAddress:   addrTo,
-		})
+	for _, other := range others {
+		list, err := fetch(ctx, pair(other))
 		if err != nil {
 			return nil, err
 		}

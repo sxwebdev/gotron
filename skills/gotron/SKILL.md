@@ -218,7 +218,8 @@ ext, err  = c.ClaimRewards(ctx, owner)
 ```
 
 - `c.GetStakeInfo(ctx, addr)` summarises staked, unstaking and withdrawable amounts;
-  `c.GetDelegatedResourcesV2(ctx, addr)` lists what an account lends out.
+  `c.GetDelegatedResourcesV2(ctx, addr)` lists what an account lends out;
+  `c.GetDelegationsReceivedV2(ctx, addr)` what it holds from each lender.
 - `GetCanDelegatedMaxSize` answers in staked TRX, not energy. Convert stake to resource units with
   `ConvertStakedToEnergy` / `ConvertStakedToBandwidth` and the current network weights.
 - `VoteWitnesses` **replaces** the whole vote set; pass every vote you want to keep. Votes are
