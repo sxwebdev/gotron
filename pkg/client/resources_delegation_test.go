@@ -2,6 +2,8 @@ package client
 
 import (
 	"context"
+	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -274,4 +276,105 @@ func TestGetCanDelegatedMaxSize(t *testing.T) {
 			})
 		}
 	})
+}
+
+// lendersFake serves an index of n lenders to testAddr2, each lending its
+// index+1 SUN of energy, through fetch.
+func lendersFake(t *testing.T, n int, fetch func(context.Context, *api.DelegatedResourceMessage) (*api.DelegatedResourceList, error)) (*fakeTransport, [][]byte) {
+	t.Helper()
+	receiver, err := tronutils.DecodeCheck(testAddr2)
+	require.NoError(t, err)
+	lenders := make([][]byte, n)
+	for i := range lenders {
+		lender := make([]byte, 21)
+		lender[0], lender[20] = 0x41, byte(i+1)
+		lenders[i] = lender
+	}
+	return &fakeTransport{
+		getDelegatedResourceAccountIndexV2: func(context.Context, []byte) (*core.DelegatedResourceAccountIndex, error) {
+			return &core.DelegatedResourceAccountIndex{FromAccounts: lenders}, nil
+		},
+		getDelegatedResourceV2: func(ctx context.Context, m *api.DelegatedResourceMessage) (*api.DelegatedResourceList, error) {
+			if fetch != nil {
+				if _, err := fetch(ctx, m); err != nil {
+					return nil, err
+				}
+			}
+			return &api.DelegatedResourceList{DelegatedResource: []*core.DelegatedResource{{
+				From: m.GetFromAddress(), To: receiver, FrozenBalanceForEnergy: int64(m.GetFromAddress()[20]),
+			}}}, nil
+		},
+	}, lenders
+}
+
+func TestGetDelegationsReceivedV2GivesEachCallItsOwnDeadline(t *testing.T) {
+	// One deadline over the walk failed an account with many lenders on a
+	// slow node; each call gets its own.
+	const perCall = 200 * time.Millisecond
+	var deadlines []time.Duration
+	var mu sync.Mutex
+	ft, _ := lendersFake(t, 3, func(ctx context.Context, _ *api.DelegatedResourceMessage) (*api.DelegatedResourceList, error) {
+		deadline, ok := ctx.Deadline()
+		require.True(t, ok, "a lender's call without a deadline of its own")
+		mu.Lock()
+		deadlines = append(deadlines, time.Until(deadline))
+		mu.Unlock()
+		return nil, nil
+	})
+	index := ft.getDelegatedResourceAccountIndexV2
+	ft.getDelegatedResourceAccountIndexV2 = func(ctx context.Context, addr []byte) (*core.DelegatedResourceAccountIndex, error) {
+		_, ok := ctx.Deadline()
+		require.True(t, ok, "the index call without a deadline of its own")
+		return index(ctx, addr)
+	}
+	got, err := newTestClient(ft).GetDelegationsReceivedV2(context.Background(), testAddr2, WithCallTimeout(perCall))
+	require.NoError(t, err)
+	require.Len(t, got, 3)
+	for _, d := range deadlines {
+		require.LessOrEqual(t, d, perCall)
+		require.Greater(t, d, time.Duration(0))
+	}
+}
+
+func TestGetDelegationsReceivedV2ReadsLendersAtOnceInTheIndexOrder(t *testing.T) {
+	var running, most int
+	var mu sync.Mutex
+	ft, lenders := lendersFake(t, 12, func(context.Context, *api.DelegatedResourceMessage) (*api.DelegatedResourceList, error) {
+		mu.Lock()
+		running++
+		most = max(most, running)
+		mu.Unlock()
+		time.Sleep(20 * time.Millisecond)
+		mu.Lock()
+		running--
+		mu.Unlock()
+		return nil, nil
+	})
+	got, err := newTestClient(ft).GetDelegationsReceivedV2(context.Background(), testAddr2, WithConcurrency(4))
+	require.NoError(t, err)
+	require.Len(t, got, len(lenders))
+	for i, d := range got {
+		require.Equal(t, tronutils.EncodeCheck(lenders[i]), d.From, "result out of the index's order")
+	}
+	require.LessOrEqual(t, most, 4)
+	require.Greater(t, most, 1, "lenders read one after another")
+}
+
+func TestGetDelegationsReceivedV2ReturnsTheCallThatFailed(t *testing.T) {
+	// The first failure cancels the calls still out; their cancellation is
+	// not the listing's error.
+	boom := errors.New("node refused")
+	ft, lenders := lendersFake(t, 6, nil)
+	ft.getDelegatedResourceV2 = func(ctx context.Context, m *api.DelegatedResourceMessage) (*api.DelegatedResourceList, error) {
+		if m.GetFromAddress()[20] == byte(len(lenders)) {
+			return nil, boom
+		}
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	// Bounded, so a walk that does not cancel the rest fails rather than hangs.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := newTestClient(ft).GetDelegationsReceivedV2(ctx, testAddr2, WithConcurrency(len(lenders)))
+	require.ErrorIs(t, err, boom)
 }

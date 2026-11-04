@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -27,15 +28,15 @@ func (c *Client) GetAccountResource(ctx context.Context, addr string) (*api.Acco
 
 // GetDelegatedResources lists what address has delegated out, using the Stake
 // 1.0 index. Most accounts want GetDelegatedResourcesV2.
-func (c *Client) GetDelegatedResources(ctx context.Context, address string) ([]Delegation, error) {
+func (c *Client) GetDelegatedResources(ctx context.Context, address string, opts ...DelegationsOption) ([]Delegation, error) {
 	return c.delegationsOut(ctx, address,
-		c.transport.GetDelegatedResourceAccountIndex, c.transport.GetDelegatedResource)
+		c.transport.GetDelegatedResourceAccountIndex, c.transport.GetDelegatedResource, opts)
 }
 
 // GetDelegatedResourcesV2 lists what address has delegated out under Stake 2.0.
-func (c *Client) GetDelegatedResourcesV2(ctx context.Context, address string) ([]Delegation, error) {
+func (c *Client) GetDelegatedResourcesV2(ctx context.Context, address string, opts ...DelegationsOption) ([]Delegation, error) {
 	return c.delegationsOut(ctx, address,
-		c.transport.GetDelegatedResourceAccountIndexV2, c.transport.GetDelegatedResourceV2)
+		c.transport.GetDelegatedResourceAccountIndexV2, c.transport.GetDelegatedResourceV2, opts)
 }
 
 // GetDelegationsReceivedV2 lists what address holds from others under Stake
@@ -45,9 +46,43 @@ func (c *Client) GetDelegatedResourcesV2(ctx context.Context, address string) ([
 // cannot tell which lender took its stake back; this reads each lender's
 // delegation to address apart. The cost is one call for the index and one per
 // lender.
-func (c *Client) GetDelegationsReceivedV2(ctx context.Context, address string) ([]Delegation, error) {
+func (c *Client) GetDelegationsReceivedV2(ctx context.Context, address string, opts ...DelegationsOption) ([]Delegation, error) {
 	return c.delegations(ctx, address, true,
-		c.transport.GetDelegatedResourceAccountIndexV2, c.transport.GetDelegatedResourceV2)
+		c.transport.GetDelegatedResourceAccountIndexV2, c.transport.GetDelegatedResourceV2, opts)
+}
+
+// DelegationsOption tunes how a delegation listing walks the account index:
+// one call for the index and one per counterpart.
+type DelegationsOption func(*delegationsWalk)
+
+type delegationsWalk struct {
+	callTimeout time.Duration
+	concurrency int
+}
+
+// WithCallTimeout gives each node call of the walk — the index, and each
+// counterpart's delegation — a deadline of its own under ctx. The walk makes
+// one call per counterpart: under a single deadline, an account with many
+// counterparts on a node a few hundred milliseconds away was never read
+// whole. Zero or less leaves the calls to ctx alone.
+func WithCallTimeout(d time.Duration) DelegationsOption {
+	return func(w *delegationsWalk) { w.callTimeout = d }
+}
+
+// WithConcurrency reads up to n counterparts' delegations at once; the result
+// keeps the index's order. One, the default, reads them one after another.
+func WithConcurrency(n int) DelegationsOption {
+	return func(w *delegationsWalk) { w.concurrency = n }
+}
+
+// call runs one node call of the walk under its own deadline, if it has one.
+func (w delegationsWalk) call(ctx context.Context, do func(context.Context) error) error {
+	if w.callTimeout <= 0 {
+		return do(ctx)
+	}
+	ctx, cancel := context.WithTimeout(ctx, w.callTimeout)
+	defer cancel()
+	return do(ctx)
 }
 
 // delegationsOut is delegations of what address lends out.
@@ -56,8 +91,9 @@ func (c *Client) delegationsOut(
 	address string,
 	index func(context.Context, []byte) (*core.DelegatedResourceAccountIndex, error),
 	fetch func(context.Context, *api.DelegatedResourceMessage) (*api.DelegatedResourceList, error),
+	opts []DelegationsOption,
 ) ([]Delegation, error) {
-	return c.delegations(ctx, address, false, index, fetch)
+	return c.delegations(ctx, address, false, index, fetch, opts)
 }
 
 // delegations walks the account index and reads each delegation, converting
@@ -73,7 +109,14 @@ func (c *Client) delegations(
 	received bool,
 	index func(context.Context, []byte) (*core.DelegatedResourceAccountIndex, error),
 	fetch func(context.Context, *api.DelegatedResourceMessage) (*api.DelegatedResourceList, error),
+	opts []DelegationsOption,
 ) ([]Delegation, error) {
+	walk := delegationsWalk{concurrency: 1}
+	for _, o := range opts {
+		o(&walk)
+	}
+	walk.concurrency = max(walk.concurrency, 1)
+
 	if address == "" {
 		return nil, fmt.Errorf("%w: address is required", ErrEmptyAddress)
 	}
@@ -83,8 +126,11 @@ func (c *Client) delegations(
 		return nil, fmt.Errorf("%w: %s", ErrInvalidAddress, err)
 	}
 
-	ai, err := index(ctx, addrBytes)
-	if err != nil {
+	var ai *core.DelegatedResourceAccountIndex
+	if err := walk.call(ctx, func(ctx context.Context) (err error) {
+		ai, err = index(ctx, addrBytes)
+		return err
+	}); err != nil {
 		return nil, err
 	}
 
@@ -97,13 +143,49 @@ func (c *Client) delegations(
 		}
 	}
 
-	var result []Delegation
-	for _, other := range others {
-		list, err := fetch(ctx, pair(other))
-		if err != nil {
-			return nil, err
+	lists := make([]*api.DelegatedResourceList, len(others))
+	// The first call to fail is the listing's error: the rest it cancels.
+	var (
+		mu       sync.Mutex
+		firstErr error
+	)
+	walkCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	slots := make(chan struct{}, walk.concurrency)
+	var wg sync.WaitGroup
+	for i, other := range others {
+		select {
+		case slots <- struct{}{}:
+		case <-walkCtx.Done():
 		}
+		if walkCtx.Err() != nil {
+			break
+		}
+		wg.Go(func() {
+			defer func() { <-slots }()
+			if err := walk.call(walkCtx, func(ctx context.Context) (err error) {
+				lists[i], err = fetch(ctx, pair(other))
+				return err
+			}); err != nil {
+				mu.Lock()
+				if firstErr == nil {
+					firstErr = err
+				}
+				mu.Unlock()
+				cancel() // the listing fails: stop asking the rest
+			}
+		})
+	}
+	wg.Wait()
+	if firstErr != nil {
+		return nil, firstErr
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 
+	var result []Delegation
+	for _, list := range lists {
 		// One index entry can hold several records, and the node returns
 		// placeholder entries with nothing delegated; those are dropped rather
 		// than reported as zero-amount delegations.
